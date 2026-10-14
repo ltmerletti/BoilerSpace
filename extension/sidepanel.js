@@ -7,6 +7,7 @@ import { agendaItems, aiPolicyFor, calendarEvents, courseTitle, currentCourses, 
 import { buildCalendar } from './lib/ics.js';
 import { locationUrl, syllabusFile } from './lib/links.js';
 import { ask, SUGGESTED_QUESTIONS } from './lib/agent.js';
+import { captureBenchmark } from './lib/capture.js';
 import { addDaysToKey, dayKey, daysBetweenKeys, formatDateTime, formatDayKey, formatTime, relativeDay } from './lib/dates.js';
 
 const sheet = document.createElement('link');
@@ -68,7 +69,7 @@ const state = {
   progress: null,
   runningSync: false,
   status: '',
-  busy: { sync: false, syllabi: false, link: false },
+  busy: { sync: false, syllabi: false, link: false, capture: false },
   linkStatus: '',
   linkError: '',
   syncError: '',
@@ -430,6 +431,22 @@ async function exportData() {
   const all = await store.getAll();
   for (const key of ['genai', 'syncLock', 'syncProgress', 'drawerOpen', 'drawerWidth', 'ui']) delete all[key];
   download(`boilerspace-data-${dayKey(new Date())}.json`, JSON.stringify(all, null, 2), 'application/json');
+}
+
+async function saveBenchmarkData() {
+  if (state.busy.capture) return;
+  state.busy.capture = true;
+  render();
+  try {
+    const capture = await captureBenchmark({ snapshot: state.snapshot, syllabi: state.syllabi, chats: state.chats, onStatus: setStatus });
+    download(`boilerspace-benchmark-${dayKey(new Date())}.json`, JSON.stringify(capture), 'application/json');
+  } catch (err) {
+    setStatus(`Could not save benchmark data: ${err.message}`);
+  } finally {
+    state.busy.capture = false;
+    setStatus('');
+    render();
+  }
 }
 
 async function clearData() {
@@ -1222,9 +1239,11 @@ function settingsView() {
         { class: 'button-row' },
         h('button', { class: 'button secondary', type: 'button', disabled: !state.snapshot, onclick: exportCalendar }, 'Export calendar (.ics)'),
         h('button', { class: 'button secondary', type: 'button', disabled: !state.snapshot, onclick: exportData }, 'Download data (JSON)'),
+        h('button', { class: 'button secondary', type: 'button', disabled: !state.snapshot || state.busy.capture, onclick: saveBenchmarkData }, state.busy.capture ? 'Saving benchmark data…' : 'Save benchmark data'),
         h('button', { class: 'button danger', type: 'button', onclick: clearData }, 'Delete all data'),
       ),
       h('p', { class: 'meta', style: 'margin-top:8px' }, 'The calendar file has Brightspace due dates and the syllabus dates you confirmed. Import it into Google Calendar or Outlook.'),
+      h('p', { class: 'meta', style: 'margin-top:8px' }, 'Benchmark data is for testing BoilerSpace: your courses and the text of their files, without grades, your name or email addresses. Reading every file takes a few minutes.'),
     ),
   ];
 }

@@ -201,8 +201,8 @@ export function validateCases(cases, capture) {
   if (!Array.isArray(cases)) {
     return { valid: false, errors: ['cases.json must be a JSON array.'] };
   }
-  if (cases.length < 50 || cases.length > 70) {
-    errors.push(`Expected 50 to 70 cases, found ${cases.length}.`);
+  if (cases.length < 50 || cases.length > 120) {
+    errors.push(`Expected 50 to 120 cases, found ${cases.length}.`);
   }
 
   const seenIds = new Set();
@@ -443,22 +443,30 @@ export async function runPlumbingCheck(cases, env) {
   return results;
 }
 
+// Adds average model requests and seconds per case, overall and per category.
+export function withEfficiency(summary, caseRuns) {
+  const stats = (runs) => ({
+    avgRequests: runs.length ? Number((runs.reduce((s, r) => s + r.requests, 0) / runs.length).toFixed(1)) : 0,
+    avgSeconds: runs.length ? Number((runs.reduce((s, r) => s + r.latencyMs, 0) / runs.length / 1000).toFixed(1)) : 0,
+  });
+  Object.assign(summary, stats(caseRuns));
+  for (const [cat, s] of Object.entries(summary.byCategory)) Object.assign(s, stats(caseRuns.filter((r) => r.category === cat)));
+  return summary;
+}
+
 export function formatSummaryTable(summary) {
-  const rows = Object.entries(summary.byCategory).map(([cat, s]) => ({
-    category: cat,
-    passed: s.passed,
-    total: s.total,
-    rate: `${s.passRate.toFixed(1)}%`,
-  }));
-  const width = Math.max(18, ...rows.map((r) => r.category.length));
-  const lines = [
-    `${'Category'.padEnd(width)}  ${'Pass'.padStart(6)}  ${'Total'.padStart(6)}  ${'Rate'.padStart(7)}`,
-    `${'-'.repeat(width)}  ${'-'.repeat(6)}  ${'-'.repeat(6)}  ${'-'.repeat(7)}`,
-    ...rows.map((r) => `${r.category.padEnd(width)}  ${String(r.passed).padStart(6)}  ${String(r.total).padStart(6)}  ${r.rate.padStart(7)}`),
-    `${'-'.repeat(width)}  ${'-'.repeat(6)}  ${'-'.repeat(6)}  ${'-'.repeat(7)}`,
-    `${'TOTAL'.padEnd(width)}  ${String(summary.passed).padStart(6)}  ${String(summary.total).padStart(6)}  ${`${summary.passRate.toFixed(1)}%`.padStart(7)}`,
-  ];
-  return lines.join('\n');
+  const timed = summary.avgRequests !== undefined;
+  const row = (name, s) =>
+    [name.padEnd(width), String(s.passed).padStart(6), String(s.total).padStart(6), `${s.passRate.toFixed(1)}%`.padStart(7), ...(timed ? [String(s.avgRequests).padStart(6), String(s.avgSeconds).padStart(6)] : [])].join('  ');
+  const width = Math.max(18, ...Object.keys(summary.byCategory).map((c) => c.length));
+  const rule = ['-'.repeat(width), '-'.repeat(6), '-'.repeat(6), '-'.repeat(7), ...(timed ? ['-'.repeat(6), '-'.repeat(6)] : [])].join('  ');
+  return [
+    ['Category'.padEnd(width), 'Pass'.padStart(6), 'Total'.padStart(6), 'Rate'.padStart(7), ...(timed ? ['Reqs'.padStart(6), 'Secs'.padStart(6)] : [])].join('  '),
+    rule,
+    ...Object.entries(summary.byCategory).map(([cat, s]) => row(cat, s)),
+    rule,
+    row('TOTAL', summary),
+  ].join('\n');
 }
 
 export async function main(argv = process.argv.slice(2)) {
@@ -520,7 +528,7 @@ export async function main(argv = process.argv.slice(2)) {
       model: opts.model,
       complete: caseRuns.length === selected.length,
       totalRequests: getRequestCount(),
-      summary: aggregateScores(caseRuns.map((r) => r.score)),
+      summary: withEfficiency(aggregateScores(caseRuns.map((r) => r.score)), caseRuns),
       cases: caseRuns,
     };
     writeFileSync(runPath, JSON.stringify(report, null, 2) + '\n');

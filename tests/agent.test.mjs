@@ -240,6 +240,29 @@ test('PDF passages link to their page in the file; other files link to their Bri
   assert.equal(locationUrl({ url: 'https://purdue.brightspace.com/c/77', fileHref: null, kind: 'pdf' }, 'page 2'), 'https://purdue.brightspace.com/c/77');
 });
 
+test('read_course_file finds a passage deep in a long file, outlines it once, and reads a page by location', async () => {
+  const filler = (n) => `Week ${n} covers routine review material and practice problems for the unit. `.repeat(12);
+  const pages = Array.from({ length: 18 }, (_, i) => ({ page: i + 1, label: `page ${i + 1}`, text: filler(i + 1) }));
+  pages[14].text += 'Late submissions lose ten percent per day and close after two days.';
+  const tools = createTools({ snapshot: snapshotFixture(), syllabi: {}, now: NOW, readFile: async () => ({ kind: 'pdf', pages }) });
+
+  const first = await tools.run('read_course_file', { file_key: 'content:77', query: 'late submissions penalty' });
+  assert.equal(first.excerpts[0].location, 'page 15');
+  assert.match(first.excerpts[0].text, /ten percent per day/);
+  assert.ok(first.excerpts.reduce((n, e) => n + e.text.length, 0) <= 3600 + 1000, 'excerpts stay within the budget');
+  assert.equal(first.outline.length, 18);
+  assert.match(first.outline[2], /^page 3: Week 3 covers/);
+
+  const again = await tools.run('read_course_file', { file_key: 'content:77', query: 'practice problems' });
+  assert.equal(again.outline, undefined, 'the outline is only sent the first time');
+
+  const page = await tools.run('read_course_file', { file_key: 'content:77', location: 'page 15' });
+  assert.equal(page.excerpts.length, 1);
+  assert.match(page.excerpts[0].text, /close after two days/);
+  assert.equal((await tools.run('read_course_file', { file_key: 'content:77', location: '3' })).excerpts[0].location, 'page 3');
+  assert.match((await tools.run('read_course_file', { file_key: 'content:77', location: 'slide 40' })).error, /page 1 to page 18/);
+});
+
 test('search_course_material indexes readable course files and quiz metadata, get_item matches titles, and failed files report non-substitution guidance', async () => {
   const snapshot = snapshotFixture();
   const opened = new Map();

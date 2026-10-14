@@ -24,14 +24,14 @@ export function tokenize(text) {
     .map((t) => (t.length > 4 && t.endsWith('s') && !t.endsWith('ss') ? t.slice(0, -1) : t));
 }
 
-export function chunkText(text) {
-  if (text.length <= CHUNK_CHARS) return [text];
+export function chunkText(text, { size = CHUNK_CHARS, overlap = CHUNK_OVERLAP } = {}) {
+  if (text.length <= size) return [text];
   const chunks = [];
-  for (let start = 0; start < text.length; start += CHUNK_CHARS - CHUNK_OVERLAP) {
-    let end = Math.min(text.length, start + CHUNK_CHARS);
+  for (let start = 0; start < text.length; start += size - overlap) {
+    let end = Math.min(text.length, start + size);
     if (end < text.length) {
       const space = text.lastIndexOf(' ', end);
-      if (space > start + CHUNK_CHARS / 2) end = space;
+      if (space > start + size / 2) end = space;
     }
     chunks.push(text.slice(start, end).trim());
     if (end >= text.length) break;
@@ -40,10 +40,10 @@ export function chunkText(text) {
 }
 
 // docs: { id, courseId, kind, title, label, url, text }
-export function buildIndex(docs) {
+export function buildIndex(docs, chunking = {}) {
   const entries = [];
   for (const doc of docs) {
-    chunkText(doc.text ?? '').forEach((chunk, i) => {
+    chunkText(doc.text ?? '', chunking).forEach((chunk, i) => {
       const tokens = tokenize(`${doc.title} ${chunk}`);
       if (!tokens.length) return;
       const tf = new Map();
@@ -57,7 +57,7 @@ export function buildIndex(docs) {
   return { entries, df, avgLength };
 }
 
-export function search(index, query, { courseId = null, limit = 6 } = {}) {
+export function search(index, query, { courseId = null, limit = 6, cutoff = RELATIVE_CUTOFF } = {}) {
   const terms = [...new Set(tokenize(query))];
   const pool = courseId ? index.entries.filter((e) => e.courseId === courseId) : index.entries;
   const n = index.entries.length;
@@ -76,7 +76,7 @@ export function search(index, query, { courseId = null, limit = 6 } = {}) {
   scored.sort((a, b) => b.score - a.score);
   const top = scored[0]?.score ?? 0;
   return scored
-    .filter((s) => s.score >= top * RELATIVE_CUTOFF)
+    .filter((s) => s.score >= top * cutoff)
     .slice(0, limit)
     .map(({ entry, score }) => ({ ...entry, tf: undefined, score: Math.round(score * 100) / 100 }));
 }

@@ -7,6 +7,7 @@ Offline and live evaluation suite for the course assistant (`ask()` in `extensio
 - `bench/load.mjs`: Builds `{ snapshot, syllabi, readFile }` from `bench/data/capture.json`.
 - `bench/data/cases.json`: Benchmark cases with fixed `now` timestamps, verified evidence quotes, and deterministic grading expectations (gitignored alongside `bench/data/capture.json`).
 - `bench/score.mjs`: Grades `{ text, citations, trace }` against `expect` (`mustInclude`, `mustNotInclude`, `citeTopicIds`, `notFound`) and computes pass rates by category.
+- `bench/retrieval.mjs`: Offline recall check for passages returned by `read_course_file`.
 - `bench/run.mjs`: CLI runner supporting `--check` mode (offline validation + scripted plumbing check) and live runs against Purdue GenAI Studio.
 
 ## Offline Validation (`--check`)
@@ -34,5 +35,15 @@ GENAI_STUDIO_KEY=your_key_here node bench/run.mjs --cases case-id-1,case-id-2
 ```
 
 Each live run writes a full report (answers, citations, tool traces, request counts, latency, and per-case scores) to `bench/runs/<timestamp>.json`, updating it as each case finishes, and prints a summary table by category. Cases run three at a time by default (`--concurrency N`); the request spacing is shared, so this only overlaps model latency.
+
+The summary table also shows average model requests (`Reqs`) and seconds (`Secs`) per case, so a change that keeps the pass rate but needs fewer lookups still shows up.
+
+## Passage Retrieval (`bench/retrieval.mjs`)
+
+An offline check of `read_course_file` passage selection. For every case whose evidence sits in a course file, it replays the queries the model sent for that file in the saved runs (plus the case question) and reports how often the evidence quote comes back, along with the average result size. It makes no network calls, so it is the quick way to try ranking changes before a live run:
+
+```bash
+node bench/retrieval.mjs --verbose
+```
 
 `bench/data/` comes from the Settings tab's "Save benchmark data" button. Copy the downloaded file to `bench/data/capture.json`.

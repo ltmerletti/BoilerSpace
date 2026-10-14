@@ -1,0 +1,42 @@
+{
+  "manifest_version": 3,
+  "name": "BoilerSpace",
+  "version": "0.2.0",
+  "description": "A planner and course assistant for Purdue Brightspace. Reads your courses, syllabi, assignments and quizzes.",
+  "minimum_chrome_version": "116",
+  "browser_specific_settings": {
+    "gecko": { "id": "boilerspace@lukem.dev", "strict_min_version": "128.0" }
+  },
+  "action": {
+    "default_title": "Open BoilerSpace",
+    "default_icon": { "16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png" }
+  },
+  "icons": { "16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
+  "side_panel": { "default_path": "sidepanel.html" },
+  "sidebar_action": {
+    "default_panel": "sidepanel.html",
+    "default_title": "BoilerSpace",
+    "default_icon": { "16": "icons/icon16.png", "32": "icons/icon32.png" },
+    "open_at_install": false
+  },
+  "background": { "service_worker": "background.js", "scripts": ["background.js"], "type": "module" },
+  "permissions": ["storage", "unlimitedStorage", "scripting", "sidePanel"],
+  "host_permissions": ["https://purdue.brightspace.com/*", "https://genai.rcac.purdue.edu/*"],
+  "content_scripts": [
+    {
+      "matches": ["https://purdue.brightspace.com/d2l/*"],
+      "exclude_matches": ["https://purdue.brightspace.com/d2l/lms/quizzing/user/attempt/*", "https://purdue.brightspace.com/d2l/login*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["lib/*.js", "icons/*.png", "fonts/*.woff2", "sidepanel.html", "sidepanel.css", "sidepanel.js"],
+      "matches": ["https://purdue.brightspace.com/*"]
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  }
+}

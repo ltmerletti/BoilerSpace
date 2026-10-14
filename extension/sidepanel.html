@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BoilerSpace</title>
+    <!-- sidepanel.js loads the stylesheet with a fresh URL each time, since Firefox can keep serving an old copy after a reload. -->
+    <style id="boot">html { visibility: hidden; }</style>
+  </head>
+  <body>
+    <header class="top">
+      <div class="masthead">
+        <img class="logo" src="icons/icon48.png" alt="" width="22" height="22" />
+        <h1 class="brand">BoilerSpace</h1>
+        <span id="sync-status" class="sync-status"></span>
+        <button id="sync-button" class="icon-button" type="button" aria-label="Sync now" title="Sync now">
+          <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M16 10a6 6 0 1 1-1.8-4.3M16 3.5v3.2h-3.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button id="close-button" class="icon-button" type="button" aria-label="Close BoilerSpace" title="Close" hidden>
+          <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M5.5 5.5l9 9M14.5 5.5l-9 9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <nav class="tabs" aria-label="Views">
+        <button type="button" data-view="week">Week</button>
+        <button type="button" data-view="courses">Courses</button>
+        <button type="button" data-view="ask">Ask</button>
+        <button type="button" data-view="settings">Settings</button>
+      </nav>
+      <div id="status" class="status" role="status" hidden></div>
+    </header>
+    <main id="view"></main>
+    <template id="icon-send"><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M10 16V4M5 9l5-5 5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></template>
+    <template id="icon-stop"><svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><rect x="5" y="5" width="10" height="10" rx="1.5" fill="currentColor"/></svg></template>
+    <template id="icon-chats"><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M4 5h12M4 10h12M4 15h8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></template>
+    <template id="icon-new"><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M10 4.5v11M4.5 10h11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></template>
+    <template id="icon-delete"><svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M5.5 5.5l9 9M14.5 5.5l-9 9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></template>
+    <template id="icon-chevron"><svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M7.5 5l5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></template>
+    <script type="module" src="sidepanel.js"></script>
+  </body>
+</html>

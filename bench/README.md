@@ -1,0 +1,38 @@
+# BoilerSpace Assistant Benchmark
+
+Offline and live evaluation suite for the course assistant (`ask()` in `extension/lib/agent.js`).
+
+## Files
+
+- `bench/load.mjs`: Builds `{ snapshot, syllabi, readFile }` from `bench/data/capture.json`.
+- `bench/data/cases.json`: Benchmark cases with fixed `now` timestamps, verified evidence quotes, and deterministic grading expectations (gitignored alongside `bench/data/capture.json`).
+- `bench/score.mjs`: Grades `{ text, citations, trace }` against `expect` (`mustInclude`, `mustNotInclude`, `citeTopicIds`, `notFound`) and computes pass rates by category.
+- `bench/run.mjs`: CLI runner supporting `--check` mode (offline validation + scripted plumbing check) and live runs against Purdue GenAI Studio.
+
+## Offline Validation (`--check`)
+
+Validate the schema of `bench/data/cases.json`, verify that every evidence quote appears in `bench/data/capture.json`, and run a scripted plumbing check through `ask()` and `readEventStream()` with no network calls:
+
+```bash
+node bench/run.mjs --check
+```
+
+## Running Live Benchmarks
+
+Live runs require a Purdue GenAI Studio API key in `GENAI_STUDIO_KEY`. Requests stream via `https://genai.rcac.purdue.edu/api/chat/completions`, are spaced at least 3.1 seconds apart (≤ 20 requests/minute), and automatically retry HTTP 429 responses.
+
+```bash
+# Run all benchmark cases with the default model (qwen3.8:27b)
+GENAI_STUDIO_KEY=your_key_here node bench/run.mjs
+
+# Choose a specific model
+GENAI_STUDIO_KEY=your_key_here node bench/run.mjs --model gpt-oss:120b
+
+# Filter by category, case IDs, or limit count
+GENAI_STUDIO_KEY=your_key_here node bench/run.mjs --category due_dates,policies --limit 10
+GENAI_STUDIO_KEY=your_key_here node bench/run.mjs --cases case-id-1,case-id-2
+```
+
+Each live run writes a full report (answers, citations, tool traces, request counts, latency, and per-case scores) to `bench/runs/<timestamp>.json`, updating it as each case finishes, and prints a summary table by category. Cases run three at a time by default (`--concurrency N`); the request spacing is shared, so this only overlaps model latency.
+
+`bench/data/` comes from the Settings tab's "Save benchmark data" button. Copy the downloaded file to `bench/data/capture.json`.

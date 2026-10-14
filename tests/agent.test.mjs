@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { snapshotFixture, SYLLABUS_PAGES } from './helpers.mjs';
 import { buildIndex, documentsFromSnapshot, search, tokenize } from '../extension/lib/search.js';
-import { ask, createTools, partialAnswer, resolveCitations, summarizeResult, thinkingText } from '../extension/lib/agent.js';
+import { ask, createTools, partialAnswer, resolveCitations, stripStaleCitations, summarizeResult, thinkingText } from '../extension/lib/agent.js';
 import { readEventStream } from '../extension/lib/genai.js';
 import { locationUrl } from '../extension/lib/links.js';
 
@@ -39,8 +39,10 @@ test('search finds the late policy in the syllabus and the room change announcem
 
 test('tools give exact dates, resolve course labels and never include grades', async () => {
   const tools = createTools({ snapshot: snapshotFixture(), syllabi: SYLLABI, now: NOW });
-  const upcoming = await tools.run('list_upcoming', { course_id: 'CS 25200', days: 60 });
+  const upcoming = (await tools.run('list_upcoming', { course_id: 'CS 25200', days: 60 })).items;
   assert.equal(upcoming[0].title, 'Quiz 5');
+  assert.equal(upcoming[0].assessment, undefined, 'a quiz is not marked as an assessment');
+  assert.equal(upcoming.find((u) => u.title === 'Midterm 1').assessment, true, 'an event titled like an exam is marked as an assessment');
   assert.equal(upcoming[0].days_from_today, 1);
   assert.match(upcoming[0].due_display, /^Wed, Oct 14, 2026, 11:00\sAM ET$/);
   const demo = upcoming.find((u) => u.title === 'Final project demo');
@@ -88,8 +90,9 @@ test('citations keep only ids the tools handed out', async () => {
   const tools = createTools({ snapshot: snapshotFixture(), syllabi: SYLLABI, now: NOW });
   await tools.run('list_upcoming', {});
   const { text, citations } = resolveCitations('Quiz 5 is tomorrow [S1]. Project 1 is Thursday [S2, S40]. Made up [S99].', tools.sources);
-  assert.equal(text, 'Quiz 5 is tomorrow [S1]. Project 1 is Thursday [S2]. Made up.');
+  assert.equal(text, 'Quiz 5 is tomorrow [1]. Project 1 is Thursday [2]. Made up.');
   assert.deepEqual(citations.map((c) => c.id), ['S1', 'S2']);
+  assert.equal(stripStaleCitations('The midterm is Thursday [S2]. See [1, 2]. Year [2026] stays.'), 'The midterm is Thursday. See. Year [2026] stays.');
 });
 
 test('the agent loop calls tools, passes results back and returns cited sources', async () => {
@@ -100,7 +103,7 @@ test('the agent loop calls tools, passes results back and returns cited sources'
       return { role: 'assistant', content: null, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'list_upcoming', arguments: '{"days":7}' } }] };
     }
     const toolResult = JSON.parse(body.messages.at(-1).content);
-    const quiz = toolResult.find((r) => r.title === 'Quiz 5');
+    const quiz = toolResult.items.find((r) => r.title === 'Quiz 5');
     return { role: 'assistant', content: `You have Quiz 5 on ${quiz.due_display} [${quiz.source}].` };
   }
   const traces = [];
@@ -238,6 +241,59 @@ test('PDF passages link to their page in the file; other files link to their Bri
   assert.equal(tools.sources.get(read.excerpts[0].source).url, 'https://purdue.brightspace.com/content/enforced/1600001-CS25200/Syllabus.pdf#page=3');
   assert.equal(locationUrl({ url: 'https://purdue.brightspace.com/c/78', fileHref: '/content/enforced/x/notes.docx', kind: 'docx' }, 'part 2'), 'https://purdue.brightspace.com/c/78');
   assert.equal(locationUrl({ url: 'https://purdue.brightspace.com/c/77', fileHref: null, kind: 'pdf' }, 'page 2'), 'https://purdue.brightspace.com/c/77');
+});
+
+test('a reworded search is refused, and citation markers from an earlier reply are not sent back to the model', async () => {
+  const tools = createTools({ snapshot: snapshotFixture(), syllabi: SYLLABI, now: NOW });
+  const first = await tools.run('search_course_material', { query: 'late penalty', course_id: 1600001 });
+  assert.ok(first.results.length > 0);
+  const again = await tools.run('search_course_material', { query: 'late penalty for work', course_id: 1600001 });
+  assert.match(again.note, /already searched/);
+  assert.equal(again.results, undefined);
+  const broader = await tools.run('search_course_material', { query: 'penalty', course_id: 1600001 });
+  assert.ok(broader.results?.length, 'a broader search is allowed');
+
+  let seen = '';
+  await ask({
+    question: 'And the room?',
+    history: [
+      { role: 'user', content: 'When is the midterm?' },
+      { role: 'assistant', content: 'The midterm is Wednesday [S2].' },
+    ],
+    snapshot: snapshotFixture(),
+    syllabi: SYLLABI,
+    now: NOW,
+    complete: async (body) => {
+      seen = body.messages.find((m) => m.role === 'assistant')?.content ?? '';
+      return { role: 'assistant', content: 'ELLT 116 [S1].' };
+    },
+  });
+  assert.equal(seen, 'The midterm is Wednesday.');
+});
+
+test('a reply with no lookup is sent back to look the course up, and a PDF is listed instead of the same PowerPoint', async () => {
+  let calls = 0;
+  let followup = '';
+  const answer = await ask({
+    question: 'What is a multiplexer?',
+    snapshot: snapshotFixture(),
+    syllabi: SYLLABI,
+    now: NOW,
+    complete: async (body) => {
+      calls += 1;
+      followup = body.messages.at(-1).content;
+      return { role: 'assistant', content: 'It selects one input.' };
+    },
+  });
+  assert.equal(calls, 2);
+  assert.match(followup, /Look this up/);
+  assert.match(answer.text, /selects one input/);
+
+  const snapshot = snapshotFixture();
+  snapshot.data[0].content.push({ id: 79, courseId: 1600001, title: 'Lecture 12 slides.pptx', modulePath: ['Week 7'], type: 'File', fileUrl: '/d2l/api/le/1.96/1600001/content/topics/79/file', url: 'https://purdue.brightspace.com/c/79', isHidden: false });
+  const titles = (await createTools({ snapshot, syllabi: {}, now: NOW }).run('list_course_files', { course_id: 1600001 })).files.map((f) => f.title);
+  assert.ok(titles.includes('Lecture 12 slides.pdf'));
+  assert.ok(!titles.includes('Lecture 12 slides.pptx'));
 });
 
 test('read_course_file finds a passage deep in a long file, outlines it once, and reads a page by location', async () => {

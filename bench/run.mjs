@@ -379,7 +379,8 @@ export async function runPlumbingCheck(cases, env) {
             tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'list_upcoming', arguments: JSON.stringify({ days: 7 }) } }],
           };
         } else {
-          const items = JSON.parse(body.messages.at(-1).content);
+          const listed = JSON.parse(body.messages.at(-1).content);
+          const items = listed.items ?? listed;
           scripted = {
             content: items.map((i) => `${i.title}: ${i.due_display} [${i.source}]`).join('; '),
           };

@@ -14,6 +14,7 @@ const HISTORY_MESSAGES = 8;
 const SNIPPET_CHARS = 700;
 const DETAIL_CHARS = 3000;
 const MAX_FILES_LISTED = 60;
+const ASSESSMENT = /\b(midterms?|final exams?|exams?|checkpoints?)\b/i;
 const FILE_EXCERPTS = 10;
 const FILE_EXCERPT_BUDGET = 3600;
 const FILE_CHUNKING = { size: 500, overlap: 120 };
@@ -31,7 +32,8 @@ const TOOLS = [
   },
   {
     name: 'list_upcoming',
-    description: 'List assignments, quizzes, exams and events due soon, from Brightspace and from syllabi.',
+    description:
+      'List assignments, quizzes, exams and events due soon, from Brightspace and from syllabi. An item with assessment true is an exam, midterm, final or checkpoint even when its kind is event or quiz. Exams mentioned only in an announcement are not in this list.',
     parameters: {
       type: 'object',
       properties: {
@@ -129,6 +131,7 @@ export function createTools({ snapshot, syllabi = {}, reviews = {}, now = new Da
     return course ? shortCourseLabel(course) : String(courseId);
   };
   const openedFiles = new Set();
+  const priorSearches = [];
   let indexPromise = null;
   async function getIndex() {
     if (indexPromise) return indexPromise;
@@ -233,7 +236,7 @@ export function createTools({ snapshot, syllabi = {}, reviews = {}, now = new Da
     list_upcoming({ course_id, days = 14 }) {
       const course = resolveCourse(course_id);
       const horizon = Math.min(Math.max(Number(days) || 14, 1), 120);
-      return agendaItems(snapshot, syllabi, reviews)
+      const items = agendaItems(snapshot, syllabi, reviews)
         .filter((item) => !course || item.courseId === course.id)
         .map((item) => ({ item, offset: daysFromToday(item.allDay && item.date ? item.date : item.dueAt, now) }))
         .filter(({ offset }) => offset >= 0 && offset <= horizon)
@@ -245,8 +248,13 @@ export function createTools({ snapshot, syllabi = {}, reviews = {}, now = new Da
           kind: item.kind,
           due_display: dueDisplay(item.allDay && item.date ? item.date : item.dueAt, { allDay: item.allDay }),
           days_from_today: offset,
+          ...(ASSESSMENT.test(item.title) ? { assessment: true } : {}),
           ...(item.source === 'syllabus' ? { from_syllabus: true, confirmed_in_brightspace: false } : {}),
         }));
+      return {
+        note: 'kind is Brightspace\'s own label, so count every item with assessment true. An exam, midterm or checkpoint that was only announced is not in this list; search announcements before saying this is all of them.',
+        items,
+      };
     },
 
     get_item({ item_key, course_id }) {
@@ -292,7 +300,21 @@ export function createTools({ snapshot, syllabi = {}, reviews = {}, now = new Da
 
     async search_course_material({ query, course_id }) {
       const course = resolveCourse(course_id);
+      const key = course?.id ?? 'all';
+      const terms = new Set(tokenize(query));
+      const prior = priorSearches.find((p) => {
+        if (p.key !== key || !p.hadResults) return false;
+        const added = [...terms].filter((t) => !p.terms.has(t));
+        return added.length > 0 && termOverlap(p.terms, terms) >= 0.6;
+      });
+      if (prior) {
+        return {
+          note: 'You already searched this course for that. Open a file_key from those results with read_course_file instead of searching again with different words.',
+          ...(prior.fileKeys.length ? { earlier_file_keys: prior.fileKeys } : {}),
+        };
+      }
       const results = search(await getIndex(), query, { courseId: course?.id ?? null });
+      priorSearches.push({ key, terms, hadResults: results.length > 0, fileKeys: [...new Set(results.map((r) => r.file_key).filter(Boolean))].slice(0, 6) });
       if (!results.length) return { results: [], note: 'Nothing in the synced course material matches.' };
       return {
         results: results.map((r) => ({
@@ -359,7 +381,7 @@ export function createTools({ snapshot, syllabi = {}, reviews = {}, now = new Da
     list_course_files({ course_id, query }) {
       const course = resolveCourse(course_id);
       if (!course) throw new Error('course_id is required.');
-      const all = courseFiles(course.id);
+      const all = oneCopy(courseFiles(course.id));
       const terms = tokenize(query ?? '');
       const matches = terms.length ? all.filter((t) => tokenize(`${t.title} ${t.modulePath.join(' ')}`).some((w) => terms.includes(w))) : all;
       const list = matches.length ? matches : all;
@@ -470,10 +492,14 @@ export function systemPrompt({ snapshot, syllabi, now, scopeCourseId }) {
     `Today is ${formatDayKey(today, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}. Times are Eastern (West Lafayette).`,
     '',
     'Rules:',
-    '- Look things up with the tools. Never guess course facts.',
+    '- Look things up with the tools before you answer. Never answer from general knowledge, and never guess course facts.',
+    '- What an instructor wants students to know is the learning objectives in the lecture slides. A passing mention in another deck is not that list. Slide titles often leave the topic out, so if the first file has no learning objective for it, open other lecture files before you answer.',
     '- Copy dates exactly as given in due_display. Never work out a weekday or a calendar date yourself.',
-    '- Cite each fact with the source id from the tool result in square brackets, like [S2]. Only use ids the tools returned.',
+    '- Cite each fact with the source id from the tool result in square brackets, like [S2]. Only cite an id for a fact that result states. Ids from an earlier reply do not carry over, so look a repeated fact up again before citing it.',
     '- Items with from_syllabus come from the syllabus, not Brightspace. Say so when you mention them.',
+    '- When the student asks what exams are coming up, include midterms, finals and checkpoints too. Count a week as 7 days. list_upcoming is not the whole list: search announcements, then open a schedule or syllabus file if a course is still missing, before you say that is all.',
+    '- Do not guess what an exam covers from which lectures came recently. If no document states the scope, say it is not posted.',
+    '- Search with the words the document would use. Do not put a guessed answer in the query.',
     '- Exam dates, schedules and policies are often only in a course file. If the synced data does not answer the question, call list_course_files and open the likely files (syllabus, schedule, course information, course overview) with read_course_file before giving up.',
     '- If the excerpts from a file do not answer the question, look at its outline and read the most likely page with location instead of searching again with new words. If that does not find it either, it is probably not in that file; answer with what you have.',
     '- If you still find nothing, say what you checked and suggest who to ask. Answer the parts you did find.',
@@ -495,8 +521,15 @@ export function resolveCitations(text, sources) {
     .replace(/<think>[\s\S]*?<\/think>/g, '')
     .replace(/[[【]((?:S\d+\s*,?\s*)+)[\]】]/g, (_, inner) => {
       const ids = inner.match(/S\d+/g).filter((id) => sources.get(id));
-      for (const id of ids) if (!used.includes(id)) used.push(id);
-      return ids.length ? `[${ids.join(', ')}]` : '';
+      const numbers = ids.map((id) => {
+        let n = used.indexOf(id);
+        if (n === -1) {
+          used.push(id);
+          n = used.length - 1;
+        }
+        return n + 1;
+      });
+      return numbers.length ? `[${numbers.join(', ')}]` : '';
     })
     .replace(/[\u00a0\u2000-\u200b\u202f\u205f\u3000]/g, ' ')
     .replace(/ +([.,;:])/g, '$1')
@@ -523,7 +556,7 @@ const plural = (n, word, many = /(s|sh|ch|x)$/.test(word) ? `${word}es` : `${wor
 // One line saying what a tool call found, for the work log.
 export function summarizeResult(name, result) {
   if (result?.error) return `Failed: ${result.error}`;
-  if (result?.note && !result.excerpts && !result.results?.length) return result.note;
+  if (result?.note && !result.excerpts && !result.results?.length && !result.items) return result.note;
   try {
     return describeResult(name, result);
   } catch {
@@ -536,7 +569,7 @@ function describeResult(name, result) {
     case 'list_courses':
       return plural(result.length, 'course');
     case 'list_upcoming':
-      return result.length ? plural(result.length, 'item') : 'Nothing due in that window';
+      return result.items.length ? plural(result.items.length, 'item') : 'Nothing due in that window';
     case 'get_item':
       return result.title;
     case 'search_course_material':
@@ -558,12 +591,42 @@ function describeResult(name, result) {
 
 const WRAP_UP =
   'Stop looking things up and answer my question now, using only what the tools already returned. If something I asked about is not in what you found, say that plainly and name what you checked. Cite sources as before.';
+const LOOK_UP = 'Look this up with the tools before you answer. Do not answer from general knowledge.';
+
+// A lecture posted as both a PDF and a PowerPoint is one file. Keep the PDF.
+function oneCopy(files) {
+  const rank = (title) => (/\.pdf$/i.test(title) ? 0 : /\.pptx?$/i.test(title) ? 1 : /\.rtf$/i.test(title) ? 2 : 0);
+  const stem = (title) => title.replace(/\.(pdf|pptx?|rtf|docx?)$/i, '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const best = new Map();
+  for (const file of files) {
+    const key = stem(file.title);
+    const prev = best.get(key);
+    if (!prev || rank(file.title) < rank(prev.title)) best.set(key, file);
+  }
+  return files.filter((file) => best.get(stem(file.title)) === file);
+}
 
 const historyMessage = ({ role, content, tool_calls }) => ({
   role,
   content: String(content ?? '').replace(/<think>[\s\S]*?(<\/think>|$)/g, '').trim(),
   ...(tool_calls ? { tool_calls } : {}),
 });
+
+// A previous reply's [S2] or [2] is a different item in this reply, so drop those markers before the model sees the history.
+export function stripStaleCitations(content) {
+  return String(content ?? '').replace(/[[【]((?:S\d+|\d+)(?:\s*,\s*(?:S\d+|\d+))*)[\]】]/g, (whole, inner) => {
+    const parts = inner.split(/\s*,\s*/);
+    const citation = parts.every((p) => /^S\d+$/.test(p) || (Number(p) >= 1 && Number(p) <= 30));
+    return citation ? '' : whole;
+  }).replace(/[ \t]{2,}/g, ' ').replace(/ +([.,;:])/g, '$1').trim();
+}
+
+function termOverlap(a, b) {
+  if (!a.size || !b.size) return 0;
+  let shared = 0;
+  for (const t of a) if (b.has(t)) shared += 1;
+  return shared / Math.min(a.size, b.size);
+}
 
 // history: [{ role: 'user' | 'assistant', content }]
 // onTrace(trace) reports the work log as it grows: { type: 'thought', text } and
@@ -586,7 +649,7 @@ export async function ask({
   const tools = createTools({ snapshot, syllabi, reviews, now, ...(readFile ? { readFile } : {}), ...(cachedFile !== undefined ? { cachedFile } : {}) });
   const messages = [
     { role: 'system', content: systemPrompt({ snapshot, syllabi, now, scopeCourseId }) },
-    ...history.slice(-HISTORY_MESSAGES).map(({ role, content }) => ({ role, content })),
+    ...history.slice(-HISTORY_MESSAGES).map(({ role, content }) => ({ role, content: role === 'assistant' ? stripStaleCitations(content) : content })),
     { role: 'user', content: question },
   ];
   const trace = [];
@@ -595,6 +658,8 @@ export async function ask({
 
   // A model that runs out of lookups (or stops with only reasoning) gets one turn without tools to answer.
   let wrappingUp = false;
+  let lookedUp = false;
+  let insisted = false;
   const wrapUp = () => {
     wrappingUp = true;
     messages.push({ role: 'user', content: WRAP_UP });
@@ -629,6 +694,7 @@ export async function ask({
     messages.push(historyMessage(message));
 
     if (message.tool_calls?.length && !lastTurn) {
+      lookedUp = true;
       onText?.('');
       for (const call of message.tool_calls) {
         let args = {};
@@ -650,6 +716,11 @@ export async function ask({
     }
     report();
     const { text, citations } = resolveCitations(message.tool_calls?.length ? '' : message.content ?? '', tools.sources);
+    if (text && !lookedUp && !insisted && !lastTurn) {
+      insisted = true;
+      messages.push({ role: 'user', content: LOOK_UP });
+      continue;
+    }
     if (text) return finish(text, citations);
     if (lastTurn) return finish(fallback());
     wrapUp();

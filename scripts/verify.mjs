@@ -71,7 +71,7 @@ function fakeModel(body) {
     return { role: 'assistant', content: `Your CS 25200 midterm is **Wednesday, October 21 at 7:00 PM** [${hit.source}].` };
   }
   if (results.length === 0) return toolCall('call_1', 'list_upcoming', { days: 7 });
-  const items = results[0].slice(0, 4);
+  const items = results[0].items.slice(0, 4);
   const lines = items.map((i) => `- **${i.title}** (${i.course}), ${i.due_display} [${i.source}]`);
   return { role: 'assistant', content: `Here is what is due in the next 7 days:\n${lines.join('\n')}\nQuiz 5 has a 20 minute limit and one attempt.` };
 }

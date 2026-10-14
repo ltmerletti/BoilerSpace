@@ -894,16 +894,16 @@ function coursesView() {
 
 function inlineNodes(text, citations) {
   const nodes = [];
-  const pattern = /\*\*([^*]+)\*\*|\[((?:S\d+(?:,\s*)?)+)\]/g;
+  const pattern = /\*\*([^*]+)\*\*|\[((?:(?:S)?\d+(?:,\s*)?)+)\]/g;
   let last = 0;
   for (const match of text.matchAll(pattern)) {
     nodes.push(text.slice(last, match.index));
     if (match[1]) nodes.push(h('strong', null, match[1]));
     else {
-      for (const id of match[2].match(/S\d+/g)) {
-        const index = citations.findIndex((c) => c.id === id);
-        if (index === -1) continue;
+      for (const id of match[2].match(/S?\d+/g)) {
+        const index = id.startsWith('S') ? citations.findIndex((c) => c.id === id) : Number(id) - 1;
         const source = citations[index];
+        if (!source) continue;
         nodes.push(link(source.url, String(index + 1), { class: 'cite', title: source.label }));
       }
     }

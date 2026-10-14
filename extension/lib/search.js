@@ -1,5 +1,6 @@
 // BM25 keyword search over synced course material. Small enough to rebuild on every question.
 
+import { dueDisplay } from './dates.js';
 import { shortCourseLabel } from './courses.js';
 import { locationUrl, syllabusFile } from './links.js';
 
@@ -80,14 +81,39 @@ export function search(index, query, { courseId = null, limit = 6 } = {}) {
     .map(({ entry, score }) => ({ ...entry, tf: undefined, score: Math.round(score * 100) / 100 }));
 }
 
-export function documentsFromSnapshot(snapshot, syllabi = {}) {
+function itemDetailsText(item) {
+  const meta = [];
+  if (item.dueAt) meta.push(`Due: ${dueDisplay(item.dueAt)}`);
+  if (item.endAt) meta.push(`Available until: ${dueDisplay(item.endAt)}`);
+  if (item.kind === 'assignment' && item.points != null) meta.push(`Points: ${item.points}`);
+  if (item.kind === 'quiz') {
+    if (item.timeLimitMinutes != null) meta.push(`Time limit: ${item.timeLimitMinutes} minutes`);
+    if (item.attempts != null) meta.push(`Attempts allowed: ${item.attempts}`);
+  }
+  return [meta.join('. '), item.instructions ?? ''].filter(Boolean).join('\n');
+}
+
+export function documentsFromSnapshot(snapshot, syllabi = {}, { files = [] } = {}) {
   const docs = [];
   const courseName = new Map(snapshot.courses.map((c) => [c.id, shortCourseLabel(c)]));
+  const fileLabel = (courseId, title) => {
+    const course = courseName.get(courseId) ?? String(courseId);
+    return title.toLowerCase().replace(/\s+/g, ' ').startsWith(course.toLowerCase()) ? title : `${course} ${title}`;
+  };
   for (const data of snapshot.data) {
     const course = courseName.get(data.courseId);
     for (const item of [...data.assignments, ...data.quizzes]) {
       if (item.isHidden || item.isActive === false) continue;
-      docs.push({ id: `${item.kind}:${item.id}`, courseId: data.courseId, kind: item.kind, title: item.title, label: `${course}: ${item.title}`, url: item.url, text: item.instructions ?? '' });
+      docs.push({
+        id: `${item.kind}:${item.id}`,
+        item_key: `${item.kind}:${item.id}`,
+        courseId: data.courseId,
+        kind: item.kind,
+        title: item.title,
+        label: `${course}: ${item.title}`,
+        url: item.url,
+        text: itemDetailsText(item),
+      });
     }
     for (const a of data.announcements) {
       if (a.isHidden) continue;
@@ -95,16 +121,38 @@ export function documentsFromSnapshot(snapshot, syllabi = {}) {
     }
     for (const t of data.content) {
       if (t.isHidden) continue;
-      docs.push({ id: `content:${t.id}`, courseId: data.courseId, kind: 'content', title: t.title, label: `${course} content: ${[...t.modulePath, t.title].join(' / ')}`, url: t.url, text: t.modulePath.join(' ') });
+      docs.push({ id: `content:${t.id}`, file_key: t.fileUrl ? `content:${t.id}` : undefined, courseId: data.courseId, kind: 'content', title: t.title, label: `${course} content: ${[...t.modulePath, t.title].join(' / ')}`, url: t.url, text: t.modulePath.join(' ') });
     }
   }
-  for (const record of Object.values(syllabi)) {
+  const indexedSyllabusKeys = new Set();
+  for (const [key, record] of Object.entries(syllabi)) {
     const usable = record?.status === 'done' ? record : record?.previous;
     if (!usable?.pages) continue;
-    const course = courseName.get(usable.courseId);
+    const courseId = usable.courseId ?? Number(key);
+    const course = courseName.get(courseId);
     const file = syllabusFile(usable, snapshot);
+    if (usable.topicId) indexedSyllabusKeys.add(`${courseId}:${usable.topicId}`);
     for (const page of usable.pages) {
-      docs.push({ id: `syllabus:${usable.courseId}:${page.page}`, courseId: usable.courseId, kind: 'syllabus', title: usable.title, label: `${course} syllabus, ${page.label}`, url: locationUrl(file, page.label), text: page.text });
+      docs.push({ id: `syllabus:${courseId}:${page.page}`, courseId, kind: 'syllabus', title: usable.title, label: `${course} syllabus, ${page.label}`, url: locationUrl(file, page.label), text: page.text });
+    }
+  }
+  for (const f of files) {
+    if (!f?.pages?.length || indexedSyllabusKeys.has(`${f.courseId}:${f.id}`)) continue;
+    const fileKey = f.key ?? (f.id === 'overview' ? `overview:${f.courseId}` : `content:${f.id}`);
+    const file = { url: f.url, fileHref: f.fileHref, kind: f.kind };
+    for (const page of f.pages) {
+      if (!page.text) continue;
+      docs.push({
+        id: `file:${fileKey}:${page.label}`,
+        file_key: fileKey,
+        courseId: f.courseId,
+        kind: 'file',
+        title: f.title,
+        label: `${fileLabel(f.courseId, f.title)}, ${page.label}`,
+        url: locationUrl(file, page.label),
+        text: page.text,
+        location: page.label,
+      });
     }
   }
   return docs;

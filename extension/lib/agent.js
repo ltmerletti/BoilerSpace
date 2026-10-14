@@ -6,7 +6,7 @@ import { agendaItems, courseTitle, currentCourses, shortCourseLabel } from './pl
 import { buildIndex, documentsFromSnapshot, search, tokenize } from './search.js';
 import { dayKey, daysFromToday, dueDisplay, formatDayKey } from './dates.js';
 import { usableRecord } from './syllabus.js';
-import { readCourseFile } from './files.js';
+import { getCachedCourseFile, readCourseFile } from './files.js';
 import { locationUrl, syllabusFile } from './links.js';
 
 const MAX_TURNS = 8;
@@ -37,12 +37,19 @@ const TOOLS = [
   },
   {
     name: 'get_item',
-    description: 'Get full details and instructions for one assignment or quiz, by the item_key from list_upcoming.',
-    parameters: { type: 'object', properties: { item_key: { type: 'string' } }, required: ['item_key'] },
+    description: 'Get full details, time limit, attempts allowed, and instructions for one assignment or quiz, by item_key (from list_upcoming or search_course_material) or by title.',
+    parameters: {
+      type: 'object',
+      properties: {
+        item_key: { type: 'string', description: 'e.g. "quiz:21" or "assignment:11", or a quiz/assignment title.' },
+        course_id: { type: 'integer', description: 'Optional course id when looking up by title.' },
+      },
+      required: ['item_key'],
+    },
   },
   {
     name: 'search_course_material',
-    description: 'Keyword search over syllabi, assignment instructions, quiz descriptions, announcements and content titles.',
+    description: 'Keyword search over syllabi, assignment instructions, quiz descriptions, announcements, content titles and readable course files.',
     parameters: {
       type: 'object',
       properties: { query: { type: 'string' }, course_id: { type: 'integer', description: 'Limit to one course.' } },
@@ -51,12 +58,12 @@ const TOOLS = [
   },
   {
     name: 'get_syllabus_facts',
-    description: 'Get policies (late work, AI use, attendance, office hours, grading weights) and syllabus dates for one course.',
+    description: 'Get extracted policies (late work, AI use, attendance, office hours, grading weights) and syllabus dates for a course whose syllabus has already been read.',
     parameters: { type: 'object', properties: { course_id: { type: 'integer' } }, required: ['course_id'] },
   },
   {
     name: 'list_announcements',
-    description: 'List recent course announcements, newest first.',
+    description: 'List recent course announcements (including exam rooms, schedule updates, and reminders), newest first.',
     parameters: {
       type: 'object',
       properties: { course_id: { type: 'integer' }, limit: { type: 'integer', description: 'Default 5, max 15.' } },
@@ -105,15 +112,33 @@ class SourceRegistry {
   }
 }
 
-export function createTools({ snapshot, syllabi = {}, reviews = {}, now = new Date(), readFile = readCourseFile }) {
+// cachedFile(topic, { syllabi }) returns a promise for a file that is already loaded, or null. Search only
+// covers those, because opening every file in the background would download whole courses.
+export function createTools({ snapshot, syllabi = {}, reviews = {}, now = new Date(), readFile = readCourseFile, cachedFile = readFile === readCourseFile ? getCachedCourseFile : null }) {
   const sources = new SourceRegistry();
   const courses = currentCourses(snapshot);
   const label = (courseId) => {
     const course = courses.find((c) => c.id === courseId);
     return course ? shortCourseLabel(course) : String(courseId);
   };
-  let index = null;
-  const getIndex = () => (index ??= buildIndex(documentsFromSnapshot(snapshot, syllabi)));
+  let indexPromise = null;
+  async function getIndex() {
+    if (indexPromise) return indexPromise;
+    indexPromise = (async () => {
+      const files = [];
+      for (const data of snapshot.data) {
+        if (!courses.some((c) => c.id === data.courseId)) continue;
+        for (const topic of courseFiles(data.courseId)) {
+          const loader = (topic.fileUrl || topic.text) && cachedFile?.(topic, { syllabi });
+          if (!loader) continue;
+          const res = await loader.catch(() => null);
+          if (res?.pages?.length) files.push({ ...topic, kind: res.kind, pages: res.pages });
+        }
+      }
+      return buildIndex(documentsFromSnapshot(snapshot, syllabi, { files }));
+    })();
+    return indexPromise;
+  }
 
   function resolveCourse(value) {
     if (value === undefined || value === null || value === '') return null;
@@ -132,8 +157,10 @@ export function createTools({ snapshot, syllabi = {}, reviews = {}, now = new Da
     return title.toLowerCase().replace(/\s+/g, ' ').startsWith(course.toLowerCase()) ? title : `${course} ${title}`;
   };
 
-  const syllabusSource = (record, page) =>
-    sources.add({ key: `syllabus:${record.courseId}:${page}`, label: `${label(record.courseId)} syllabus, ${page}`, url: locationUrl(syllabusFile(record, snapshot), page) });
+  const syllabusSource = (record, page, fallbackCourseId = null) => {
+    const cId = record.courseId ?? fallbackCourseId;
+    return sources.add({ key: `syllabus:${cId}:${page}`, label: `${label(cId)} syllabus, ${page}`, url: locationUrl(syllabusFile(record, snapshot), page) });
+  };
 
   function courseFiles(courseId) {
     const data = snapshot.data.find((d) => d.courseId === courseId);
@@ -214,36 +241,57 @@ export function createTools({ snapshot, syllabi = {}, reviews = {}, now = new Da
         }));
     },
 
-    get_item({ item_key }) {
-      const [kind, rawId] = String(item_key).split(':');
-      for (const data of snapshot.data) {
-        const list = kind === 'quiz' ? data.quizzes : kind === 'assignment' ? data.assignments : [];
-        const item = list.find((i) => String(i.id) === rawId);
-        if (!item) continue;
-        return {
-          source: sources.add({ key: `${item.kind}:${item.id}`, label: `${label(item.courseId)}: ${item.title}`, url: item.url }),
-          course: label(item.courseId),
-          title: item.title,
-          kind: item.kind,
-          due_display: dueDisplay(item.dueAt),
-          days_from_today: item.dueAt ? daysFromToday(item.dueAt, now) : null,
-          available_until: item.endAt ? dueDisplay(item.endAt) : null,
-          instructions: clip(item.instructions, DETAIL_CHARS) || '(no instructions posted)',
-          ...(item.kind === 'assignment' ? { points: item.points, has_rubric: item.hasRubric } : {}),
-          ...(item.kind === 'quiz' ? { time_limit_minutes: item.timeLimitMinutes, attempts_allowed: item.attempts } : {}),
-        };
+    get_item({ item_key, course_id }) {
+      const course = resolveCourse(course_id);
+      const raw = String(item_key ?? '').trim();
+      const [kind, rawId] = raw.split(':');
+      const pools = snapshot.data.filter((d) => !course || d.courseId === course.id);
+      let found = null;
+      if (rawId !== undefined && (kind === 'quiz' || kind === 'assignment')) {
+        for (const data of pools) {
+          const list = kind === 'quiz' ? data.quizzes : data.assignments;
+          const item = (list ?? []).find((i) => String(i.id) === rawId);
+          if (item) {
+            found = item;
+            break;
+          }
+        }
       }
-      throw new Error(`No assignment or quiz has item_key "${item_key}".`);
+      if (!found) {
+        const needle = (rawId !== undefined ? `${kind} ${rawId}` : raw).toLowerCase().trim();
+        const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const allItems = pools.flatMap((d) => [...(d.assignments ?? []), ...(d.quizzes ?? [])]).filter((i) => !i.isHidden && i.isActive !== false);
+        found =
+          allItems.find((i) => String(i.id) === raw || i.title.toLowerCase() === needle) ??
+          allItems.find((i) => new RegExp(`(^|\\W)${escaped}(\\W|$)`, 'i').test(i.title)) ??
+          allItems.find((i) => i.title.toLowerCase().includes(needle));
+      }
+      if (!found) throw new Error(`No assignment or quiz has item_key "${item_key}".`);
+      return {
+        source: sources.add({ key: `${found.kind}:${found.id}`, label: `${label(found.courseId)}: ${found.title}`, url: found.url }),
+        item_key: `${found.kind}:${found.id}`,
+        course: label(found.courseId),
+        title: found.title,
+        kind: found.kind,
+        due_display: dueDisplay(found.dueAt),
+        days_from_today: found.dueAt ? daysFromToday(found.dueAt, now) : null,
+        available_until: found.endAt ? dueDisplay(found.endAt) : null,
+        instructions: clip(found.instructions, DETAIL_CHARS) || '(no instructions posted)',
+        ...(found.kind === 'assignment' ? { points: found.points, has_rubric: found.hasRubric } : {}),
+        ...(found.kind === 'quiz' ? { time_limit_minutes: found.timeLimitMinutes, attempts_allowed: found.attempts } : {}),
+      };
     },
 
-    search_course_material({ query, course_id }) {
+    async search_course_material({ query, course_id }) {
       const course = resolveCourse(course_id);
-      const results = search(getIndex(), query, { courseId: course?.id ?? null });
+      const results = search(await getIndex(), query, { courseId: course?.id ?? null });
       if (!results.length) return { results: [], note: 'Nothing in the synced course material matches.' };
       return {
         results: results.map((r) => ({
           source: sources.add({ key: r.id, label: r.label, url: r.url }),
           label: r.label,
+          ...(r.item_key ? { item_key: r.item_key } : {}),
+          ...(r.file_key ? { file_key: r.file_key } : {}),
           snippet: clip(r.text, SNIPPET_CHARS),
         })),
       };
@@ -254,24 +302,31 @@ export function createTools({ snapshot, syllabi = {}, reviews = {}, now = new Da
       if (!course) throw new Error('course_id is required.');
       const record = usableRecord(syllabi[course.id]);
       if (!record) {
-        return { note: 'No syllabus has been read for this course yet. It may be named differently or sit in the course overview: call list_course_files and open the likely file with read_course_file.' };
+        const candidates = courseFiles(course.id)
+          .filter((t) => t.fileUrl || t.text)
+          .slice(0, 8)
+          .map((t) => ({ file_key: t.key, title: t.title }));
+        return {
+          note: 'No syllabus has been read for this course yet. It may be named differently or sit in the course overview: call list_course_files or open one of candidate_files with read_course_file.',
+          candidate_files: candidates,
+        };
       }
-      const fact = (f) => (f ? { summary: f.summary, quote: f.quote, source: syllabusSource(record, f.page) } : 'not stated in the syllabus');
+      const fact = (f) => (f ? { summary: f.summary, quote: f.quote, source: syllabusSource(record, f.page, course.id) } : 'not stated in the syllabus');
       const ai = record.policies.aiUse;
       return {
         course: label(course.id),
         late_work: fact(record.policies.lateWork),
-        ai_use: ai.quote ? { stance: ai.stance, summary: ai.summary, quote: ai.quote, source: syllabusSource(record, ai.page) } : { stance: 'unclear' },
+        ai_use: ai.quote ? { stance: ai.stance, summary: ai.summary, quote: ai.quote, source: syllabusSource(record, ai.page, course.id) } : { stance: 'unclear' },
         attendance: fact(record.policies.attendance),
         office_hours: fact(record.policies.officeHours),
-        grading: record.policies.grading.map((g) => ({ component: g.component, weight_percent: g.weight, source: syllabusSource(record, g.page) })),
+        grading: record.policies.grading.map((g) => ({ component: g.component, weight_percent: g.weight, source: syllabusSource(record, g.page, course.id) })),
         syllabus_dates: record.deadlines
           .filter((d) => reviews[d.id] !== 'dismissed')
           .map((d) => ({
             title: d.title,
             kind: d.kind,
             due_display: d.dueAt ? dueDisplay(d.dueAt) : dueDisplay(d.date, { allDay: true }),
-            source: syllabusSource(record, d.page),
+            source: syllabusSource(record, d.page, course.id),
           })),
       };
     },
@@ -316,9 +371,19 @@ export function createTools({ snapshot, syllabi = {}, reviews = {}, now = new Da
     async read_course_file({ file_key, query }) {
       const topic = findFile(file_key);
       if (!topic) throw new Error(`No course file has file_key "${file_key}". Call list_course_files first.`);
-      const { kind, pages, warning } = await readFile(topic, { syllabi });
+      let loaded;
+      try {
+        loaded = await readFile(topic, { syllabi });
+      } catch (err) {
+        return {
+          error: `Could not open "${topic.title}" (${file_key}): ${err.message}`,
+          note: `The file "${topic.title}" could not be opened (${err.message}). If the student asked specifically about the contents of this file, tell them it could not be opened and why, and do not substitute another file to answer questions about specific slides or pages in "${topic.title}".`,
+        };
+      }
+      const { kind, pages, warning } = loaded;
       const readable = (pages ?? []).filter((p) => p.text);
       if (!readable.length) return { note: warning ?? 'No text could be read from this file.' };
+      if (indexPromise) indexPromise = null;
       const file = { url: topic.url, fileHref: topic.fileHref, kind };
       const docs = readable.map((p) => ({
         id: `file:${topic.key}:${p.page}`,
@@ -494,9 +559,10 @@ export async function ask({
   onText = null,
   signal = null,
   readFile,
+  cachedFile,
   complete = chatCompletion,
 }) {
-  const tools = createTools({ snapshot, syllabi, reviews, now, ...(readFile ? { readFile } : {}) });
+  const tools = createTools({ snapshot, syllabi, reviews, now, ...(readFile ? { readFile } : {}), ...(cachedFile !== undefined ? { cachedFile } : {}) });
   const messages = [
     { role: 'system', content: systemPrompt({ snapshot, syllabi, now, scopeCourseId }) },
     ...history.slice(-HISTORY_MESSAGES).map(({ role, content }) => ({ role, content })),

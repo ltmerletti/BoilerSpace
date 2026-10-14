@@ -239,3 +239,37 @@ test('PDF passages link to their page in the file; other files link to their Bri
   assert.equal(locationUrl({ url: 'https://purdue.brightspace.com/c/78', fileHref: '/content/enforced/x/notes.docx', kind: 'docx' }, 'part 2'), 'https://purdue.brightspace.com/c/78');
   assert.equal(locationUrl({ url: 'https://purdue.brightspace.com/c/77', fileHref: null, kind: 'pdf' }, 'page 2'), 'https://purdue.brightspace.com/c/77');
 });
+
+test('search_course_material indexes readable course files and quiz metadata, get_item matches titles, and failed files report non-substitution guidance', async () => {
+  const snapshot = snapshotFixture();
+  const opened = new Map();
+  const readFile = async (topic) => {
+    if (topic.id === 78) throw new Error('File is larger than 25 MB.');
+    const file = { kind: 'pdf', pages: [{ page: 1, label: 'page 1', text: 'Each pair submits one zebra worksheet.' }] };
+    opened.set(topic.id, file);
+    return file;
+  };
+  const cachedFile = (topic) => (opened.has(topic.id) ? Promise.resolve(opened.get(topic.id)) : null);
+  const tools = createTools({ snapshot, syllabi: {}, now: NOW, readFile, cachedFile });
+
+  const before = await tools.run('search_course_material', { query: 'zebra worksheet' });
+  assert.ok(!before.results.some((r) => r.file_key === 'content:77'), 'unopened files are not searched');
+  await tools.run('read_course_file', { file_key: 'content:77', query: 'pairs' });
+  const searchRes = await tools.run('search_course_material', { query: 'zebra worksheet' });
+  assert.ok(searchRes.results.some((r) => r.file_key === 'content:77' && r.snippet.includes('zebra worksheet')));
+
+  const quizSearch = await tools.run('search_course_material', { query: 'Quiz 5' });
+  const quizHit = quizSearch.results.find((r) => r.item_key === 'quiz:21');
+  assert.ok(quizHit, 'quiz search includes item_key');
+  assert.match(quizHit.snippet, /Time limit: 20 minutes/);
+  assert.match(quizHit.snippet, /Attempts allowed: 1/);
+
+  const byTitle = await tools.run('get_item', { item_key: 'Quiz 5' });
+  assert.equal(byTitle.item_key, 'quiz:21');
+  assert.equal(byTitle.attempts_allowed, 1);
+  assert.equal((await tools.run('get_item', { item_key: 'quiz:5' })).item_key, 'quiz:21', 'a quiz number given as an id falls back to the title');
+
+  const failed = await tools.run('read_course_file', { file_key: 'content:78', query: 'slide 12' });
+  assert.match(failed.error, /25 MB/);
+  assert.match(failed.note, /do not substitute another file/);
+});

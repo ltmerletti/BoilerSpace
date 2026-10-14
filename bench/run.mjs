@@ -107,14 +107,16 @@ export function createLiveComplete({
         signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
       });
 
-      if (res.status === 429 && attempt < MAX_RATE_LIMIT_RETRIES) {
-        const retryAfter = Number(res.headers.get('retry-after')) || 4 * 2 ** attempt;
-        await new Promise((r) => setTimeout(r, retryAfter * 1000));
-        continue;
-      }
-
       if (!res.ok) {
         const text = await res.text().catch(() => '');
+        // GenAI Studio sometimes reports its rate limit as a 400 rather than a 429.
+        const limited = res.status === 429 || /rate limit/i.test(text);
+        if (limited && attempt < MAX_RATE_LIMIT_RETRIES) {
+          const retryAfter = Number(res.headers.get('retry-after')) || 4 * 2 ** attempt;
+          lastRequestAt = Math.max(lastRequestAt, Date.now() + retryAfter * 1000);
+          await new Promise((r) => setTimeout(r, retryAfter * 1000));
+          continue;
+        }
         throw new Error(`GenAI Studio HTTP ${res.status}: ${text.slice(0, 200)}`);
       }
 
@@ -334,7 +336,7 @@ function sseStreamFromMessage(message) {
 // Runs a few representative cases with a scripted fake complete() (and SSE parsing via readEventStream)
 // to verify the full plumbing without making network calls.
 export async function runPlumbingCheck(cases, env) {
-  const { capture, snapshot, syllabi, readFile } = env;
+  const { capture, snapshot, syllabi } = env;
   const failedFiles = (capture.files ?? []).filter((f) => f.error && f.topicId !== 'overview');
   const unreadable = cases.find((c) => c.category === 'negative' && failedFiles.some((f) => f.courseId === c.scopeCourseId));
   const failedFile = failedFiles.find((f) => f.courseId === unreadable?.scopeCourseId);
@@ -421,7 +423,7 @@ export async function runPlumbingCheck(cases, env) {
       reviews: {},
       scopeCourseId: testCase.scopeCourseId ?? null,
       now: new Date(testCase.now),
-      readFile,
+      ...env.session(),
       complete,
     });
     const latencyMs = Date.now() - start;
@@ -552,7 +554,7 @@ export async function main(argv = process.argv.slice(2)) {
         reviews: {},
         scopeCourseId: testCase.scopeCourseId ?? null,
         now: new Date(testCase.now),
-        readFile: env.readFile,
+        ...env.session(),
         complete: counted,
       });
     } catch (err) {

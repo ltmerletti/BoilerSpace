@@ -26,7 +26,13 @@ export function buildCaptureEnv(capture) {
     if (!topic) throw new Error('No topic provided to readFile.');
     // Reuse already-extracted syllabus record when matching topicId + courseId, mirroring readCourseFile.
     const record = Object.values(syl ?? {}).find(
-      (r) => r?.status === 'done' && r.topicId === topic.id && (!topic.courseId || r.courseId === topic.courseId) && r.pages?.length,
+      (r) =>
+        r?.status === 'done' &&
+        r.topicId !== undefined &&
+        r.topicId !== 'overview' &&
+        r.topicId === topic.id &&
+        (!topic.courseId || r.courseId === topic.courseId) &&
+        r.pages?.length,
     );
     if (record) return { kind: record.kind, pages: record.pages, warning: record.warning ?? null };
 
@@ -58,7 +64,24 @@ export function buildCaptureEnv(capture) {
     };
   }
 
-  return { capture, snapshot, syllabi, readFile };
+  // A fresh panel has nothing cached, so search only covers files opened during that question.
+  function session() {
+    const opened = new Map();
+    const key = (topic) => `${topic.courseId ?? ''}:${topic.id}`;
+    return {
+      readFile(topic, options) {
+        const loading = readFile(topic, options);
+        if (topic?.fileUrl) {
+          opened.set(key(topic), loading);
+          loading.catch(() => opened.delete(key(topic)));
+        }
+        return loading;
+      },
+      cachedFile: (topic) => opened.get(key(topic)) ?? (topic.text ? readFile(topic) : null),
+    };
+  }
+
+  return { capture, snapshot, syllabi, readFile, session };
 }
 
 export function loadCapture(path = DEFAULT_CAPTURE_PATH) {

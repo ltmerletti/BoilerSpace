@@ -21,3 +21,11 @@ test('the syllabus writer refuses unrelated storage keys', async () => {
   await saveSyllabusEntry('syllabi', 1, { status: 'none' });
   assert.equal(stored.syllabi[1].status, 'none');
 });
+
+test('a late failure from another panel preserves an extraction saved while it was reading', async () => {
+  const stored = installChrome();
+  const done = { courseId: 1, status: 'done', pages: [{ text: 'The saved syllabus.' }], deadlines: [] };
+  await saveSyllabusEntry('syllabi', 1, done);
+  await saveSyllabusEntry('syllabi', 1, { courseId: 1, status: 'error', error: 'Failed to fetch', previous: null });
+  assert.deepEqual(stored.syllabi[1].previous, done);
+});

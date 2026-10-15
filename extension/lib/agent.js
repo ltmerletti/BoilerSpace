@@ -1,3 +1,4 @@
+import { isSyllabusAccessError } from './syllabus-access.js';
 // The course assistant: a tool-calling loop over synced Brightspace data and syllabus facts.
 // Tools only read data that is already on this device. Grades are never sent to the model.
 
@@ -429,6 +430,8 @@ export function createTools({ snapshot, syllabi = {}, reviews = {}, now = new Da
       if (!course) throw new Error('course_id is required.');
       const record = usableRecord(syllabi[course.id]);
       if (!record) {
+        const error = syllabi[course.id]?.error;
+        if (isSyllabusAccessError(error)) return { course: label(course.id), read: false, blocked: true, error, candidate_files: [], note: 'The syllabus cannot be read until the student clicks Allow Simple Syllabus access in BoilerSpace. Explain this access requirement. Do not keep searching unrelated files or infer a syllabus policy from a project handout.' };
         const candidates = courseFiles(course.id)
           .filter((t) => t.fileUrl || t.text)
           .slice(0, 8)
@@ -629,6 +632,7 @@ export function systemPrompt({ snapshot, syllabi, now, scopeCourseId }) {
     '- When the student asks what exams are coming up, include midterms, finals and checkpoints too. Count a week as 7 days. list_upcoming is not the whole list: search announcements, then open a schedule or syllabus file if a course is still missing, before you say that is all.',
     '- Do not guess what an exam covers from which lectures came recently. If no document states the scope, say it is not posted. When a document does state it, open the lecture files that scope names and report the learning objectives and topics those files state. Do not stop at a chapter list and offer to look further.',
     '- Search with the words the document would use. Do not put a guessed answer in the query.',
+    '- For questions about what a syllabus says, check get_syllabus_facts first. If it reports blocked access, explain the required permission and stop looking for that syllabus in unrelated files.',
     '- Exam dates, schedules and policies are often only in a course file. If the synced data does not answer the question, call list_course_files and open the likely files (syllabus, the Syllabus tab, schedule, course information, course overview) with read_course_file before giving up.',
     '- If the excerpts from a file do not answer the question, look at its outline and read the most likely page with location instead of searching again with new words. If that does not find it either, it is probably not in that file; answer with what you have.',
     '- A search hit or excerpt is only part of a page. An ellipsis at its end does not mean the original file is cut off. Open the page before making that claim, and follow next_offset when a long page has a continuation. Finish needed reading now instead of offering to pull the full page later.',

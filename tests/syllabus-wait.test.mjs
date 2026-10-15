@@ -71,3 +71,41 @@ test('a rendered Syllabus link to a course file is discovered inside shadow DOM'
   link.getAttribute = (name) => ({ href: 'https://example.com/content/enforced/6824-template/syllabus.html', text: 'Syllabus' })[name];
   assert.deepEqual(snapshotSyllabus(1631466, doc).hrefs, []);
 });
+
+test('the real LTI Syllabus link is discoverable and stays scoped to its course', () => {
+  const href = '/d2l/common/dialogs/quickLink/quickLink.d2l?ou=1631469&type=lti&rcode=resource-12707056&srcou=6824&launchFramed=1&framedName=Syllabus';
+  const link = { getAttribute: (name) => ({ href, text: 'Syllabus' })[name] };
+  const doc = { location: { origin: 'https://purdue.brightspace.com' }, querySelectorAll: (selector) => selector === '*' ? [link] : [], querySelector: () => null };
+  assert.deepEqual(snapshotSyllabus(1631469, doc).hrefs, [href]);
+  assert.deepEqual(snapshotSyllabus(1631466, doc).hrefs, []);
+});
+
+test('Simple Syllabus reads its document components, excluding the larger navigation wrapper', () => {
+  const sections = [{ innerText: 'CS 25100 Fall 2026. '.repeat(40) }, { innerText: 'Assignments and course policies. '.repeat(40) }];
+  const doc = { location: { origin: 'https://purdue.simplesyllabus.com', pathname: '/en-US/doc/example' }, readyState: 'complete',
+    body: { innerText: 'Navigation login and site footer. '.repeat(1000) },
+    querySelectorAll: (selector) => selector === '.content-component' ? sections : [],
+    querySelector: (selector) => selector.includes('main') ? { querySelector: () => null } : null,
+  };
+  const result = snapshotSyllabus(null, doc);
+  assert.equal(result.text, sections.map((s) => s.innerText).join(' ').replace(/\s+/g, ' ').trim());
+  assert.equal(result.contentReady, true);
+  doc.querySelectorAll = () => [];
+  assert.equal(snapshotSyllabus(null, doc).text, '', 'a loading wrapper never counts as a syllabus');
+});
+
+test('the actual Simple Syllabus missing-section response is a completed absence', async () => {
+  const doc = {
+    location: { origin: 'https://purdue.simplesyllabus.com', pathname: '/en-US/sso-redirect' }, readyState: 'complete',
+    body: { innerText: "Sorry, we could not locate this section in Simple Higher Ed. More Details Currently enrolled sections" },
+    querySelectorAll: () => [], querySelector: () => null,
+  };
+  const shot = snapshotSyllabus(null, doc);
+  assert.equal(shot.notFound, true);
+  assert.equal(shot.text, '', 'the enrollment list is not read as a syllabus');
+  const timer = clock();
+  assert.equal((await waitForSyllabus(async () => shot, { phase: 'page', ...timer })).notFound, true);
+  assert.ok(timer.now() < 45_000);
+  doc.location.origin = 'https://purdue.brightspace.com';
+  assert.equal(snapshotSyllabus(null, doc).notFound, false, 'only the syllabus service can report this result');
+});

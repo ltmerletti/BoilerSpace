@@ -1,3 +1,4 @@
+import { SYLLABUS_SITE, isSyllabusAccessError } from './lib/syllabus-access.js';
 import * as store from './lib/store.js';
 import { BRIGHTSPACE_ORIGIN, canReachBrightspace, connectParentPage, syncNow } from './lib/sync.js';
 import { lockIsFresh } from './lib/sync-store.js';
@@ -23,10 +24,11 @@ const MAX_CHATS = 30;
 const MAX_THOUGHT_CHARS = 4000;
 const VIEW_NAMES = ['week', 'courses', 'ask', 'settings'];
 const QUIZ_ATTEMPT_PATH = '/d2l/lms/quizzing/user/attempt/';
-const HOST_ORIGINS = ['https://purdue.brightspace.com/*', 'https://genai.rcac.purdue.edu/*'];
+const HOST_ORIGINS = ['https://purdue.brightspace.com/*', 'https://genai.rcac.purdue.edu/*', 'https://purdue.simplesyllabus.com/*'];
 const PARAMS = new URLSearchParams(location.search);
 const EMBEDDED = PARAMS.has('embedded');
 const CONNECT_PAGE = PARAMS.has('connect');
+const ACCESS_PAGE = PARAMS.has('syllabus-access');
 const STOPPED_SYNC_NOTICE_MS = 10 * 60_000;
 const SYNC_ON_OPEN_AFTER_MS = 10 * 60_000;
 
@@ -65,6 +67,8 @@ const state = {
   abort: null,
   quizLocked: false,
   hostAccess: true,
+  syllabusAccess: null,
+  accessError: '',
   syncLock: null,
   progress: null,
   runningSync: false,
@@ -175,6 +179,7 @@ async function loadState({ includeChat = false } = {}) {
   state.changes = all.changes ?? [];
   state.genai = all.genai ? await getConnection() : null;
   state.syllabi = all.syllabi ?? {};
+  state.syllabusAccess = all.syllabusAccess ?? null;
   state.reviews = all.reviews ?? {};
   state.syncLock = all.syncLock ?? null;
   state.progress = all.syncProgress ?? null;
@@ -309,7 +314,7 @@ async function linkHere() {
     state.linkStatus = '';
     render();
   }
-  if (state.genai) processSyllabi();
+  if (state.genai && !CONNECT_PAGE) processSyllabi();
   return Boolean(state.genai);
 }
 
@@ -549,6 +554,29 @@ function agendaItem(item, options) {
 }
 
 // Firefox and Zen can install the extension without its site access, so ask for it here.
+function syllabusAccessNotice() {
+  const failed = Object.values(state.syllabi).some((record) => isSyllabusAccessError(record?.error));
+  if (state.syllabusAccess === true || (state.syllabusAccess !== false && !failed)) return null;
+  return h('div', { class: 'alert' }, h('p', null, 'Your syllabi open on Purdue Simple Syllabus. Allow BoilerSpace access to that site so it can read them.'),
+    h('div', { class: 'button-row' }, h('button', { class: 'button', type: 'button', onclick: () => chrome.runtime.sendMessage({ type: 'boilerspace-open-syllabus-access' }) }, 'Allow Simple Syllabus access')));
+}
+
+function syllabusAccessPage() {
+  return h('section', { class: 'setup' }, h('h2', { class: 'setup-intro' }, 'Read Purdue Simple Syllabus'),
+    h('p', null, state.syllabusAccess ? 'Access is allowed. BoilerSpace will retry your syllabi automatically. You can close this tab.' : 'Purdue hosts your syllabi on purdue.simplesyllabus.com. Allow BoilerSpace to read that site through your existing browser session.'),
+    state.accessError && h('p', { class: 'error-text' }, state.accessError),
+    !state.syllabusAccess && h('button', { class: 'button', type: 'button', onclick: async () => {
+      state.accessError = '';
+      try {
+        const granted = await chrome.permissions.request({ origins: [SYLLABUS_SITE] });
+        const result = await chrome.runtime.sendMessage({ type: 'boilerspace-syllabus-access' });
+        state.syllabusAccess = result?.granted === true;
+        if (!granted) state.accessError = 'Access was not allowed. Your syllabus reading will resume when you allow this site.';
+      } catch (err) { state.accessError = err.message; }
+      render();
+    } }, 'Allow Simple Syllabus access'));
+}
+
 function hostAccessNotice() {
   if (state.hostAccess || EMBEDDED) return null;
   const request = () =>
@@ -559,7 +587,7 @@ function hostAccessNotice() {
   return h(
     'div',
     { class: 'alert' },
-    h('p', null, h('strong', null, 'BoilerSpace needs access to Brightspace and GenAI Studio. '), 'Without it, nothing can load.'),
+    h('p', null, h('strong', null, 'Allow BoilerSpace to read Brightspace and Purdue Simple Syllabus. '), 'GenAI Studio access is used to read syllabi and answer questions.'),
     h('div', { class: 'button-row' }, h('button', { class: 'button', type: 'button', onclick: request }, 'Allow access')),
   );
 }
@@ -775,7 +803,9 @@ function weekView() {
 
 // ---------- Courses ----------
 
-function stanceTag(stance, known) {
+function stanceTag(stance, known, status) {
+  if (!known && status === 'none') return h('span', { class: 'tag' }, 'No syllabus found');
+  if (!known && status === 'error') return h('span', { class: 'tag' }, 'Syllabus check failed');
   if (!known) return h('span', { class: 'tag' }, 'Syllabus not read');
   const cls = { allowed: 'ok', restricted: 'gold', prohibited: 'danger' }[stance] ?? '';
   return h('span', { class: `tag ${cls}` }, STANCE_LABEL[stance] ?? STANCE_LABEL.unclear);
@@ -788,8 +818,10 @@ function coursesList() {
   const now = new Date().toISOString();
   return [
     h('p', { class: 'lede', style: 'padding-bottom:8px' }, `${plural(list.length, 'current course')} this term.`),
-    state.genai && h('p', { class: 'meta' }, state.busy.syllabi ? 'Checking syllabi for your courses…' : 'Syllabi are checked automatically after course sync.'),
-    state.genai && h('div', { class: 'button-row' }, h('button', { class: 'button secondary', type: 'button', disabled: state.busy.syllabi, onclick: () => processSyllabi({ force: true }) }, 'Check all syllabi')),
+    state.genai && h('div', { class: 'syllabus-controls' },
+      h('p', { class: 'meta' }, state.busy.syllabi ? 'Checking syllabi for your courses…' : 'Syllabi are checked automatically after course sync.'),
+      h('div', { class: 'button-row' }, h('button', { class: 'button secondary', type: 'button', disabled: state.busy.syllabi, onclick: () => processSyllabi({ force: true }) }, 'Check all syllabi')),
+    ),
     list.map((course) => {
       const next = items.find((i) => i.courseId === course.id && i.dueAt >= now);
       const record = usableRecord(state.syllabi[course.id]);
@@ -797,7 +829,7 @@ function coursesList() {
         'button',
         { class: 'course-row', type: 'button', onclick: () => ((state.courseId = course.id), saveUi(), render({ top: true })) },
         h('span', { class: 'course-label' }, shortCourseLabel(course)),
-        stanceTag(record?.policies.aiUse.stance, Boolean(record)),
+        stanceTag(record?.policies.aiUse.stance, Boolean(record), state.syllabi[course.id]?.status),
         h('div', { class: 'meta' }, courseTitle(course)),
         h('div', { class: 'small', style: 'margin-top:2px' }, next ? `Next: ${next.title}, ${formatDateTime(next.dueAt, { allDay: next.allDay })}` : h('span', { class: 'muted' }, 'Nothing upcoming')),
       );
@@ -1369,7 +1401,7 @@ const VIEWS = { week: weekView, courses: coursesView, ask: askView, settings: se
 function render({ top = false } = {}) {
   const main = document.getElementById('view');
   const scroll = main.scrollTop;
-  const content = CONNECT_PAGE ? connectPageView() : [state.view === 'settings' ? null : hostAccessNotice(), VIEWS[state.view]()];
+  const content = ACCESS_PAGE ? syllabusAccessPage() : CONNECT_PAGE ? connectPageView() : [syllabusAccessNotice(), state.view === 'settings' ? null : hostAccessNotice(), VIEWS[state.view]()];
   main.replaceChildren(h('div', { class: state.view === 'ask' && !CONNECT_PAGE ? 'view ask-view' : 'view' }, content));
   if (state.view === 'ask') main.scrollTop = main.scrollHeight;
   else main.scrollTop = top ? 0 : scroll;
@@ -1386,7 +1418,7 @@ function renderHeader() {
   const syncButton = document.getElementById('sync-button');
   syncButton.disabled = state.busy.sync;
   syncButton.classList.toggle('spinning', state.busy.sync);
-  syncButton.hidden = !state.snapshot || CONNECT_PAGE;
+  syncButton.hidden = !state.snapshot || CONNECT_PAGE || ACCESS_PAGE;
 }
 
 // Progress updates arrive several times a second during a sync, so they skip the full re-render.
@@ -1421,7 +1453,7 @@ async function attempt(fn) {
 }
 
 async function init() {
-  if (CONNECT_PAGE) document.querySelector('.tabs').hidden = true;
+  if (CONNECT_PAGE || ACCESS_PAGE) document.querySelector('.tabs').hidden = true;
   for (const button of document.querySelectorAll('.tabs button')) {
     button.addEventListener('click', () => {
       if (state.view === 'ask' && button.dataset.view === 'ask') state.showChats = false;
@@ -1457,14 +1489,19 @@ async function init() {
       onSyncActivity();
       return;
     }
+    const accessGranted = changes.syllabusAccess?.newValue === true && changes.syllabusAccess.oldValue !== true;
     const snapshotChanged = keys.includes('snapshot');
     const linked = keys.includes('genai') && !changes.genai.oldValue && changes.genai.newValue;
     await loadState();
     if (!state.pending) render();
     if (CONNECT_PAGE && linked) setTimeout(() => window.close(), 1500);
-    if (snapshotChanged || linked) processSyllabi();
+    if (!ACCESS_PAGE && !CONNECT_PAGE && (snapshotChanged || linked || accessGranted)) processSyllabi();
   });
   setInterval(onSyncActivity, 3000);
+
+  const access = await attempt(() => chrome.runtime.sendMessage({ type: 'boilerspace-syllabus-access' }));
+  if (access?.ok) { state.syllabusAccess = access.granted; render(); }
+  if (ACCESS_PAGE) return;
 
   if (CONNECT_PAGE) {
     if (!state.genai && (await linkHere())) setTimeout(() => window.close(), 1500);

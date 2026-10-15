@@ -9,6 +9,7 @@ export const KEYS = {
   drawerWidth: 'drawerWidth',
   syllabusChoice: 'syllabusChoice',
   syllabusSources: 'syllabusSources',
+  syllabusAccess: 'syllabusAccess',
   changes: 'changes',
   genai: 'genai',
   syllabi: 'syllabi',

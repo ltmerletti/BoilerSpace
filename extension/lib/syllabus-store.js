@@ -7,7 +7,12 @@ export function saveSyllabusEntryHere(key, courseId, entry) {
   if (![store.KEYS.syllabi, store.KEYS.syllabusSources].includes(key) || !Number.isSafeInteger(courseId) || courseId <= 0) {
     return Promise.reject(new Error('Invalid syllabus storage entry.'));
   }
-  const write = pending.catch(() => {}).then(() => store.update(key, (all) => ({ ...all, [courseId]: entry }), {}));
+  const write = pending.catch(() => {}).then(() => store.update(key, (all) => {
+    const current = all[courseId];
+    const previous = current?.status === 'done' ? current : current?.previous;
+    const saved = key === store.KEYS.syllabi && entry.status === 'error' && !entry.previous && previous ? { ...entry, previous } : entry;
+    return { ...all, [courseId]: saved };
+  }, {}));
   pending = write;
   return write;
 }

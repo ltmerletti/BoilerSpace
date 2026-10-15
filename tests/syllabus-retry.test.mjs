@@ -112,12 +112,108 @@ test('a failed lookup for one current course does not prevent discovery of the n
   snapshot.data[0].content = [];
   snapshot.data[1].overview = null;
   const visited = [];
-  await processCurrentSyllabi(snapshot, { now, openTab: false,
+  await processCurrentSyllabi(snapshot, { now, openTab: false, wait: async () => {},
     discover: async (id) => { visited.push(id); if (id === 1600001) throw new Error('Navigation did not finish loading'); return { id: 'tab:99', title: 'Syllabus', text: SYLLABUS_PAGES.map((p) => p.text).join('\n') }; },
   });
-  assert.deepEqual(visited, [1600001, 1600002]);
+  assert.deepEqual(visited, [1600001, 1600002, 1600001], 'other courses finish before the failed course retries once');
   assert.equal(stored.syllabi[1600001].status, 'error');
   assert.equal(stored.syllabi[1600002].status, 'done');
+});
+
+test('an automatic pass recovers a temporary discovery failure without rereading a successful course', async () => {
+  for (const message of ['NetworkError when attempting to fetch resource.', 'The syllabus document did not finish loading.', 'The syllabus tab was closed before it finished loading.', 'Could not establish connection. Receiving end does not exist.']) {
+    const { stored, snapshot, course } = setup();
+    course.overview = null;
+    let searches = 0, downloads = 0;
+    const records = await processCurrentSyllabi(snapshot, { now, openTab: false, wait: async () => {},
+      discover: async () => {
+        if (++searches === 1) throw new Error(message);
+        return { id: 'tab:1600002:lti', title: 'Syllabus', text: SYLLABUS_PAGES.map((p) => p.text).join('\n') };
+      },
+      download: async () => { downloads++; return available; },
+    });
+    assert.ok(records.every((r) => r.status === 'done'), message);
+    assert.equal(searches, 2, 'the retry bypasses the failed discovery cache');
+    assert.equal(downloads, 1, 'the first course is not downloaded again');
+    assert.equal(stored.syllabusSources[1600002].error, undefined);
+    assert.equal(stored.syllabi[1600002].status, 'done');
+  }
+});
+
+test('automatic and manual recovery both resolve a failed navigation source again', async () => {
+  for (const force of [false, true]) {
+    const { stored, snapshot, course } = setup();
+    course.syllabusTab = { id: 'tab:old:lti', title: 'Syllabus', text: 'Stale source text.', updatedAt: null };
+    stored.syllabi = { 1600002: { courseId: 1600002, status: 'error', topicId: 'tab:old:lti', error: 'Failed to fetch', updatedAt: null, checkedAt: now.toISOString() } };
+    stored.syllabusSources = { 1600002: { topic: course.syllabusTab, readerVersion: 3, checkedAt: now.toISOString() } };
+    let lookups = 0;
+    const record = await processCourse(snapshot, 1600002, { force, now, openTab: false,
+      discover: async () => { lookups++; return { id: 'tab:current:lti', title: 'Syllabus', text: SYLLABUS_PAGES.map((p) => p.text).join('\n') }; },
+    });
+    assert.equal(lookups, 1, `force=${force}: cached text is not a fresh navigation read`);
+    assert.equal(record.status, 'done');
+    assert.equal(record.topicId, 'tab:current:lti');
+  }
+});
+
+test('a fresh automatic attempt bypasses a failed lookup and download just like Check again', async () => {
+  const { stored, snapshot, course } = setup();
+  course.overview = null;
+  stored.syllabusSources = { 1600002: { error: 'Could not establish connection. Receiving end does not exist.', readerVersion: 3, checkedAt: now.toISOString() } };
+  stored.syllabi = { 1600002: { status: 'error', topicId: 'tab:99', error: 'Failed to fetch', checkedAt: now.toISOString() } };
+  let lookups = 0;
+  const requests = [];
+  const record = await processCourse(snapshot, 1600002, { now, openTab: false,
+    discover: async () => { lookups++; return { id: 'tab:99', title: 'Syllabus', fileUrl: '/current-syllabus' }; },
+    download: async (path, options) => { requests.push({ path, options }); return available; },
+  });
+  assert.equal(record.status, 'done');
+  assert.equal(lookups, 1);
+  assert.deepEqual(requests, [{ path: '/current-syllabus', options: { open: false, refresh: true } }]);
+});
+
+test('an automatic download retry requests fresh bytes and bypasses the recent error record', async () => {
+  const { snapshot } = setup();
+  const requests = [];
+  let failed = false;
+  const records = await processCurrentSyllabi(snapshot, { now, openTab: false, wait: async () => {},
+    discover: async () => null,
+    download: async (path, options) => {
+      requests.push({ path, options });
+      if (path.endsWith('/attachment') && !failed) { failed = true; throw Object.assign(new Error('HTTP 503'), { status: 503 }); }
+      return available;
+    },
+  });
+  assert.ok(records.every((r) => r.status === 'done'));
+  assert.equal(requests.length, 3);
+  assert.equal(requests[2].options.refresh, true);
+  assert.ok(requests[2].path.endsWith('/attachment'));
+});
+
+test('a temporary extraction failure retries once while successful courses keep their extracted facts', async () => {
+  const { snapshot, stored } = setup();
+  let calls = 0;
+  globalThis.fetch = async () => {
+    if (++calls === 1) return new Response('{}', { status: 503 });
+    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(MODEL_OUTPUT) } }] }));
+  };
+  const records = await processCurrentSyllabi(snapshot, { now, openTab: false, wait: async () => {}, download: async () => available });
+  assert.ok(records.every((r) => r.status === 'done'));
+  assert.equal(calls, 3, 'one failed model call, one other course, then the failed course succeeds');
+  assert.equal(stored.syllabi[1600001].error, undefined);
+});
+
+test('automatic recovery is bounded and does not retry missing syllabi, permissions, or invalid model output', async () => {
+  for (const message of [null, 'BoilerSpace needs access to purdue.simplesyllabus.com to read this syllabus.', 'HTTP 403', 'The model returned something that was not valid JSON.', 'NetworkError when attempting to fetch resource.']) {
+    const { snapshot, course } = setup();
+    snapshot.data[0].content = [];
+    course.overview = null;
+    let calls = 0;
+    await processCurrentSyllabi(snapshot, { now, courseId: 1600002, openTab: false, wait: async () => {},
+      discover: async () => { calls++; if (message) throw new Error(message); return null; },
+    });
+    assert.equal(calls, message?.startsWith('NetworkError') ? 2 : 1, message ?? 'no syllabus');
+  }
 });
 
 test('Read again refreshes a navigation syllabus before trying a weaker overview candidate', async () => {
@@ -130,4 +226,18 @@ test('Read again refreshes a navigation syllabus before trying a weaker overview
   });
   assert.deepEqual(requests, ['/current-navigation-file']);
   assert.equal(record.topicId, 'tab:99');
+});
+
+test('the fixed reader automatically rechecks missing results cached by the old reader', async () => {
+  const { stored, snapshot, course } = setup();
+  course.overview = null;
+  stored.syllabusSources = { 1600002: { topic: null, checkedAt: now.toISOString() } };
+  stored.syllabi = { 1600002: { courseId: 1600002, status: 'none', checkedAt: now.toISOString() } };
+  let lookups = 0;
+  const options = { now, openTab: false, discover: async () => { lookups++; return { id: 'tab:1600002:lti', title: 'Syllabus', text: SYLLABUS_PAGES.map((p) => p.text).join('\n') }; } };
+  assert.equal((await processCourse(snapshot, 1600002, options)).status, 'done');
+  assert.equal(lookups, 1);
+  assert.equal(stored.syllabusSources[1600002].readerVersion, 3);
+  await processCourse(snapshot, 1600002, options);
+  assert.equal(lookups, 1);
 });

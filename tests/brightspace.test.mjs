@@ -464,3 +464,28 @@ test('a direct template file in the requested course rendered navbar is accepted
   assert.equal(tab.fileUrl, path);
   assert.match(tab.text, /Assessment policies/);
 });
+
+const LTI_SYLLABUS = '/d2l/common/dialogs/quickLink/quickLink.d2l?ou=1631469&type=lti&rcode=354644E0-4CD8-419D-A32F-4E78D8778E5C-12707056&srcou=6824&launchFramed=1&framedName=Syllabus';
+test('the real Purdue LTI Syllabus link launches the rendered reader instead of a Content file API', async () => {
+  const target = contentTargetFromHref(LTI_SYLLABUS);
+  assert.equal(target.launchHref, LTI_SYLLABUS);
+  assert.equal(target.topicId, null, 'an LTI resource code is not a Content topic id');
+  const text = 'CS 25100 Data Structures And Algorithms. '.repeat(30);
+  const tab = await findSyllabusTab({
+    getJson: async () => assert.fail('do not resolve an LTI resource through the Content API'),
+    getText: async () => assert.fail('the live navbar already contains the launch link'),
+  }, { courseId: 1631469, le: '1.99', origin: ORIGIN, pageLinks: [LTI_SYLLABUS], readTab: { page: async (href) => { assert.equal(href, LTI_SYLLABUS); return text; } } });
+  assert.equal(tab.id, 'tab:1631469:lti');
+  assert.equal(tab.text, text);
+  assert.equal(tab.fileUrl, null);
+  assert.match(tab.url, /type=lti/);
+});
+
+test('an LTI reader failure is an error rather than a missing syllabus', async () => {
+  await assert.rejects(findSyllabusTab({}, { courseId: 1631469, le: '1.99', origin: ORIGIN, pageLinks: [LTI_SYLLABUS], readTab: { page: async () => { throw new Error('Simple Syllabus is still loading'); } } }), /still loading/);
+});
+
+test('an explicit Simple Syllabus missing section is not a loading failure', async () => {
+  const tab = await findSyllabusTab({}, { courseId: 1631469, le: '1.99', origin: ORIGIN, pageLinks: [LTI_SYLLABUS], readTab: { page: async () => ({ notFound: true }) } });
+  assert.equal(tab, null);
+});

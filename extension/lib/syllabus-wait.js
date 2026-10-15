@@ -7,7 +7,7 @@ export async function waitForSyllabus(read, { phase, timeoutMs = phase === 'link
   while (now() - started < timeoutMs) {
     const shot = await read();
     if (shot) {
-      const next = JSON.stringify([shot.hrefs, shot.text, shot.navReady, shot.contentReady]);
+      const next = JSON.stringify([shot.hrefs, shot.text, shot.navReady, shot.contentReady, shot.notFound]);
       if (next !== signature) {
         signature = next;
         stableSince = now();
@@ -16,6 +16,7 @@ export async function waitForSyllabus(read, { phase, timeoutMs = phase === 'link
       if (now() - started >= 12_000 && now() - stableSince >= 2_000) {
         if (phase === 'links' && shot.navReady) return shot;
         if (phase === 'page' && shot.contentReady && shot.text?.length >= 600) return shot;
+        if (phase === 'page' && shot.notFound) return shot;
       }
     }
     await wait(400);

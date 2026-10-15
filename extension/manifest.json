@@ -21,7 +21,7 @@
   },
   "background": { "service_worker": "background.js", "scripts": ["background.js"], "type": "module" },
   "permissions": ["storage", "unlimitedStorage", "scripting", "sidePanel"],
-  "host_permissions": ["https://purdue.brightspace.com/*", "https://genai.rcac.purdue.edu/*"],
+  "host_permissions": ["https://purdue.brightspace.com/*", "https://genai.rcac.purdue.edu/*", "https://purdue.simplesyllabus.com/*"],
   "content_scripts": [
     {
       "matches": ["https://purdue.brightspace.com/d2l/*"],

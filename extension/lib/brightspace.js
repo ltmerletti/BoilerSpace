@@ -610,6 +610,7 @@ export function contentTargetFromHref(href) {
   }
   if (/quickLink\.d2l$/i.test(url.pathname)) {
     const type = (url.searchParams.get('type') ?? '').toLowerCase();
+    if (type === 'lti') return { topicId: null, orgUnitId: Number(url.searchParams.get('ou')) || null, sourceOrgUnitId: null, launchHref: url.pathname + url.search };
     if (type && type !== 'content') return null;
     const code = url.searchParams.get('code') ?? url.searchParams.get('rcode') ?? '';
     const topicId = /-(\d+)$/.exec(code)?.[1] ?? (/^\d+$/.test(code) ? code : null);
@@ -642,7 +643,7 @@ function syllabusLinkForCourse(hrefs, courseId, { scopedPage = false } = {}) {
   for (const href of hrefs) {
     if (!href) continue;
     const target = contentTargetFromHref(href);
-    if (!target?.topicId && !target?.filePath) continue;
+    if (!target?.topicId && !target?.filePath && !target?.launchHref) continue;
     if (target.orgUnitId && target.orgUnitId !== Number(courseId)) continue;
     if (!target.orgUnitId && !scopedPage) {
       const owner = /^\/content\/enforced\/(\d+)(?:-|\/)/.exec(target.filePath ?? '')?.[1];
@@ -756,6 +757,7 @@ async function readSyllabusTabText(client, tab, readTab, href) {
   if (tab.fileHref && /\.(pdf|docx?|pptx?)($|\?)/i.test(tab.fileHref)) return tab;
   if (!readTab?.page) return tab;
   const text = await readTab.page(href);
+  if (text?.notFound) return null;
   if (!text || text.length < SYLLABUS_TEXT_MIN) throw new Error('The syllabus page did not finish loading. Try reading it again.');
   return withSyllabusText(tab, text);
 }
@@ -790,6 +792,13 @@ export async function findSyllabusTab(client, { courseId, le, lp = null, origin,
   if (!link) return null;
   const target = contentTargetFromHref(link.href);
   if (!target) return null;
+  if (target.launchHref) {
+    if (!readTab?.page) throw new Error('The Simple Syllabus reader is unavailable. Reload BoilerSpace and Brightspace.');
+    const text = await readTab.page(target.launchHref);
+    if (text?.notFound) return null;
+    if (!text || text.length < SYLLABUS_TEXT_MIN) throw new Error('Simple Syllabus did not finish loading.');
+    return withSyllabusText({ id: `tab:${courseId}:lti`, title: 'Syllabus', modulePath: [], fileUrl: null, fileHref: null, url: new URL(target.launchHref, origin).href, updatedAt: null }, text);
+  }
   let tab;
   if (target.filePath) {
     tab = { id: `tab:${courseId}:file`, title: 'Syllabus', modulePath: [], fileUrl: target.filePath, fileHref: target.filePath, url: new URL(link.href, origin).href, updatedAt: null };
@@ -988,7 +997,10 @@ function pageSyllabusReader() {
   };
   return {
     links: async (courseId) => (await ask({ phase: 'links', courseId, origin: location.origin }))?.hrefs ?? [],
-    page: async (href) => (await ask({ phase: 'page', href, origin: location.origin }))?.text ?? '',
+    page: async (href) => {
+      const reply = await ask({ phase: 'page', href, origin: location.origin });
+      return reply.notFound ? { notFound: true } : reply.text ?? '';
+    },
   };
 }
 

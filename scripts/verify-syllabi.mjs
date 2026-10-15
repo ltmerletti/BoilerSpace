@@ -17,22 +17,49 @@ const check = (name, ok, detail = '') => { if (!ok) throw new Error(`${name}: ${
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 const home = '<!doctype html><html><head><script>localStorage.setItem("XSRF.Token", "xsrf-test");</script></head><body><d2l-navigation><d2l-navigation-main-header><div slot="right" class="d2l-navigation-s-header-right">Purdue</div></d2l-navigation-main-header></d2l-navigation><main>Course home</main></body></html>';
 try {
+  // Client navigation keeps the destination mocked; Playwright routes an HTTP redirect chain only once.
+  const navigation = [];
+  let mathLaunches = 0, civicsLaunches = 0, redirectLaunches = 0;
+  context.on('page', (page) => {
+    page.on('framenavigated', (frame) => {
+      if (frame.url().includes('simplesyllabus.com')) navigation.push(frame.url());
+      const url = new URL(frame.url());
+      if (frame === page.mainFrame() && url.pathname.endsWith('/quickLink.d2l') && url.searchParams.get('ou') === '1600004' && mathLaunches === 1) page.close().catch(() => {});
+    });
+    page.on('pageerror', (error) => console.log('PAGE ERROR', error.message));
+  });
   let [worker] = context.serviceWorkers();
   worker ??= await context.waitForEvent('serviceworker');
   let civicsDownloads = 0, overviewDownloads = 0;
   let revision = 'First syllabus revision.';
   const overviewPath = '/d2l/api/le/1.96/1600001/overview/attachment';
+  const ltiPath = '/d2l/common/dialogs/quickLink/quickLink.d2l?ou=1600002&type=lti&rcode=resource-12707056&srcou=6824&launchFramed=1&framedName=Syllabus';
   const cs250Text = `CS 25000 syllabus. ${SYLLABUS_PAGES.map((p) => p.text).join(' ')} ${'Course policies and expectations. '.repeat(30)}`;
   await context.route('https://genai.rcac.purdue.edu/**', (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ choices: [{ message: { content: JSON.stringify(MODEL_OUTPUT) } }] }) }));
   await context.route('https://purdue.brightspace.com/**', async (route) => {
     const { pathname } = new URL(route.request().url());
     if (pathname === overviewPath) { overviewDownloads++; return route.fulfill({ contentType: 'application/pdf', body: Buffer.from(pdfWithPages([[revision], ...SYLLABUS_PAGES.map((p) => p.text.replace(/\u2013/g, '-').split('\n'))])) }); }
     if (pathname === '/d2l/api/le/1.96/1438550/overview/attachment') { civicsDownloads++; return route.fulfill({ status: 404, body: '{}' }); }
-    if (pathname === '/content/enforced/1600002-CS250/syllabus.html') return route.fulfill({ contentType: 'text/html', body: `<html><body>${cs250Text}</body></html>` });
-    if (pathname === '/d2l/home/1600002') return route.fulfill({ contentType: 'text/html', body: home.replace('</body>', `<script>setTimeout(() => { const link = document.createElement('d2l-navigation-link'); link.setAttribute('text', 'Syllabus'); link.setAttribute('href', '/content/enforced/1600002-CS250/syllabus.html'); document.querySelector('d2l-navigation').append(link); }, 10000);</script></body>`) });
+    if (pathname.endsWith('/quickLink.d2l')) {
+      if (new URL(route.request().url()).searchParams.get('ou') === '1438550') {
+        civicsLaunches++;
+        return route.fulfill({ contentType: 'text/html', body: '<iframe src="https://purdue.simplesyllabus.com/en-US/sso-redirect"></iframe>' });
+      }
+      if (new URL(route.request().url()).searchParams.get('ou') === '1600004') {
+        mathLaunches++;
+        return route.fulfill({ contentType: 'text/html', body: '<iframe src="https://purdue.simplesyllabus.com/en-US/doc/math"></iframe>' });
+      }
+      if (new URL(route.request().url()).searchParams.get('ou') === '1600003') { redirectLaunches++; return route.fulfill({ contentType: 'text/html', body: '<script>location.replace("https://purdue.simplesyllabus.com/en-US/doc/cs251");</script>' }); }
+      return route.fulfill({ contentType: 'text/html', body: `<html><body><nav>${'Unrelated Brightspace navigation. '.repeat(1000)}</nav><iframe src="https://purdue.simplesyllabus.com/en-US/doc/cs250"></iframe></body></html>` });
+    }
+
+    if (pathname === '/d2l/home/1600002') return route.fulfill({ contentType: 'text/html', body: home.replace('</body>', `<script>setTimeout(() => { const link = document.createElement('d2l-navigation-link'); link.setAttribute('text', 'Syllabus'); link.setAttribute('href', ${JSON.stringify(ltiPath)}); document.querySelector('d2l-navigation').append(link); }, 10000);</script></body>`) });
+    if (pathname === '/d2l/home/1600004') return route.fulfill({ contentType: 'text/html', body: home.replace('</body>', `<d2l-navigation-link text="Syllabus" href="${ltiPath.replace('ou=1600002', 'ou=1600004')}"></d2l-navigation-link></body>`) });
+    if (pathname === '/d2l/home/1438550') return route.fulfill({ contentType: 'text/html', body: home.replace('</body>', `<d2l-navigation-link text="Syllabus" href="${ltiPath.replace('ou=1600002', 'ou=1438550')}"></d2l-navigation-link></body>`) });
     if (pathname.startsWith('/d2l/api/')) return route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
     return route.fulfill({ contentType: 'text/html', body: home });
   });
+  await context.route('https://purdue.simplesyllabus.com/**', (route) => route.fulfill({ contentType: 'text/html', body: new URL(route.request().url()).pathname === '/en-US/sso-redirect' ? '<main>Sorry, we could not locate this section in Simple Higher Ed.<p>Currently enrolled sections</p></main>' : `<!doctype html><html><body><nav>${'Simple Syllabus navigation. '.repeat(1000)}</nav><main class="content-full-page">Loading…</main><script>setTimeout(() => { document.querySelector('main').innerHTML = '<div class="component-wrapper"><div class="content-component"></div></div>'; document.querySelector('.content-component').textContent = ${JSON.stringify(cs250Text)}; }, 10000);</script></body></html>` }));
   const snapshot = snapshotFixture();
   const facts = validateExtraction(MODEL_OUTPUT, SYLLABUS_PAGES, { courseId: 1600001 });
   snapshot.data[0].content = [];
@@ -41,7 +68,13 @@ try {
   snapshot.courses[1].name = 'Fall 2026 CS 25000';
   snapshot.courses.push({ id: 1438550, name: 'Purdue Civics Literacy', code: 'wl.nc.civics.2', current: true, homeUrl: 'https://purdue.brightspace.com/d2l/home/1438550' });
   snapshot.data.push({ courseId: 1438550, assignments: [], quizzes: [], announcements: [], events: [], content: [], grades: [], overview: { hasAttachment: true, text: 'Welcome to Civics Literacy.', fileUrl: '/d2l/api/le/1.96/1438550/overview/attachment' } });
-  const seed = { snapshot, syncMeta: { ok: true, at: new Date().toISOString(), lastSuccessAt: new Date().toISOString() }, genai: { key: 'sk-fake', model: 'qwen3.8:27b' }, syllabi: {
+  snapshot.courses.push({ id: 1600004, name: 'Fall 2026 MA 16200', code: 'wl.202710.MA.16200', current: true, homeUrl: 'https://purdue.brightspace.com/d2l/home/1600004' });
+  snapshot.data.push({ courseId: 1600004, assignments: [], quizzes: [], announcements: [], events: [], content: [], grades: [] });
+  await worker.evaluate(() => {
+    const contains = chrome.permissions.contains.bind(chrome.permissions);
+    chrome.permissions.contains = async (query) => query.origins?.includes('https://purdue.simplesyllabus.com/*') ? (await chrome.storage.local.get('testSimpleGranted')).testSimpleGranted === true : contains(query);
+  });
+  const seed = { syllabusSources: { 1600002: { topic: null, checkedAt: new Date().toISOString() } }, snapshot, syncMeta: { ok: true, at: new Date().toISOString(), lastSuccessAt: new Date().toISOString() }, genai: { key: 'sk-fake', model: 'qwen3.8:27b' }, syllabi: {
     1600001: { courseId: 1600001, status: 'done', topicId: 'overview', title: 'Course overview attachment', updatedAt: null, kind: 'pdf', pages: SYLLABUS_PAGES, ...facts },
     1600002: { courseId: 1600002, status: 'none' },
     1438550: { courseId: 1438550, status: 'error', topicId: 'overview', error: 'HTTP 404', checkedAt: new Date().toISOString() },
@@ -61,8 +94,30 @@ try {
     while (Date.now() < deadline) { all = await worker.evaluate(() => chrome.storage.local.get(null)); if (test(all)) return all; await pause(200); }
     throw new Error(`${label}: ${JSON.stringify(Object.fromEntries(Object.entries(all.syllabi ?? {}).map(([id, r]) => [id, { status: r.status, error: r.error, pages: r.pages?.length }])) )}`);
   };
-  const all = await poll((all) => all.syllabi[1438550]?.status === 'none' && all.syllabi[1600002]?.status === 'done', 'Automatic course pass');
-  check('automatic pass handles missing Civics and finds a ten-second CS 250 navbar without opening course details', all.syllabi[1600002].pages.some((p) => p.text.includes('CS 25000 syllabus')) && civicsDownloads === 1);
+  const allow = panel.getByRole('button', { name: 'Allow Simple Syllabus access', exact: true });
+  await allow.waitFor();
+  await allow.click();
+  let accessPage;
+  for (let i = 0; i < 100 && !accessPage; i++) {
+    accessPage = context.pages().find((page) => page.url().includes('sidepanel.html?syllabus-access=1'));
+    if (!accessPage) await pause(100);
+  }
+  if (!accessPage) throw new Error('The permission page did not open');
+  await accessPage.waitForLoadState();
+  await accessPage.evaluate(() => {
+    chrome.permissions.request = async (request) => {
+      window.requestedSyllabusAccess = request.origins;
+      await chrome.storage.local.set({ testSimpleGranted: true });
+      return true;
+    };
+  });
+  await accessPage.getByRole('button', { name: 'Allow Simple Syllabus access', exact: true }).click();
+  await accessPage.getByText('Access is allowed.', { exact: false }).waitFor();
+  check('the embedded panel opens a permission page that requests only Purdue Simple Syllabus', JSON.stringify(await accessPage.evaluate(() => window.requestedSyllabusAccess)) === JSON.stringify(['https://purdue.simplesyllabus.com/*']));
+  const all = await poll((all) => all.syllabi[1438550]?.status === 'none' && all.syllabi[1600002]?.status === 'done' && all.syllabi[1600004]?.status === 'done', 'Automatic course pass', 100_000);
+  check('automatic pass handles missing Civics and reads a ten-second CS 250 LTI iframe despite an old missing cache without opening course details', all.syllabi[1600002].pages.some((p) => p.text.includes('CS 25000 syllabus')) && civicsDownloads === 1);
+  check('the real missing-section response is saved as no syllabus rather than a loading failure', all.syllabi[1438550].status === 'none' && civicsLaunches === 1);
+  check('a closed Math syllabus tab recovers in the automatic pass without clicking a retry button', mathLaunches === 2 && all.syllabi[1600004].pages.length > 0, `Math launches: ${mathLaunches}`);
   await panel.locator('.tabs button[data-view="courses"]').click();
   const allButton = panel.getByRole('button', { name: 'Check all syllabi', exact: true });
   await allButton.waitFor();
@@ -91,6 +146,11 @@ try {
     check(`Read again downloads ${text}`, overviewDownloads === before + 1);
   }
   await bs.screenshot({ path: path.join(outDir, 'syllabus-retry.png') });
+  const [redirected, shared] = await panel.evaluate((href) => Promise.all(Array.from({ length: 2 }, () => chrome.runtime.sendMessage({ type: 'boilerspace-syllabus', phase: 'page', href, origin: 'https://purdue.brightspace.com' }))), ltiPath.replace('ou=1600002', 'ou=1600003'));
+  if (redirected.error) console.log('Redirect diagnostics', JSON.stringify({ navigation, error: redirected.error }));
+  check('the reader also handles an LTI launch that navigates the entire tab to Simple Syllabus', redirected.text?.includes('CS 25000 syllabus') && !redirected.text.includes('Simple Syllabus navigation'), redirected.error);
+  check('simultaneous readers share one browser tab and receive the same document', redirectLaunches === 1 && shared.text === redirected.text);
+
   const other = await context.newPage();
   await other.goto(`chrome-extension://${new URL(worker.url()).host}/document.html`);
   await Promise.all(Array.from({ length: 20 }, (_, index) => (index % 2 ? other : panel).evaluate(async (id) => {

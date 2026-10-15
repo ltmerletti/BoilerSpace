@@ -2,6 +2,7 @@
 // The model reads the text; code checks that every quote is really in the file and does all date math.
 
 import * as store from './store.js';
+import { isSyllabusAccessError } from './syllabus-access.js';
 import { saveSyllabusEntry } from './syllabus-store.js';
 import { chatCompletion } from './genai.js';
 import { extractText } from './extract.js';
@@ -11,8 +12,8 @@ import { shortCourseLabel } from './courses.js';
 
 const MAX_PROMPT_CHARS = 90_000;
 const MAX_QUOTE_WORDS = 40;
-const ERROR_RETRY_MS = 30 * 60_000;
 const DISCOVERY_RETRY_MS = 24 * 60 * 60_000;
+const DISCOVERY_VERSION = 3;
 const discoveries = new Map();
 
 export function withSyllabusSources(snapshot, sources = {}) {
@@ -24,19 +25,17 @@ export function withSyllabusSources(snapshot, sources = {}) {
 
 async function discoverSource(snapshot, courseId, { force, openTab, now, discover }) {
   const cached = ((await store.get(store.KEYS.syllabusSources)) ?? {})[courseId];
-  const retryAfter = cached?.error ? ERROR_RETRY_MS : DISCOVERY_RETRY_MS;
-  if (!force && cached && now - Date.parse(cached.checkedAt) < retryAfter) {
-    if (cached.error) throw new Error(cached.error);
+  if (!force && !cached?.error && cached?.readerVersion === DISCOVERY_VERSION && now - Date.parse(cached.checkedAt) < DISCOVERY_RETRY_MS) {
     return cached.topic ?? null;
   }
   if (discoveries.has(courseId)) return discoveries.get(courseId);
   const pending = (async () => {
     try {
       const topic = await discover(courseId, { versions: snapshot.versions, open: openTab });
-      await saveSyllabusEntry(store.KEYS.syllabusSources, courseId, { topic, checkedAt: now.toISOString() });
+      await saveSyllabusEntry(store.KEYS.syllabusSources, courseId, { topic, readerVersion: DISCOVERY_VERSION, checkedAt: now.toISOString() });
       return topic;
     } catch (err) {
-      await saveSyllabusEntry(store.KEYS.syllabusSources, courseId, { ...cached, error: err.message, checkedAt: now.toISOString() });
+      await saveSyllabusEntry(store.KEYS.syllabusSources, courseId, { ...cached, error: err.message, readerVersion: DISCOVERY_VERSION, checkedAt: now.toISOString() });
       throw err;
     }
   })();
@@ -427,13 +426,15 @@ export async function processCourse(snapshot, courseId, { force = false, openTab
   const save = (record) => saveRecord(courseId, { ...record, unavailableSources });
   let discovered = false;
 
-  // A manual retry of a navigation source must resolve its current link again.
-  if (force && !picked?.chosen && picked?.id?.toString().startsWith('tab')) {
+  // Any attempt to read a navigation source resolves its current document in the browser.
+  // A completed extraction can be reused; a failed read must not reuse an old launch or text.
+  const completed = existing?.topicId === picked?.id && existing?.updatedAt === picked?.updatedAt && ['done', 'unreadable'].includes(existing?.status);
+  if ((!completed || force) && !picked?.chosen && picked?.id?.toString().startsWith('tab')) {
     if (!openTab && !(await canReachBrightspace())) return existing ?? null;
     discovered = true;
     onStatus(`Looking for the ${shortCourseLabel(course)} syllabus…`);
     try {
-      const refreshed = await discoverSource(snapshot, courseId, { force, openTab, now, discover });
+      const refreshed = await discoverSource(snapshot, courseId, { force: true, openTab, now, discover });
       if (refreshed) candidates[0] = refreshed;
       else candidates.shift();
     } catch (err) {
@@ -448,7 +449,7 @@ export async function processCourse(snapshot, courseId, { force = false, openTab
       discovered = true;
       onStatus(`Looking for the ${shortCourseLabel(course)} syllabus…`);
       try {
-        topic = await discoverSource(snapshot, courseId, { force, openTab, now, discover });
+        topic = await discoverSource(snapshot, courseId, { force: force || existing?.status === 'error', openTab, now, discover });
       } catch (err) {
         return save({ courseId, status: 'error', error: err.message, checkedAt: now.toISOString(), previous: usableRecord(existing) });
       }
@@ -459,14 +460,13 @@ export async function processCourse(snapshot, courseId, { force = false, openTab
       return save({ courseId, status: 'external', topicId: topic.id, title: topic.title, url: topic.url, externalUrl: topic.externalUrl, checkedAt: now.toISOString() });
     }
     if (!force && existing?.topicId === topic.id && existing.updatedAt === topic.updatedAt && ['done', 'unreadable'].includes(existing.status)) return existing;
-    if (!force && existing?.status === 'error' && existing.topicId === topic.id && now - Date.parse(existing.checkedAt) < ERROR_RETRY_MS && existing.errorStatus !== 404 && existing.error !== 'HTTP 404') return existing;
     if (!topic.text && !openTab && !(await canReachBrightspace())) return existing ?? null;
 
     const base = { courseId, topicId: topic.id, title: topic.title, url: topic.url, fileHref: topic.fileHref ?? null, updatedAt: topic.updatedAt, chosen: Boolean(topic.chosen), checkedAt: now.toISOString() };
     onStatus(`Reading the ${shortCourseLabel(course)} syllabus…`);
     let file;
     try {
-      file = topic.text ? textFile(topic.text) : await download(topic.fileUrl, { open: openTab, refresh: force });
+      file = topic.text ? textFile(topic.text) : await download(topic.fileUrl, { open: openTab, refresh: true });
     } catch (err) {
       if (err.status === 404 && !topic.chosen) {
         const at = unavailableSources.findIndex((source) => sourceMatches(source, topic));
@@ -483,8 +483,15 @@ export async function processCourse(snapshot, courseId, { force = false, openTab
   return save({ courseId, status: 'none', checkedAt: now.toISOString(), previous: usableRecord(existing) });
 }
 
-// Each automatic pass covers every current course, regardless of the open Courses detail.
-export async function processCurrentSyllabi(snapshot, { courseId = null, onStatus = () => {}, ...options } = {}) {
+function temporarySyllabusFailure(record) {
+  if (record?.status !== 'error' || isSyllabusAccessError(record.error)) return false;
+  const status = record.errorStatus ?? Number(record.error?.match(/HTTP (\d{3})\b/i)?.[1]);
+  if (status) return status === 408 || status === 429 || status >= 500 && status <= 599;
+  return /networkerror|failed to fetch|network request failed|load failed|timed?\s*out|did not finish loading|tab was closed before it finished loading|could not establish connection|receiving end does not exist|message port closed/i.test(record.error ?? '');
+}
+
+// Each pass covers every current course, then retries temporary failures once.
+export async function processCurrentSyllabi(snapshot, { courseId = null, onStatus = () => {}, wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), ...options } = {}) {
   const courses = (snapshot?.courses ?? []).filter((course) => course.current && (!courseId || course.id === courseId));
   const hasSource = (course) => syllabusCandidates(snapshot.data.find((d) => d.courseId === course.id) ?? {}, course).length > 0;
   courses.sort((a, b) => Number(hasSource(b)) - Number(hasSource(a)));
@@ -492,6 +499,15 @@ export async function processCurrentSyllabi(snapshot, { courseId = null, onStatu
   for (const [index, course] of courses.entries()) {
     const progress = (text) => onStatus(`Syllabi ${index + 1} of ${courses.length}: ${text}`);
     records.push(await processCourse(snapshot, course.id, { ...options, onStatus: progress }));
+  }
+  const retries = records.map((record, index) => temporarySyllabusFailure(record) ? index : -1).filter((index) => index !== -1);
+  if (retries.length) {
+    onStatus('Retrying syllabi that could not finish loading…');
+    await wait(1500);
+    for (const index of retries) {
+      const progress = (text) => onStatus(`Retrying syllabus ${index + 1} of ${courses.length}: ${text}`);
+      records[index] = await processCourse(snapshot, courses[index].id, { ...options, force: false, onStatus: progress });
+    }
   }
   return records;
 }
@@ -546,7 +562,7 @@ async function readAndExtract({ snapshot, course, base, existing, force, onStatu
       ...facts,
     });
   } catch (err) {
-    return save({ ...base, status: 'error', error: err.message, previous: existing?.status === 'done' ? existing : existing?.previous ?? null });
+    return save({ ...base, status: 'error', error: err.message, errorStatus: err.status ?? null, previous: existing?.status === 'done' ? existing : existing?.previous ?? null });
   }
 }
 

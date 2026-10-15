@@ -1,3 +1,4 @@
+import { reportSyllabusAccess, SYLLABUS_SITE } from './lib/syllabus-access.js';
 import { saveSyllabusEntryHere } from './lib/syllabus-store.js';
 import { readXsrf } from './lib/sync.js';
 import { snapshotSyllabus } from './lib/syllabus-scan.js';
@@ -36,8 +37,8 @@ async function readInTab(url, courseId, phase) {
     await markScanTab(tab.id);
     return await waitForSyllabus(async () => {
       try {
-        const [shot] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: snapshotSyllabus, args: [courseId] });
-        return shot?.result ?? null;
+        const shots = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: phase === 'page' }, func: snapshotSyllabus, args: [courseId] });
+        return shots.map((shot) => shot.result).filter(Boolean).sort((a, b) => Number(b.contentReady) - Number(a.contentReady) || Number(b.notFound) - Number(a.notFound) || (b.text?.length ?? 0) - (a.text?.length ?? 0))[0] ?? null;
       } catch {
         if (!(await chrome.tabs.get(tab.id).catch(() => null))) throw new Error('The syllabus tab was closed before it finished loading.');
         return null;
@@ -58,12 +59,26 @@ async function readSyllabusRequest(message) {
     return { hrefs: shot?.hrefs ?? [] };
   }
   if (message.phase === 'page') {
+    const launch = new URL(message.href, origin);
+    if (launch.searchParams.get('type') === 'lti' && !(await reportSyllabusAccess())) {
+      throw new Error('BoilerSpace needs access to purdue.simplesyllabus.com to read this syllabus. Use Allow Simple Syllabus access in BoilerSpace.');
+    }
     const url = scanUrl(message.href, origin);
     if (!url) return { text: '' };
     const shot = await readInTab(url, null, 'page');
-    return { text: shot.text };
+    return { text: shot.text, notFound: shot.notFound === true };
   }
   return { hrefs: [], text: '' };
+}
+
+// A sidebar and an embedded panel can request the same page at the same time.
+const scans = new Map();
+function sharedSyllabusRequest(message) {
+  const key = JSON.stringify([message.origin, message.phase, message.courseId, message.href]);
+  if (scans.has(key)) return scans.get(key);
+  const pending = readSyllabusRequest(message).finally(() => scans.delete(key));
+  scans.set(key, pending);
+  return pending;
 }
 
 // Chrome opens the side panel from the toolbar button. Firefox and Zen use a sidebar instead.
@@ -75,15 +90,29 @@ if (chrome.sidePanel) {
 
 // Content scripts cannot call the page's own XSRF helper, so they ask for it here.
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === 'boilerspace-open-syllabus-access') {
+    chrome.tabs.create({ url: chrome.runtime.getURL('sidepanel.html?syllabus-access=1'), active: true }).then(() => sendResponse({ ok: true }), (err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+  if (message?.type === 'boilerspace-syllabus-access') {
+    reportSyllabusAccess().then((granted) => sendResponse({ ok: true, granted }), (err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
   if (message?.type === 'boilerspace-save-syllabus') {
     saveSyllabusEntryHere(message.key, message.courseId, message.entry).then(() => sendResponse({ ok: true }), (err) => sendResponse({ ok: false, error: err.message }));
     return true;
   }
   if (message?.type === 'boilerspace-syllabus') {
-    readSyllabusRequest(message).then(sendResponse, (err) => sendResponse({ hrefs: [], text: '', error: err.message }));
+    sharedSyllabusRequest(message).then(sendResponse, (err) => sendResponse({ hrefs: [], text: '', error: err.message }));
     return true;
   }
   if (message?.type !== 'boilerspace-xsrf' || !sender.tab?.id) return false;
   readXsrf(sender.tab.id).then((token) => sendResponse({ token }));
   return true;
 });
+
+const onSiteAccessChanged = ({ origins }) => {
+  if (origins?.includes(SYLLABUS_SITE)) reportSyllabusAccess().catch(() => {});
+};
+chrome.permissions.onAdded?.addListener(onSiteAccessChanged);
+chrome.permissions.onRemoved?.addListener(onSiteAccessChanged);

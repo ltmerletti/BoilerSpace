@@ -23,6 +23,7 @@ export function snapshotSyllabus(courseId, root) {
     if (/^\/content\/enforced\/[^/?#]+\/.+/.test(url.pathname)) return { orgUnitId: null };
     if (/quickLink\.d2l$/i.test(url.pathname)) {
       const type = (url.searchParams.get('type') ?? '').toLowerCase();
+      if (type === 'lti') return { orgUnitId: Number(url.searchParams.get('ou')) || null };
       if (type && type !== 'content') return null;
       const code = url.searchParams.get('code') ?? url.searchParams.get('rcode') ?? '';
       const topicId = /-(\d+)$/.exec(code)?.[1] ?? (/^\d+$/.test(code) ? code : null);
@@ -36,14 +37,18 @@ export function snapshotSyllabus(courseId, root) {
   const documentText = (doc) => {
     let best = '';
     let ready = false;
+    let notFound = false;
     const visit = (node, depth) => {
       if (!node || depth > 5) return;
       let text = '';
       try {
         const path = node.location?.pathname ?? '';
         const file = /^\/content\/enforced\//.test(path);
-        const container = file ? node.body : /\/viewContent\/\d+\/View$/i.test(path) ? node.querySelector?.('main, [role="main"], .d2l-page-main') : null;
-        text = (container?.innerText || '').replace(/\s+/g, ' ').trim();
+        const simple = node.location?.origin === 'https://purdue.simplesyllabus.com';
+        if (simple && node.readyState === 'complete' && /we could not locate this section in Simple Higher Ed\./i.test(node.body?.innerText ?? '')) notFound = true;
+        const sections = simple ? [...node.querySelectorAll('.content-component')] : [];
+        const container = simple ? (sections.length ? node.querySelector('main.content-full-page, main') : null) : file ? node.body : /\/viewContent\/\d+\/View$/i.test(path) ? node.querySelector?.('main, [role="main"], .d2l-page-main') : null;
+        text = (simple && sections.length ? sections.map((section) => section.innerText || '').join('\n\n') : container?.innerText || '').replace(/\s+/g, ' ').trim();
         if (container?.querySelector?.('[aria-busy="true"], d2l-loading-spinner') || /^(loading|please wait)[.…\s]*$/i.test(text)) text = '';
         if (text.length > best.length) {
           best = text;
@@ -67,7 +72,7 @@ export function snapshotSyllabus(courseId, root) {
       }
     };
     visit(doc, 0);
-    return { text: best, contentReady: ready };
+    return { text: best, contentReady: ready, notFound };
   };
 
   const doc = root ?? globalThis.document;
@@ -96,5 +101,5 @@ export function snapshotSyllabus(courseId, root) {
   visit(doc);
   const content = documentText(doc);
   const navReady = doc?.readyState === 'complete' && Boolean(doc.querySelector?.('d2l-navigation, d2l-navigation-main-header, .d2l-navigation-s-header, nav, [role="navigation"]'));
-  return { hrefs, text: content.text.slice(0, 120_000), contentReady: content.contentReady, navReady };
+  return { hrefs, text: content.text.slice(0, 120_000), contentReady: content.contentReady, notFound: content.notFound, navReady };
 }

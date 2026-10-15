@@ -86,11 +86,13 @@
       .drawer {
         position: fixed; top: 0; right: 0; z-index: 2147483000;
         width: var(--boilerspace-width, ${DEFAULT_WIDTH}px); max-width: 100vw; height: 100vh;
-        background: #fff; border-left: 1px solid #d3d9e3;
-        transform: translateX(105%); visibility: hidden;
-        transition: transform 180ms ease, visibility 0s linear 180ms;
+        background: #fff;
+        transform: translateX(100%);
+        transition: transform 180ms ease;
       }
-      .drawer.open { transform: none; visibility: visible; transition: transform 180ms ease; }
+      .drawer.open { transform: none; border-left: 1px solid #d3d9e3; }
+      .drawer:not(.open) { pointer-events: none; border-left: 0; }
+      .drawer:not(.open) .collapse { pointer-events: auto; }
       .drawer.overlay { box-shadow: -12px 0 32px rgba(0, 0, 0, 0.16); }
       .drawer.resizing { transition: none; }
       .drawer.resizing iframe { pointer-events: none; }
@@ -102,35 +104,26 @@
       .collapse {
         position: absolute; top: 14px; left: -32px; z-index: 2;
         width: 32px; height: 36px; padding: 0; cursor: pointer;
-        display: none; place-items: center;
+        display: grid; place-items: center;
         border: 1px solid #d3d9e3; border-right: 0; border-radius: 8px 0 0 8px;
         background: #fff; color: #202122;
         box-shadow: -4px 0 12px rgba(32, 33, 34, 0.08);
       }
-      .drawer.open .collapse { display: grid; }
+      .collapse svg { transform: rotate(180deg); }
+      .drawer.open .collapse svg { transform: none; }
       .collapse:hover { color: #006fbf; }
-      .floating {
-        position: fixed; right: 20px; bottom: 20px; z-index: 2147482999;
-        width: 48px; height: 48px; border-radius: 12px; border: 1px solid #d3d9e3; padding: 0; cursor: pointer;
-        background: #fff; box-shadow: 0 2px 12px rgba(32, 33, 34, 0.15);
-        display: none; align-items: center; justify-content: center;
-      }
-      .floating.show { display: flex; }
-      .floating img { width: 30px; height: 30px; }
       @media (prefers-reduced-motion: reduce) { .drawer, .drawer.open { transition: none; } }
     </style>
     <div class="drawer" role="complementary" aria-label="BoilerSpace">
-      <button class="collapse" type="button" title="Collapse BoilerSpace" aria-label="Collapse BoilerSpace">
+      <button class="collapse" type="button" title="Open BoilerSpace" aria-label="Open BoilerSpace">
         <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M7.5 5l5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
       <div class="handle" title="Drag to resize"></div>
     </div>
-    <button class="floating" type="button" title="BoilerSpace" aria-label="Open BoilerSpace"><img alt="" src="${extensionUrl('icons/icon48.png')}"></button>
   `;
   const drawer = shadow.querySelector('.drawer');
   const handle = shadow.querySelector('.handle');
   const collapse = shadow.querySelector('.collapse');
-  const floating = shadow.querySelector('.floating');
   document.documentElement.append(root);
 
   let iframe = null;
@@ -157,6 +150,8 @@
       drawer.append(iframe);
     }
     drawer.classList.toggle('open', open);
+    collapse.title = open ? 'Collapse BoilerSpace' : 'Open BoilerSpace';
+    collapse.setAttribute('aria-label', collapse.title);
     navButton?.setAttribute('aria-expanded', String(open));
     layout({ animate: true });
     if (open) iframe.focus();
@@ -164,8 +159,7 @@
   }
 
   const toggleDrawer = () => setOpen(!isOpen());
-  floating.addEventListener('click', toggleDrawer);
-  collapse.addEventListener('click', () => setOpen(false));
+  collapse.addEventListener('click', toggleDrawer);
   window.addEventListener('resize', () => layout());
 
   handle.addEventListener('pointerdown', (event) => {
@@ -261,7 +255,6 @@
     const slot = navbarSlot();
     if (!slot) return false;
     if (!slot.querySelector(':scope > .boilerspace-nav-item')) slot.prepend(makeNavButton());
-    floating.classList.remove('show');
     navButton.setAttribute('aria-expanded', String(isOpen()));
     return true;
   }
@@ -269,9 +262,6 @@
   if (!placeNavButton()) {
     const observer = new MutationObserver(() => placeNavButton() && observer.disconnect());
     observer.observe(document.documentElement, { childList: true, subtree: true });
-    setTimeout(() => {
-      observer.disconnect();
-      if (!navButton) floating.classList.add('show');
-    }, NAV_WAIT_MS);
+    setTimeout(() => observer.disconnect(), NAV_WAIT_MS);
   }
 })();

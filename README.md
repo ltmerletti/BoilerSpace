@@ -12,7 +12,7 @@ You need to be signed in to [Purdue Brightspace](https://purdue.brightspace.com)
 
 **Firefox and Zen.** Open `about:debugging#/runtime/this-firefox` and choose Load Temporary Add-on. Select `extension/manifest.json`. Firefox drops temporary add-ons when the browser quits, so load it again next session.
 
-Then open Brightspace and click the BoilerSpace button. Chrome opens a side panel. Firefox and Zen open a sidebar. Connect GenAI Studio from the panel. Sign in with your Purdue account when it opens. The default model is `qwen3.8:27b`. Change it in Settings.
+Then open Brightspace and click BoilerSpace in the navigation bar, or the arrow tab near the top-right edge of the page. The arrow opens and collapses the panel. The browser toolbar button also opens BoilerSpace: a side panel in Chrome, or a sidebar in Firefox and Zen. Connect GenAI Studio from the panel. Sign in with your Purdue account when it opens. The default model is `qwen3.8:27b`. Change it in Settings.
 
 After you pull new code, reload the extension. Chrome caches the old scripts until you do.
 

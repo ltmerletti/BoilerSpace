@@ -16,7 +16,7 @@ const playwrightPath = process.argv[2] ?? path.join(root, '../course-companion/n
 const { chromium } = await import(pathToFileURL(playwrightPath).href);
 
 const extensionPath = path.join(root, 'extension');
-const outDir = path.join(root, 'verification');
+const outDir = process.env.VERIFY_OUT ?? path.join(root, 'verification');
 mkdirSync(outDir, { recursive: true });
 const profile = mkdtempSync(path.join(process.env.VERIFY_TMP ?? tmpdir(), 'boilerspace-verify-'));
 
@@ -325,13 +325,23 @@ try {
   check('clicking an item opens it in Brightspace and keeps the panel open', bs.url() === itemHref && !otherTabs.some((u) => u.includes(itemHref)), `${itemHref}; other tabs: ${otherTabs.join(', ') || 'none'}`);
   await bs.screenshot({ path: path.join(outDir, '11-brightspace-followed-link.png') });
 
-  await reopened.locator('#close-button').click();
+  await bs.locator('#boilerspace-root .collapse').click();
   await sleep(300);
   const closed = await bs.evaluate(() => ({
     open: document.getElementById('boilerspace-root').shadowRoot.querySelector('.drawer').classList.contains('open'),
     pushed: document.documentElement.classList.contains('boilerspace-pushed'),
   }));
-  check('close button hides the panel and gives the page its width back', !closed.open && !closed.pushed, JSON.stringify(closed));
+  check('edge arrow hides the panel and gives the page its width back', !closed.open && !closed.pushed, JSON.stringify(closed));
+  await bs.locator('#boilerspace-root button[aria-label="Open BoilerSpace"]').click();
+  check('edge arrow reopens the panel', await bs.locator('#boilerspace-root .drawer.open').count() === 1);
+
+  const noNavbar = await context.newPage();
+  await noNavbar.route('https://purdue.brightspace.com/d2l/no-navbar', (route) => route.fulfill({ contentType: 'text/html', body: '<!doctype html><html><body><main>Page without a navbar</main></body></html>' }));
+  await noNavbar.goto('https://purdue.brightspace.com/d2l/no-navbar');
+  await noNavbar.locator('#boilerspace-root').waitFor({ state: 'attached' });
+  await sleep(16_000);
+  check('no bottom-right launcher appears when the navbar is missing', await noNavbar.locator('#boilerspace-root .floating').count() === 0);
+  await noNavbar.close();
 
   await bs.goto('https://purdue.brightspace.com/d2l/lms/quizzing/user/attempt/quiz_start_frame_auto.d2l?ou=1600001');
   await sleep(2000);

@@ -1431,10 +1431,7 @@ async function init() {
   }
   document.getElementById('sync-button').addEventListener('click', runSync);
   if (EMBEDDED) {
-    const close = document.getElementById('close-button');
-    close.hidden = false;
     const closePanel = () => window.parent.postMessage(JSON.stringify({ type: 'boilerspace-close' }), BRIGHTSPACE_ORIGIN);
-    close.addEventListener('click', closePanel);
     document.addEventListener('keydown', (e) => e.key === 'Escape' && !e.target.closest?.('textarea, select, input') && closePanel());
   }
 

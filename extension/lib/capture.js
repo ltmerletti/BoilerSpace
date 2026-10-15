@@ -18,6 +18,7 @@ export function scrub(value) {
 function openableFiles(data, course) {
   const topics = (data.content ?? []).filter((t) => !t.isHidden && t.fileUrl && !SKIP_EXTENSIONS.test(t.title) && !SKIP_EXTENSIONS.test(t.fileHref ?? ''));
   if (data.overview?.fileUrl) topics.unshift({ id: 'overview', courseId: course.id, title: 'Course overview attachment', modulePath: [], fileUrl: data.overview.fileUrl });
+  if (data.syllabusTab && (data.syllabusTab.fileUrl || data.syllabusTab.text)) topics.unshift({ ...data.syllabusTab, courseId: course.id });
   return topics;
 }
 

@@ -121,7 +121,9 @@ const check = (name, ok, detail = '') => {
 const context = await chromium.launchPersistentContext(profile, {
   ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : { channel: 'chromium' }),
   headless: true,
-  viewport: { width: 400, height: 1100 },
+  // Background scan tabs inherit this size. Match the Brightspace page so closing one
+  // does not leave Chromium's emulated pointer coordinates at a different width.
+  viewport: { width: 1280, height: 860 },
   deviceScaleFactor: 2,
   args: [`--disable-extensions-except=${extensionPath}`, `--load-extension=${extensionPath}`],
 });
@@ -165,6 +167,7 @@ try {
   });
 
   const page = await context.newPage();
+  await page.setViewportSize({ width: 400, height: 1100 });
   const consoleErrors = [];
   page.on('pageerror', (err) => consoleErrors.push(err.message));
   page.on('console', (msg) => msg.type() === 'error' && consoleErrors.push(msg.text()));
@@ -282,7 +285,7 @@ try {
   check('the panel pushes Brightspace over instead of covering it', push.pushed && push.margin === '400px', JSON.stringify(push));
 
   let meta = null;
-  for (let i = 0; i < 100 && !meta?.ok; i++) {
+  for (let i = 0; i < 300 && !meta?.ok; i++) {
     meta = (await worker.evaluate(() => chrome.storage.local.get('syncMeta'))).syncMeta;
     await sleep(200);
   }

@@ -39,6 +39,14 @@ test('finds syllabi posted as links to course files, outside links, or in the co
   assert.equal(withOverview[0].id, 'overview');
   const pasted = syllabusCandidates({ content: [], overview: { text: `Syllabus. ${'Grading and policies. '.repeat(60)}`, hasAttachment: false, fileUrl: null } });
   assert.equal(pasted[0].id, 'overview-text');
+
+  const tab = { id: 'tab:12707056', title: 'Syllabus', fileUrl: '/d2l/api/le/1.96/6824/content/topics/12707056/file', url: 'https://purdue.brightspace.com/d2l/le/content/6824/viewContent/12707056/View' };
+  const fromTab = syllabusCandidates({ content: [], syllabusTab: tab });
+  assert.equal(fromTab[0].id, 'tab:12707056');
+  const rendered = syllabusCandidates({ content: [], syllabusTab: { id: 'tab:9', title: 'Syllabus', text: 'Course schedule and policies.', url: 'https://purdue.brightspace.com/d2l/home/9' } });
+  assert.equal(rendered[0].id, 'tab:9');
+  const pdfWins = syllabusCandidates({ content, syllabusTab: tab });
+  assert.equal(pdfWins[0].id, 1, 'a syllabus file in Content still wins over the Syllabus tab');
 });
 
 test('quotes must appear in the file, allowing dash, quote and ellipsis differences', () => {

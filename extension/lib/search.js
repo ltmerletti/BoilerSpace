@@ -2,7 +2,7 @@
 
 import { dueDisplay } from './dates.js';
 import { shortCourseLabel } from './courses.js';
-import { locationUrl, syllabusFile } from './links.js';
+import { locationUrl, syllabusFile, syllabusFileKey } from './links.js';
 
 const CHUNK_CHARS = 900;
 const CHUNK_OVERLAP = 150;
@@ -119,6 +119,18 @@ export function documentsFromSnapshot(snapshot, syllabi = {}, { files = [] } = {
       if (a.isHidden) continue;
       docs.push({ id: `announcement:${a.id}`, courseId: data.courseId, kind: 'announcement', title: a.title, label: `${course} announcement: ${a.title}`, url: a.url, text: a.body ?? '' });
     }
+    if (data.syllabusTab && (data.syllabusTab.fileUrl || data.syllabusTab.text)) {
+      docs.push({
+        id: data.syllabusTab.id,
+        file_key: data.syllabusTab.id,
+        courseId: data.courseId,
+        kind: 'content',
+        title: data.syllabusTab.title,
+        label: `${course} content: Syllabus`,
+        url: data.syllabusTab.url,
+        text: data.syllabusTab.text || 'syllabus',
+      });
+    }
     for (const t of data.content) {
       if (t.isHidden) continue;
       docs.push({ id: `content:${t.id}`, file_key: t.fileUrl ? `content:${t.id}` : undefined, courseId: data.courseId, kind: 'content', title: t.title, label: `${course} content: ${[...t.modulePath, t.title].join(' / ')}`, url: t.url, text: t.modulePath.join(' ') });
@@ -132,8 +144,9 @@ export function documentsFromSnapshot(snapshot, syllabi = {}, { files = [] } = {
     const course = courseName.get(courseId);
     const file = syllabusFile(usable, snapshot);
     if (usable.topicId) indexedSyllabusKeys.add(`${courseId}:${usable.topicId}`);
+    const fileKey = syllabusFileKey({ ...usable, courseId }, snapshot);
     for (const page of usable.pages) {
-      docs.push({ id: `syllabus:${courseId}:${page.page}`, courseId, kind: 'syllabus', title: usable.title, label: `${course} syllabus, ${page.label}`, url: locationUrl(file, page.label), text: page.text });
+      docs.push({ id: `syllabus:${courseId}:${page.page}`, file_key: fileKey ?? undefined, courseId, kind: 'syllabus', title: usable.title, label: `${course} syllabus, ${page.label}`, url: locationUrl(file, page.label), text: page.text });
     }
   }
   for (const f of files) {

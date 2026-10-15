@@ -24,8 +24,10 @@ test('a sync reports progress per course, saves the snapshot and frees the lock'
   );
 
   assert.equal(result.ok, true);
-  assert.deepEqual(progress.filter((p) => p.total).map((p) => `${p.done}/${p.total}`), ['0/3', '1/3', '2/3', '3/3']);
-  assert.match(progress.find((p) => p.total)?.message, /\(1 of 3\)/);
+  assert.deepEqual(progress.filter((p) => p.message.startsWith('Syncing')).map((p) => `${p.done}/${p.total}`), ['0/3', '1/3', '2/3']);
+  assert.equal(progress.find((p) => p.message === 'Saving…')?.done, 3);
+  assert.match(progress.find((p) => p.message.startsWith('Syncing'))?.message, /\(1 of 3\)/);
+  assert.ok(progress.some((p) => p.message.startsWith('Opening the ') && p.message.endsWith(' syllabus…')));
   assert.ok(progress.some((p) => p.message.startsWith('Syncing CS 25200')), 'courses are named by their short label');
   assert.equal(data.snapshot.courses.length, 28);
   assert.equal(data.syncMeta.ok, true);

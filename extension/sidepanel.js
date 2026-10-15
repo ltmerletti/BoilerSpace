@@ -839,7 +839,7 @@ function policyBlock(record, raw) {
 
 function syllabusStatusLine(raw) {
   if (!raw) return state.genai ? (state.busy.syllabi ? 'Reading…' : 'Not read yet.') : 'Connect GenAI Studio to read it.';
-  if (raw.status === 'none') return 'No file that looks like a syllabus is in Content or the course overview.';
+  if (raw.status === 'none') return 'No syllabus was found in Content, the course overview, or the Syllabus tab.';
   if (raw.status === 'external') return `The syllabus is a link to ${raw.externalUrl ? new URL(raw.externalUrl).hostname : 'another site'}, which BoilerSpace can't open. Upload a copy to read it.`;
   if (raw.status === 'unreadable') return raw.warning;
   if (raw.status === 'error') return `Reading failed: ${raw.error}`;

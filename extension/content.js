@@ -3,6 +3,17 @@
 // Stays off entirely on quiz attempt pages.
 
 (() => {
+  // A background tab opened to read another course's syllabus, or a frame inside one.
+  try {
+    if (location.hash.includes('boilerspace-scan') || sessionStorage.getItem('boilerspace-scan') === '1') return;
+  } catch {
+    // sessionStorage can be blocked; the hash still marks a scan tab
+  }
+  try {
+    if (window.top !== window) return;
+  } catch {
+    return;
+  }
   if (window.__boilerspaceLoaded) return;
   window.__boilerspaceLoaded = true;
   if (location.pathname.startsWith('/d2l/lms/quizzing/user/attempt/') || location.pathname.startsWith('/d2l/login')) return;
@@ -31,7 +42,10 @@
   async function pageWork(action, args = {}) {
     const token = await xsrfToken(args.xsrfToken);
     const sync = await loadLib('page-sync.js');
-    if (action === 'sync') return sync.syncHere({ xsrfToken: token });
+    if (action === 'sync') {
+      const { syllabusHrefsInDocument } = await loadLib('brightspace.js');
+      return sync.syncHere({ xsrfToken: token, pageLinks: syllabusHrefsInDocument(document) });
+    }
     if (action === 'download') return sync.downloadHere(args.path, { xsrfToken: token, seeImages: args.seeImages, location: args.location });
     if (action === 'read-quiz') return sync.readQuizHere({ ...args, xsrfToken: token });
     throw new Error(`Unknown request ${action}`);
@@ -63,8 +77,8 @@
 
   setTimeout(async () => {
     const token = await xsrfToken(null);
-    loadLib('page-sync.js')
-      .then((m) => m.autoSyncIfDue({ xsrfToken: token }))
+    Promise.all([loadLib('page-sync.js'), loadLib('brightspace.js')])
+      .then(([sync, brightspace]) => sync.autoSyncIfDue({ xsrfToken: token, pageLinks: brightspace.syllabusHrefsInDocument(document) }))
       .catch(() => {});
   }, AUTO_SYNC_DELAY_MS);
 

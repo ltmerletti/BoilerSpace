@@ -8,7 +8,7 @@ import { dayKey, daysFromToday, dueDisplay, formatDayKey } from './dates.js';
 import { usableRecord } from './syllabus.js';
 import { getCachedCourseFile, readCourseFile } from './files.js';
 import { readQuizOnPage } from './sync.js';
-import { locationUrl, syllabusFile } from './links.js';
+import { locationUrl, syllabusFile, syllabusFileKey } from './links.js';
 
 const MAX_TURNS = 12;
 const HISTORY_MESSAGES = 8;
@@ -105,7 +105,7 @@ const TOOLS = [
   },
   {
     name: 'list_course_files',
-    description: "List files and links in a course's Brightspace Content, including the course overview. Use it to find a syllabus, schedule or other document to open with read_course_file.",
+    description: "List files and links in a course's Brightspace Content, including the course overview and the Syllabus tab. Use it to find a syllabus, schedule or other document to open with read_course_file.",
     parameters: {
       type: 'object',
       properties: {
@@ -118,7 +118,7 @@ const TOOLS = [
   {
     name: 'read_course_file',
     description:
-      'Open a course file by its file_key from list_course_files and return the passages that best match the query. The first time a file is opened it also returns an outline of how each page starts; pass location to read one whole page or slide. Pictures are left out unless see_images is true.',
+      'Open a course file by its file_key from list_course_files or from a search_course_material hit. A syllabus page in those results includes the file_key. The first time a file is opened it also returns an outline of how each page starts; pass location to read one whole page or slide. Pictures are left out unless see_images is true.',
     parameters: {
       type: 'object',
       properties: {
@@ -208,6 +208,7 @@ export function createTools({ snapshot, syllabi = {}, reviews = {}, now = new Da
     const files = (data.content ?? [])
       .filter((t) => !t.isHidden && (t.fileUrl || t.externalUrl))
       .map((t) => ({ ...t, key: `content:${t.id}` }));
+    if (data.syllabusTab && (data.syllabusTab.fileUrl || data.syllabusTab.text)) files.unshift({ ...data.syllabusTab, key: data.syllabusTab.id, courseId, modulePath: data.syllabusTab.modulePath ?? [] });
     if (data.overview?.fileUrl) files.unshift({ key: `overview:${courseId}`, id: 'overview', courseId, title: 'Course overview attachment', modulePath: [], fileUrl: data.overview.fileUrl, url: course?.homeUrl ?? null });
     else if (data.overview?.text) files.unshift({ key: `overview:${courseId}`, id: 'overview-text', courseId, title: 'Course overview', modulePath: [], text: data.overview.text, url: course?.homeUrl ?? null });
     return files;
@@ -222,14 +223,31 @@ export function createTools({ snapshot, syllabi = {}, reviews = {}, now = new Da
     return quizzes.find((quiz) => String(quiz.id) === id) ?? quizzes.find((quiz) => quiz.title.toLowerCase() === needle) ?? quizzes.find((quiz) => quiz.title.toLowerCase().includes(needle)) ?? null;
   }
 
+  function syllabusRecords() {
+    return Object.entries(syllabi)
+      .map(([id, record]) => {
+        const usable = usableRecord(record);
+        return usable ? { ...usable, courseId: usable.courseId ?? Number(id) } : null;
+      })
+      .filter(Boolean);
+  }
+
+  function syllabusAlias(raw) {
+    if (raw !== 'syllabus' && !raw.startsWith('syllabus:')) return null;
+    const records = syllabusRecords();
+    const record = raw === 'syllabus' ? (records.length === 1 ? records[0] : null) : records.find((item) => item.courseId === Number(raw.slice('syllabus:'.length)));
+    return record ? syllabusFileKey(record, snapshot) : null;
+  }
+
   function findFile(key) {
-    const [kind, rawId] = String(key).split(':');
+    const resolved = syllabusAlias(String(key ?? '').trim()) ?? String(key ?? '');
+    const [kind, rawId] = resolved.split(':');
     if (kind === 'overview') {
       const first = courseFiles(Number(rawId))[0];
-      return first?.key === key ? first : null;
+      return first?.key === resolved ? first : null;
     }
     for (const data of snapshot.data) {
-      const topic = courseFiles(data.courseId).find((t) => t.key === key || String(t.id) === rawId);
+      const topic = courseFiles(data.courseId).find((t) => t.key === resolved || String(t.id) === rawId);
       if (topic) return topic;
     }
     return null;
@@ -421,7 +439,7 @@ export function createTools({ snapshot, syllabi = {}, reviews = {}, now = new Da
           .slice(0, 8)
           .map((t) => ({ file_key: t.key, title: t.title }));
         return {
-          note: 'No syllabus has been read for this course yet. It may be named differently or sit in the course overview: call list_course_files or open one of candidate_files with read_course_file.',
+          note: 'No syllabus has been read for this course yet. It may be the Syllabus tab, or a file with a different name: call list_course_files or open one of candidate_files with read_course_file.',
           candidate_files: candidates,
         };
       }
@@ -429,6 +447,7 @@ export function createTools({ snapshot, syllabi = {}, reviews = {}, now = new Da
       const ai = record.policies.aiUse;
       return {
         course: label(course.id),
+        file_key: syllabusFileKey({ ...record, courseId: record.courseId ?? course.id }, snapshot),
         late_work: fact(record.policies.lateWork),
         ai_use: ai.quote ? { stance: ai.stance, summary: ai.summary, quote: ai.quote, source: syllabusSource(record, ai.page, course.id) } : { stance: 'unclear' },
         attendance: fact(record.policies.attendance),
@@ -467,7 +486,10 @@ export function createTools({ snapshot, syllabi = {}, reviews = {}, now = new Da
       if (!course) throw new Error('course_id is required.');
       const all = oneCopy(courseFiles(course.id));
       const terms = tokenize(query ?? '');
-      const matches = terms.length ? all.filter((t) => tokenize(`${t.title} ${t.modulePath.join(' ')}`).some((w) => terms.includes(w))) : all;
+      const syllabusKey = syllabusFileKey(syllabusRecords().find((item) => item.courseId === course.id) ?? null, snapshot);
+      const matches = terms.length
+        ? all.filter((t) => tokenize(`${t.title} ${(t.modulePath ?? []).join(' ')}`).some((w) => terms.includes(w)) || (/syllab/i.test(query ?? '') && t.key === syllabusKey))
+        : all;
       const list = matches.length ? matches : all;
       return {
         ...(terms.length && !matches.length ? { note: `No titles match "${query}", so here is everything.` } : {}),
@@ -484,7 +506,10 @@ export function createTools({ snapshot, syllabi = {}, reviews = {}, now = new Da
 
     async read_course_file({ file_key, query, location, see_images }) {
       const topic = findFile(file_key);
-      if (!topic) throw new Error(`No course file has file_key "${file_key}". Call list_course_files first.`);
+      if (!topic) {
+        const keys = syllabusRecords().map((record) => syllabusFileKey(record, snapshot)).filter(Boolean);
+        throw new Error(keys.length ? `No course file has file_key "${file_key}". Open one of: ${keys.join(', ')}.` : `No course file has file_key "${file_key}". Call list_course_files first.`);
+      }
       let loaded;
       try {
         loaded = await readFile(topic, { syllabi });
@@ -604,7 +629,7 @@ export function systemPrompt({ snapshot, syllabi, now, scopeCourseId }) {
     '- When the student asks what exams are coming up, include midterms, finals and checkpoints too. Count a week as 7 days. list_upcoming is not the whole list: search announcements, then open a schedule or syllabus file if a course is still missing, before you say that is all.',
     '- Do not guess what an exam covers from which lectures came recently. If no document states the scope, say it is not posted. When a document does state it, open the lecture files that scope names and report the learning objectives and topics those files state. Do not stop at a chapter list and offer to look further.',
     '- Search with the words the document would use. Do not put a guessed answer in the query.',
-    '- Exam dates, schedules and policies are often only in a course file. If the synced data does not answer the question, call list_course_files and open the likely files (syllabus, schedule, course information, course overview) with read_course_file before giving up.',
+    '- Exam dates, schedules and policies are often only in a course file. If the synced data does not answer the question, call list_course_files and open the likely files (syllabus, the Syllabus tab, schedule, course information, course overview) with read_course_file before giving up.',
     '- If the excerpts from a file do not answer the question, look at its outline and read the most likely page with location instead of searching again with new words. If that does not find it either, it is probably not in that file; answer with what you have.',
     '- Pictures inside a file are left out of a normal read. If a page has almost no text, or the question is about a figure, call read_course_file again with see_images true and location set to that one slide or page. Read an attached picture. Do not guess what a figure shows.',
     '- If you still find nothing, say what you checked and suggest who to ask. Answer the parts you did find.',

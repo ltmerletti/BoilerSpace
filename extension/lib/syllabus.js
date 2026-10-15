@@ -52,6 +52,7 @@ export function syllabusCandidates(data, course) {
   } else if (overview?.text?.length >= OVERVIEW_TEXT_MIN_CHARS) {
     candidates.push({ id: 'overview-text', title: 'Course overview', modulePath: [], text: overview.text, url: course?.homeUrl ?? null, updatedAt: null, score: /syllab/i.test(overview.text) ? 9 : 4 });
   }
+  if (data.syllabusTab && (data.syllabusTab.fileUrl || data.syllabusTab.text)) candidates.push({ ...data.syllabusTab, modulePath: data.syllabusTab.modulePath ?? [], score: 9 });
   return candidates.sort((a, b) => b.score - a.score);
 }
 

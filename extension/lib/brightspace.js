@@ -498,6 +498,328 @@ async function section(errors, courseId, name, load, { empty = [], missingOk = f
   }
 }
 
+const TOPIC_TYPE = { 1: 'File', 3: 'Link' };
+const ACTIVITY_TYPE = { 1: 'File', 2: 'Link' };
+
+function decodeHref(value) {
+  return value.replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+}
+
+function linkLabel(html) {
+  return html
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function framedName(href) {
+  const framed = /[?&]framedName=([^&#"']*)/i.exec(href)?.[1] ?? '';
+  if (!framed) return '';
+  try {
+    return decodeURIComponent(framed.replace(/\+/g, ' '));
+  } catch {
+    return framed;
+  }
+}
+
+const isSyllabusName = (value) => /^syllabus$/i.test((value ?? '').replace(/\s+/g, ' ').trim());
+
+// Navbar links named Syllabus. The tab is often a quicklink (framedName=Syllabus) on a custom element, not an <a>.
+export function syllabusNavLinks(html) {
+  const source = String(html ?? '')
+    .replace(/\\u0026/gi, '&')
+    .replace(/\\u003d/gi, '=')
+    .replace(/\\u003f/gi, '?')
+    .replace(/\\\//g, '/');
+  const found = [];
+  const seen = new Set();
+  const add = (href, text) => {
+    href = decodeHref(href ?? '');
+    if (!href || seen.has(href)) return;
+    const name = framedName(href);
+    if (!isSyllabusName(text) && !isSyllabusName(name)) return;
+    seen.add(href);
+    found.push({ href, text: (text || name || 'Syllabus').replace(/\s+/g, ' ').trim() || 'Syllabus' });
+  };
+
+  const anchors = /<a\b([^>]*)>([\s\S]*?)<\/a>/gi;
+  let match;
+  while ((match = anchors.exec(source))) {
+    const hrefMatch = /\bhref\s*=\s*("([^"]*)"|'([^']*)')/i.exec(match[1]);
+    add(hrefMatch?.[2] ?? hrefMatch?.[3] ?? '', linkLabel(match[2]));
+  }
+  const tags = /<([a-z0-9-]+)\b([^>]*)>/gi;
+  while ((match = tags.exec(source))) {
+    const attrs = match[2];
+    const hrefMatch = /\bhref\s*=\s*("([^"]*)"|'([^']*)')/i.exec(attrs);
+    if (!hrefMatch) continue;
+    const textAttr = /\b(?:text|title|aria-label)\s*=\s*("([^"]*)"|'([^']*)')/i.exec(attrs);
+    add(hrefMatch[2] ?? hrefMatch[3] ?? '', textAttr?.[2] ?? textAttr?.[3] ?? '');
+  }
+  const raw = /(?:https?:\/\/|\/)[^"'\\\s<>]*framedName(?:=|%3D)Syllabus/gi;
+  while ((match = raw.exec(source))) add(match[0].replace(/%3D/i, '='), 'Syllabus');
+  return found;
+}
+
+// The open Brightspace page already shows this course's navbar, including links inside shadow roots.
+export function syllabusHrefsInDocument(doc) {
+  if (!doc?.querySelectorAll && !doc?.location?.href) return [];
+  const found = [];
+  const seen = new Set();
+  const add = (href, text = '') => {
+    href = decodeHref(String(href ?? ''));
+    if (!href || seen.has(href)) return;
+    if (!isSyllabusName(text) && !isSyllabusName(framedName(href))) return;
+    seen.add(href);
+    found.push(href);
+  };
+  if (doc.location?.href) add(doc.location.href);
+  const visit = (root) => {
+    if (!root?.querySelectorAll) return;
+    for (const el of root.querySelectorAll('*')) {
+      const href = el.getAttribute?.('href') || (typeof el.href === 'string' ? el.href : '');
+      const text = el.getAttribute?.('text') || el.getAttribute?.('aria-label') || el.getAttribute?.('title') || el.textContent || '';
+      add(href, text);
+      if (el.shadowRoot) visit(el.shadowRoot);
+    }
+  };
+  visit(doc);
+  return found;
+}
+
+export function syllabusHrefInDocument(doc, courseId) {
+  if (courseId == null) return null;
+  const page = `${doc?.location?.pathname ?? ''}${doc?.location?.search ?? ''}`;
+  for (const href of syllabusHrefsInDocument(doc)) {
+    const target = contentTargetFromHref(href);
+    if (!target) continue;
+    if (!target.orgUnitId || target.orgUnitId === Number(courseId) || page.includes(String(courseId))) return href;
+  }
+  return null;
+}
+
+// A content quicklink's code ends with the topic id. srcou is the org unit that owns the file.
+export function contentTargetFromHref(href) {
+  let url;
+  try {
+    url = new URL(href, 'https://purdue.brightspace.com');
+  } catch {
+    return null;
+  }
+  if (/quickLink\.d2l$/i.test(url.pathname)) {
+    const type = (url.searchParams.get('type') ?? '').toLowerCase();
+    if (type && type !== 'content') return null;
+    const code = url.searchParams.get('code') ?? url.searchParams.get('rcode') ?? '';
+    const topicId = /-(\d+)$/.exec(code)?.[1] ?? (/^\d+$/.test(code) ? code : null);
+    if (!topicId) return null;
+    return {
+      topicId: Number(topicId),
+      orgUnitId: Number(url.searchParams.get('ou')) || null,
+      sourceOrgUnitId: Number(url.searchParams.get('srcou')) || null,
+    };
+  }
+  const view = /\/content\/(\d+)\/viewContent\/(\d+)\/View$/i.exec(url.pathname);
+  if (view) return { topicId: Number(view[2]), orgUnitId: Number(view[1]), sourceOrgUnitId: null };
+  if (COURSE_FILE_PATH.test(url.pathname)) return { topicId: null, orgUnitId: null, sourceOrgUnitId: null, filePath: url.pathname };
+  return null;
+}
+
+function topicAsToc(topic, topicId) {
+  const type = topic.TypeIdentifier ?? TOPIC_TYPE[topic.TopicType] ?? ACTIVITY_TYPE[topic.ActivityType] ?? 'File';
+  return {
+    TypeIdentifier: type,
+    TopicId: topic.TopicId ?? topic.Id ?? topicId,
+    Url: topic.Url ?? null,
+    Title: topic.Title ?? 'Syllabus',
+    LastModifiedDate: topic.LastModifiedDate ?? null,
+  };
+}
+
+// The Syllabus tab is a navbar link. It is often an HTML page, and it is often missing from Content.
+function syllabusLinkForCourse(hrefs, courseId) {
+  for (const href of hrefs) {
+    if (!href) continue;
+    const target = contentTargetFromHref(href);
+    if (!target?.topicId && !target?.filePath) continue;
+    if (target.orgUnitId && target.orgUnitId !== Number(courseId)) continue;
+    return { href, text: 'Syllabus' };
+  }
+  return null;
+}
+
+const SYLLABUS_TEXT_MIN = 600;
+const SYLLABUS_TEXT_MAX = 120_000;
+
+function plainText(html) {
+  return String(html ?? '')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function withSyllabusText(tab, text) {
+  if (!tab || !text || text.length < SYLLABUS_TEXT_MIN) return tab;
+  return { ...tab, text: text.slice(0, SYLLABUS_TEXT_MAX), textLabel: 'page 1' };
+}
+
+// The HTML file behind the tab, when Brightspace serves it directly.
+async function syllabusFileText(client, fileHref) {
+  if (!fileHref || !/\.html?($|\?)/i.test(fileHref)) return null;
+  try {
+    return plainText(await client.getText(fileHref));
+  } catch {
+    return null;
+  }
+}
+
+function templateSyllabusTopic(topics) {
+  const rank = (topic) => {
+    if (topic.isHidden || (!topic.fileUrl && !topic.externalUrl)) return 0;
+    const title = topic.title ?? '';
+    const file = `${topic.fileHref ?? ''} ${topic.fileUrl ?? ''}`;
+    if (/^syllabus$/i.test(title.trim())) return 30;
+    if (/syllab/i.test(title) && /\.(html?|pdf|docx?)$/i.test(`${title} ${file}`)) return 20;
+    if (/syllab/i.test(file)) return 16;
+    if (/syllab/i.test(title)) return 12;
+    return 0;
+  };
+  return topics
+    .map((topic) => ({ topic, score: rank(topic) }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score)[0]?.topic ?? null;
+}
+
+// The Syllabus tab is often a file on the course template, shared into the offering but absent from its Content list.
+async function syllabusFromTemplate(client, { courseId, le, lp, origin }) {
+  if (!lp) return null;
+  let templateId = null;
+  try {
+    const details = await client.getJson(`/d2l/api/lp/${lp}/courses/${courseId}`);
+    const id = Number(details?.CourseTemplate?.Identifier);
+    if (id && id !== Number(courseId)) templateId = id;
+  } catch (err) {
+    if (err.status !== 404 && err.status !== 403) throw err;
+  }
+  if (!templateId) {
+    try {
+      const parents = await client.getJson(`/d2l/api/lp/${lp}/orgstructure/${courseId}/parents`);
+      const list = Array.isArray(parents) ? parents : parents?.Items ?? [];
+      const template = list.find((unit) => /template/i.test(`${unit?.Type?.Code ?? ''} ${unit?.Type?.Name ?? ''}`));
+      const id = Number(template?.Identifier ?? template?.Id);
+      if (id && id !== Number(courseId)) templateId = id;
+    } catch (err) {
+      if (err.status !== 404 && err.status !== 403) throw err;
+    }
+  }
+  if (!templateId) return null;
+  try {
+    const topics = flattenToc(await client.getJson(`/d2l/api/le/${le}/${templateId}/content/toc`), templateId, origin).map((topic) => ({
+      ...topic,
+      fileUrl: topic.fileUrl?.replace('{le}', le) ?? null,
+    }));
+    const hit = templateSyllabusTopic(topics);
+    if (!hit) return null;
+    return {
+      id: `tab:${hit.id}`,
+      title: 'Syllabus',
+      modulePath: [],
+      fileUrl: hit.fileUrl,
+      fileHref: hit.fileHref,
+      url: hit.url,
+      updatedAt: hit.updatedAt,
+    };
+  } catch (err) {
+    if (err.status !== 404 && err.status !== 403) throw err;
+    return null;
+  }
+}
+
+async function optionalCall(fn, arg) {
+  if (!fn) return null;
+  try {
+    return await fn(arg);
+  } catch {
+    return null;
+  }
+}
+
+export async function findSyllabusTab(client, { courseId, le, lp = null, origin, pageLinks = [], readTab = null }) {
+  const live = typeof globalThis.document === 'undefined' ? [] : syllabusHrefsInDocument(globalThis.document);
+  let link = syllabusLinkForCourse([...pageLinks, ...live], courseId);
+  if (!link) {
+    const fromTemplate = await syllabusFromTemplate(client, { courseId, le, lp, origin });
+    if (fromTemplate) {
+      const fromFile = await syllabusFileText(client, fromTemplate.fileHref);
+      return withSyllabusText(fromTemplate, fromFile) ?? fromTemplate;
+    }
+  }
+  if (!link) {
+    let html = '';
+    for (const path of [`/d2l/home/${courseId}`, `/d2l/le/content/${courseId}/Home`]) {
+      try {
+        html = await client.getText(path);
+      } catch (err) {
+        if (err.status === 404) continue;
+        throw err;
+      }
+      link = syllabusLinkForCourse(syllabusNavLinks(html).map((item) => item.href), courseId);
+      if (link) break;
+    }
+  }
+  if (!link && readTab?.links) {
+    link = syllabusLinkForCourse((await optionalCall(readTab.links, courseId)) ?? [], courseId);
+  }
+  if (!link) return null;
+  const target = contentTargetFromHref(link.href);
+  if (!target) return null;
+  let tab;
+  if (target.filePath) {
+    tab = { id: 'tab', title: 'Syllabus', modulePath: [], fileUrl: target.filePath, fileHref: target.filePath, url: new URL(link.href, origin).href, updatedAt: null };
+  } else {
+    const orgUnits = [...new Set([target.sourceOrgUnitId, courseId, target.orgUnitId].filter(Boolean))];
+    for (const ou of orgUnits) {
+      try {
+        const topic = topicAsToc(await client.getJson(`/d2l/api/le/${le}/${ou}/content/topics/${target.topicId}`), target.topicId);
+        const fileUrl = topicFileUrl(topic, ou, origin)?.replace('{le}', le) ?? `/d2l/api/le/${le}/${ou}/content/topics/${topic.TopicId}/file`;
+        tab = {
+          id: `tab:${topic.TopicId}`,
+          title: 'Syllabus',
+          modulePath: [],
+          fileUrl,
+          fileHref: fileHref(topic, origin),
+          url: `${origin}/d2l/le/content/${ou}/viewContent/${topic.TopicId}/View`,
+          updatedAt: isoOrNull(topic.LastModifiedDate),
+        };
+        break;
+      } catch (err) {
+        if (err.status !== 404 && err.status !== 403) throw err;
+      }
+    }
+    if (!tab) {
+      const ou = target.sourceOrgUnitId || courseId;
+      tab = {
+        id: `tab:${target.topicId}`,
+        title: 'Syllabus',
+        modulePath: [],
+        fileUrl: `/d2l/api/le/${le}/${ou}/content/topics/${target.topicId}/file`,
+        fileHref: null,
+        url: new URL(link.href, origin).href,
+        updatedAt: null,
+      };
+    }
+  }
+  const fromFile = await syllabusFileText(client, tab.fileHref);
+  if (fromFile && fromFile.length >= SYLLABUS_TEXT_MIN) return withSyllabusText(tab, fromFile);
+  return withSyllabusText(tab, await optionalCall(readTab?.page, link.href));
+}
 
 // The course overview is where many instructors attach the syllabus.
 export function normalizeOverview(overview, courseId, le) {
@@ -509,7 +831,7 @@ export function normalizeOverview(overview, courseId, le) {
   };
 }
 
-export async function syncCurrentCourses(client, { origin, now = new Date(), onProgress = () => {} } = {}) {
+export async function syncCurrentCourses(client, { origin, now = new Date(), onProgress = () => {}, pageLinks = [], readTab = null } = {}) {
   const started = Date.now();
   const versions = await discoverVersions(client);
   const { lp, le } = versions;
@@ -563,7 +885,13 @@ export async function syncCurrentCourses(client, { origin, now = new Date(), onP
         (await client.getAll(`${base}/grades/values/myGradeValues/`)).map(normalizeGrade)),
       section(errors, course.id, 'overview', async () => normalizeOverview(await client.getJson(`${base}/overview`), course.id, le), { empty: null, missingOk: true }),
     ]);
-    return { courseId: course.id, assignments, quizzes, announcements, content, events, grades, overview };
+    const namedSyllabus = content.some((t) => t.fileUrl && !t.isHidden && /syllab/i.test(`${t.title} ${(t.modulePath ?? []).join(' ')} ${t.fileHref ?? ''}`));
+    let syllabusTab = null;
+    if (!namedSyllabus) {
+      onProgress({ message: `Opening the ${shortCourseLabel(course)} syllabus…`, done: index, total: current.length });
+      syllabusTab = await section(errors, course.id, 'syllabus tab', () => findSyllabusTab(client, { courseId: course.id, le, lp, origin, pageLinks, readTab }), { empty: null, missingOk: true });
+    }
+    return { courseId: course.id, assignments, quizzes, announcements, content, events, grades, overview, syllabusTab };
   });
   onProgress({ message: 'Saving…', done: current.length, total: current.length });
 
@@ -645,6 +973,16 @@ async function shrinkPicture(bytes, mediaType) {
   return { mediaType: 'image/jpeg', data: toBase64(new Uint8Array(await blob.arrayBuffer())) };
 }
 
+// The navbar is drawn by the course page, so a fetch never includes the Syllabus tab. A background tab loads each course and reads it.
+function pageSyllabusReader() {
+  if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) return null;
+  const ask = (body) => chrome.runtime.sendMessage({ type: 'boilerspace-syllabus', ...body }).catch(() => null);
+  return {
+    links: async (courseId) => (await ask({ phase: 'links', courseId, origin: location.origin }))?.hrefs ?? [],
+    page: async (href) => (await ask({ phase: 'page', href, origin: location.origin }))?.text ?? '',
+  };
+}
+
 export async function runInPage(action, args = {}, { onProgress = () => {} } = {}) {
   const xsrfToken =
     args.xsrfToken ??
@@ -654,7 +992,8 @@ export async function runInPage(action, args = {}, { onProgress = () => {} } = {
   const client = createClient({ origin: location.origin, fetchImpl: fetchAsPage(), xsrfToken });
   try {
     if (action === 'sync') {
-      return { ok: true, result: await syncCurrentCourses(client, { origin: location.origin, onProgress }) };
+      const readTab = pageSyllabusReader();
+      return { ok: true, result: await syncCurrentCourses(client, { origin: location.origin, onProgress, pageLinks: args.pageLinks ?? [], readTab }) };
     }
     if (action === 'read-quiz') {
       const versions = await discoverVersions(client);

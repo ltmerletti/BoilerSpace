@@ -20,7 +20,7 @@ const findSyllabusRecord = (syllabi, topic) =>
 async function loadText(topic, syllabi, download) {
   const record = findSyllabusRecord(syllabi, topic);
   if (record) return { kind: record.kind, pages: record.pages, warning: record.warning ?? null };
-  if (topic.text) return { kind: 'text', pages: [{ page: 1, label: 'overview', text: topic.text }], warning: null };
+  if (topic.text) return { kind: 'text', pages: [{ page: 1, label: topic.textLabel ?? 'overview', text: topic.text }], warning: null };
   if (!topic.fileUrl) {
     const host = topic.externalUrl ? new URL(topic.externalUrl).hostname : null;
     throw new Error(host ? `This item links outside Brightspace (${host}), so it can't be opened here.` : 'This item is not a file that can be opened.');

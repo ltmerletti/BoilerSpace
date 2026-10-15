@@ -13,14 +13,20 @@ import {
   normalizeEnrollment,
   normalizeQuiz,
   richText,
+  contentTargetFromHref,
   fileByteLimit,
+  findSyllabusTab,
   questionsFromReviewHtml,
   quizStillOpen,
   readQuiz,
+  syllabusHrefInDocument,
+  syllabusHrefsInDocument,
+  syllabusNavLinks,
   syncCurrentCourses,
   toBase64,
   visibleQuizQuestions,
 } from '../extension/lib/brightspace.js';
+import { snapshotSyllabus } from '../extension/lib/syllabus-scan.js';
 import { fakeBrightspace } from './helpers.mjs';
 
 const FIXTURES = new URL('../../open-source-workbench/repos/Brightspace-Bar/session-capture/tests/fixtures/', import.meta.url);
@@ -116,6 +122,8 @@ test('full sync against a fake Brightspace', async () => {
   assert.equal(cs252.grades[0].displayed, '9 / 10');
   assert.equal(cs252.content[0].looksLikeSyllabus, true);
   assert.equal(cs252.content[0].fileUrl, '/d2l/api/le/1.96/1600001/content/topics/77/file');
+  assert.equal(cs252.syllabusTab, null, 'a course that already has a syllabus file does not need the Syllabus tab');
+  assert.ok(calls.some((c) => c.path === '/d2l/home/412690'), 'a course with no syllabus file checks the Syllabus tab');
 
   assert.ok(result.errors.some((e) => e.courseId === 440703 && e.section === 'grades' && e.status === 403));
   assert.ok(calls.every((c) => c.method === 'GET' || c.path === '/d2l/lp/auth/oauth2/token'), 'only GETs plus the token request');
@@ -140,6 +148,192 @@ test('file downloads use the same auth fallback and keep the file name', async (
   assert.deepEqual([...file.bytes.slice(0, 4)], [0x25, 0x50, 0x44, 0x46]);
   assert.equal(fileNameFromDisposition('inline; filename="Syllabus Fall 2026.docx"'), 'Syllabus Fall 2026.docx');
   assert.equal(fileNameFromDisposition(null), null);
+});
+
+test('the Syllabus tab points at a content file that is not in the table of contents', async () => {
+  const quick = '/d2l/common/dialogs/quickLink/quickLink.d2l?ou=1631469&amp;type=content&amp;code=354644E0-4CD8-419D-A32F-4E78DB778E5C-12707056&amp;srcou=6824&amp;launchFramed=1&amp;framedName=Syllabus';
+  const page = `<a href="/d2l/home/1631469">Course Home</a><a class="d2l-navigation-s-link" href="${quick}">Syllabus</a>`;
+  const custom = `<d2l-navigation-link href="${quick}"></d2l-navigation-link>`;
+  assert.equal(syllabusNavLinks(custom)[0].href, syllabusNavLinks(page)[0].href);
+  assert.equal(syllabusNavLinks(page)[0].text, 'Syllabus');
+  assert.deepEqual(contentTargetFromHref(syllabusNavLinks(page)[0].href), { topicId: 12707056, orgUnitId: 1631469, sourceOrgUnitId: 6824 });
+
+  const topic = {
+    Id: 12707056,
+    Title: 'Data Structures And Algorithms',
+    TopicType: 1,
+    Url: '/content/enforced/6824-template/syllabus.html',
+    LastModifiedDate: '2026-10-12T23:39:00.000Z',
+  };
+  const client = {
+    async getText(path) {
+      if (path === '/d2l/home/1631469') return page;
+      throw Object.assign(new Error('HTTP 404'), { status: 404 });
+    },
+    async getJson(path) {
+      assert.equal(path, '/d2l/api/le/1.96/6824/content/topics/12707056');
+      return topic;
+    },
+  };
+  const tab = await findSyllabusTab(client, { courseId: 1631469, le: '1.96', origin: ORIGIN });
+  assert.equal(tab.id, 'tab:12707056');
+  assert.equal(tab.title, 'Syllabus');
+  assert.equal(tab.fileUrl, '/d2l/api/le/1.96/6824/content/topics/12707056/file');
+  assert.equal(tab.fileHref, '/content/enforced/6824-template/syllabus.html');
+  assert.equal(tab.updatedAt, '2026-10-12T23:39:00.000Z');
+});
+
+test('a Syllabus link already on the open page is used without fetching the homepage', async () => {
+  const href = '/d2l/common/dialogs/quickLink/quickLink.d2l?ou=1631469&type=content&code=354644E0-4CD8-419D-A32F-4E78DB778E5C-12707056&srcou=6824&framedName=Syllabus';
+  const paths = [];
+  const client = {
+    async getText(path) {
+      paths.push(path);
+      if (path === '/content/enforced/6824-template/syllabus.html') return `<html><body>${'Quizzes follow recent lectures. '.repeat(40)}</body></html>`;
+      throw new Error(`unexpected fetch ${path}`);
+    },
+    async getJson(path) {
+      assert.equal(path, '/d2l/api/le/1.96/6824/content/topics/12707056');
+      return { Id: 12707056, Title: 'Syllabus', TopicType: 1, Url: '/content/enforced/6824-template/syllabus.html', LastModifiedDate: '2026-10-12T23:39:00.000Z' };
+    },
+  };
+  const tab = await findSyllabusTab(client, {
+    courseId: 1631469,
+    le: '1.96',
+    origin: ORIGIN,
+    pageLinks: [href],
+    readTab: { page: async () => { throw new Error('the rendered page is only needed when the file itself cannot be read'); } },
+  });
+  assert.deepEqual(paths, ['/content/enforced/6824-template/syllabus.html']);
+  assert.equal(tab.fileUrl, '/d2l/api/le/1.96/6824/content/topics/12707056/file');
+  assert.match(tab.text, /Quizzes follow recent lectures/);
+  assert.equal(tab.textLabel, 'page 1');
+});
+
+test('each course can be opened when the homepage HTML does not include the Syllabus tab', async () => {
+  const href = '/d2l/common/dialogs/quickLink/quickLink.d2l?ou=1631469&type=content&code=354644E0-4CD8-419D-A32F-4E78DB778E5C-12707056&srcou=6824&framedName=Syllabus';
+  const body = 'Checkpoint quizzes cover the most recent topics. '.repeat(30);
+  const opened = [];
+  const client = {
+    async getText(path) {
+      if (path === '/d2l/home/1631469' || path === '/d2l/le/content/1631469/Home') return '<html><body>Course Home</body></html>';
+      throw Object.assign(new Error('HTTP 404'), { status: 404 });
+    },
+    async getJson() {
+      throw Object.assign(new Error('HTTP 404'), { status: 404 });
+    },
+  };
+  const tab = await findSyllabusTab(client, {
+    courseId: 1631469,
+    le: '1.96',
+    origin: ORIGIN,
+    readTab: {
+      async links(courseId) {
+        assert.equal(courseId, 1631469);
+        return [href];
+      },
+      async page(url) {
+        opened.push(url);
+        return body;
+      },
+    },
+  });
+  assert.deepEqual(opened, [href]);
+  assert.equal(tab.id, 'tab:12707056');
+  assert.equal(tab.title, 'Syllabus');
+  assert.equal(tab.text, body);
+  assert.equal(tab.fileUrl, '/d2l/api/le/1.96/6824/content/topics/12707056/file');
+});
+
+test('a syllabus on the course template is read when Content and the homepage do not list it', async () => {
+  const html = `<html><body>${'Each checkpoint covers the most recent topics. '.repeat(20)}</body></html>`;
+  const toc = {
+    Modules: [{
+      Title: 'Course Information',
+      Topics: [
+        { TopicId: 4, Title: 'Lecture 1', TypeIdentifier: 'File', Url: '/content/enforced/6824-template/lecture1.pptx' },
+        { TopicId: 12707056, Title: 'Syllabus', TypeIdentifier: 'File', Url: '/content/enforced/6824-template/syllabus.html', LastModifiedDate: '2026-10-12T23:39:00.000Z' },
+      ],
+      Modules: [],
+    }],
+  };
+  const paths = [];
+  const client = {
+    async getText(path) {
+      paths.push(path);
+      if (path === '/content/enforced/6824-template/syllabus.html') return html;
+      throw new Error(`unexpected fetch ${path}`);
+    },
+    async getJson(path) {
+      paths.push(path);
+      if (path === '/d2l/api/lp/1.62/courses/1631469') return { CourseTemplate: { Identifier: '6824', Name: 'CS 25100 template', Code: 'template' } };
+      if (path === '/d2l/api/le/1.96/6824/content/toc') return toc;
+      throw new Error(`unexpected fetch ${path}`);
+    },
+  };
+  const tab = await findSyllabusTab(client, {
+    courseId: 1631469,
+    le: '1.96',
+    lp: '1.62',
+    origin: ORIGIN,
+    readTab: { links: async () => { throw new Error('the course page does not need to be opened'); } },
+  });
+  assert.equal(tab.id, 'tab:12707056');
+  assert.equal(tab.title, 'Syllabus');
+  assert.equal(tab.fileUrl, '/d2l/api/le/1.96/6824/content/topics/12707056/file');
+  assert.match(tab.text, /Each checkpoint covers the most recent topics/);
+  assert.equal(paths.some((path) => path.startsWith('/d2l/home/')), false);
+
+  const missed = await findSyllabusTab({
+    async getText() {
+      return '<html><body>Course Home</body></html>';
+    },
+    async getJson(path) {
+      if (path === '/d2l/api/lp/1.62/courses/99') return { CourseTemplate: null };
+      if (path === '/d2l/api/lp/1.62/orgstructure/99/parents') {
+        return [{ Identifier: '50', Type: { Code: 'Course Template', Name: 'Course Template' } }];
+      }
+      if (path === '/d2l/api/le/1.96/50/content/toc') {
+        return { Modules: [{ Title: 'Syllabus', Topics: [{ TopicId: 3, Title: 'Lecture 1', TypeIdentifier: 'File' }], Modules: [] }] };
+      }
+      throw Object.assign(new Error('HTTP 404'), { status: 404 });
+    },
+  }, { courseId: 99, le: '1.96', lp: '1.62', origin: ORIGIN });
+  assert.equal(missed, null, 'a template module named Syllabus is not the syllabus unless a file in it is');
+});
+
+test('an ordinary content page is not treated as the Syllabus tab', () => {
+  const href = `${ORIGIN}/d2l/le/content/1631469/viewContent/123456/View`;
+  const doc = { location: { href }, querySelectorAll: () => [] };
+  assert.deepEqual(syllabusHrefsInDocument(doc), []);
+  assert.equal(syllabusHrefInDocument(doc, 1631469), null);
+  doc.location.href = `${ORIGIN}/d2l/common/dialogs/quickLink/quickLink.d2l?ou=1631469&type=content&code=12707056&framedName=Syllabus`;
+  assert.deepEqual(syllabusHrefsInDocument(doc), [doc.location.href]);
+});
+
+test('a Syllabus link inside the open course navbar is used', () => {
+  const href = '/d2l/common/dialogs/quickLink/quickLink.d2l?ou=1631469&type=content&code=354644E0-4CD8-419D-A32F-4E78DB778E5C-12707056&srcou=6824&framedName=Syllabus';
+  const link = {
+    getAttribute: (name) => (name === 'href' ? href : null),
+    href,
+    textContent: '',
+    shadowRoot: null,
+  };
+  const shadow = { querySelectorAll: () => [link] };
+  const host = { getAttribute: () => null, href: '', textContent: '', shadowRoot: shadow };
+  const doc = { location: { pathname: '/d2l/home/1631469', search: '' }, querySelectorAll: () => [host] };
+  assert.equal(syllabusHrefInDocument(doc, 1631469), href);
+  assert.equal(syllabusHrefInDocument(doc, 1632050), null);
+
+  const page = {
+    location: { origin: 'https://purdue.brightspace.com' },
+    body: { innerText: 'Each checkpoint covers the most recent topics. '.repeat(20) },
+    querySelectorAll: () => [host],
+  };
+  const shot = snapshotSyllabus(1631469, page);
+  assert.deepEqual(shot.hrefs, [href]);
+  assert.match(shot.text, /Each checkpoint covers the most recent topics/);
+  assert.deepEqual(snapshotSyllabus(1632050, page).hrefs, []);
 });
 
 test('a finished quiz returns its questions and leaves out the score and the answer key', async () => {

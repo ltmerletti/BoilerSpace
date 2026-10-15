@@ -30,6 +30,7 @@ test('search finds the late policy in the syllabus and the room change announcem
   const index = buildIndex(documentsFromSnapshot(snapshotFixture(), SYLLABI));
   const late = search(index, 'what is the late penalty for projects?');
   assert.equal(late[0].kind, 'syllabus');
+  assert.equal(late[0].file_key, 'content:77');
   assert.match(late[0].label, /CS 25200 syllabus, page 2/);
   const room = search(index, 'midterm room');
   assert.ok(room.some((r) => r.kind === 'announcement'));
@@ -100,6 +101,29 @@ test('course files can be listed and opened, with passages matched to the questi
   assert.match(read.excerpts[0].source, /^S\d+$/);
   assert.deepEqual(tools.stepLabels('read_course_file', { file_key: syllabus.file_key }), [`Opening ${syllabus.title}`, `Opened ${syllabus.title}`]);
   assert.match((await tools.run('read_course_file', { file_key: 'content:424242' })).error, /No course file/);
+});
+
+test('a syllabus page can be opened with the file key from search, or as syllabus', async () => {
+  const snapshot = snapshotFixture();
+  snapshot.data[0].overview = { text: '', hasAttachment: true, fileUrl: '/d2l/api/le/1.96/1600001/overview/attachment' };
+  const syllabi = {
+    1600001: { status: 'done', courseId: 1600001, topicId: 'overview', title: 'Course overview attachment', pages: [{ page: 3, label: 'page 3', text: 'Midterm in class Thu Oct 22, covering Module 1.' }], policies: { lateWork: null, attendance: null, officeHours: null, aiUse: {}, grading: [] }, deadlines: [] },
+  };
+  const opened = [];
+  const readFile = async (topic) => {
+    opened.push(topic.key);
+    return { pages: [{ page: 3, label: 'page 3', text: 'Midterm in class Thu Oct 22, covering Module 1.' }] };
+  };
+  const tools = createTools({ snapshot, syllabi, now: NOW, readFile });
+  const found = search(buildIndex(documentsFromSnapshot(snapshot, syllabi)), 'midterm module', { courseId: 1600001 });
+  assert.equal(found[0].file_key, 'overview:1600001');
+  const facts = await tools.run('get_syllabus_facts', { course_id: 1600001 });
+  assert.equal(facts.file_key, 'overview:1600001');
+  const listed = await tools.run('list_course_files', { course_id: 1600001, query: 'syllabus' });
+  assert.equal(listed.files.some((f) => f.file_key === 'overview:1600001'), true);
+  const read = await tools.run('read_course_file', { file_key: 'syllabus', location: 'page 3' });
+  assert.equal(read.excerpts[0].location, 'page 3');
+  assert.deepEqual(opened, ['overview:1600001']);
 });
 
 test('citations keep only ids the tools handed out', async () => {

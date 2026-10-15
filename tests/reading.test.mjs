@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { ask, createTools } from '../extension/lib/agent.js';
 import { courseFiles, getCachedCourseFile, readCourseFile } from '../extension/lib/files.js';
 import { locationUrl, syllabusFile, syllabusFileKey } from '../extension/lib/links.js';
+import { timeIsQuoted, usableRecord, validateExtraction } from '../extension/lib/syllabus.js';
 import { installChrome, snapshotFixture } from './helpers.mjs';
 
 function fixture(text = `${'Course resources and technology. '.repeat(100)}Midterm: in class, Thu Oct 22. There is no final exam. Make-ups are only for university-excused absences.`) {
@@ -124,4 +125,28 @@ test('the agent follows a long-page continuation instead of rereading the same s
   } });
   assert.equal(result.trace.at(-1).args.offset, 12000);
   assert.equal(result.citations.length, 1);
+});
+
+test('an unsupported cached exam time is cleared without changing the stored record', async () => {
+  const env = fixture();
+  env.syllabi[1600001].deadlines = [{ title: 'Midterm', kind: 'exam', date: '2026-10-22', time: '10:30', dueAt: '2026-10-22T14:30:00Z', page: 'page 3', quote: 'Midterm: in class, Thu Oct 22.' }];
+  const record = usableRecord(env.syllabi[1600001]);
+  assert.equal(record.deadlines[0].time, null);
+  assert.equal(record.deadlines[0].dueAt, null);
+  assert.equal(env.syllabi[1600001].deadlines[0].time, '10:30');
+  const facts = await createTools(env).run('get_syllabus_facts', { course_id: 1600001 });
+  assert.equal(facts.syllabus_dates[0].time_stated, false);
+  assert.doesNotMatch(facts.syllabus_dates[0].due_display, /10:30/);
+  assert.match(facts.syllabus_dates[0].due_display, /time not stated/);
+});
+
+test('new extraction requires a time in its evidence quote and preserves explicit times', () => {
+  const quote = 'Midterm: in class, Thu Oct 22.';
+  const raw = { deadlines: [{ title: 'Midterm', kind: 'exam', date: '2026-10-22', time: '10:30', quote }], policies: {} };
+  const result = validateExtraction(raw, [{ page: 3, label: 'page 3', text: `Class meets at 10:30 AM. ${quote}` }], { courseId: 1 });
+  assert.equal(result.deadlines[0].time, null);
+  assert.ok(result.dropped.some((d) => /time/.test(d.what)));
+  assert.equal(timeIsQuoted('Midterm at 7:00 p.m.', '19:00'), true);
+  assert.equal(timeIsQuoted('Midterm at 7:00 p.m.', '07:00'), false);
+  assert.equal(timeIsQuoted('Due by 23:59.', '23:59'), true);
 });

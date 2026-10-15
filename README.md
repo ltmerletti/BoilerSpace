@@ -24,6 +24,8 @@ Course sync saves assignments, quizzes, announcements, and calendar dates separa
 
 The Ask tab answers from your synced courses. It can open PDF, PowerPoint (`.pptx`), Word (`.docx`), and HTML files in Brightspace. It cannot read old `.ppt` files, `.rtf`, scanned PDFs, video, or links that leave Brightspace. It does not run on quiz attempt pages.
 
+Citations point to the page used in the answer. A PDF attached to the course overview opens in BoilerSpace's document reader at the cited page, with the complete saved text. Show original PDF opens the original through your signed-in Brightspace session. Dates from a syllabus only get an exact time when the supporting quote states it; regular class hours are not treated as a posted exam start time.
+
 Settings can export an `.ics` file of Brightspace due dates plus syllabus dates you confirmed. Import that file into Google Calendar or Outlook. Settings can also save a benchmark capture of the synced courses.
 
 ## Develop

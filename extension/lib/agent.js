@@ -453,7 +453,9 @@ export function createTools({ snapshot, syllabi = {}, reviews = {}, now = new Da
           .map((d) => ({
             title: d.title,
             kind: d.kind,
-            due_display: d.dueAt ? dueDisplay(d.dueAt) : dueDisplay(d.date, { allDay: true }),
+            due_display: d.dueAt ? dueDisplay(d.dueAt) : dueDisplay(d.date, { allDay: true }).replace(' (all day)', ' (time not stated)'),
+            quote: d.quote,
+            time_stated: Boolean(d.time),
             source: syllabusSource(record, d.page, course.id),
           })),
       };

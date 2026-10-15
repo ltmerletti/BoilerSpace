@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { snapshotFixture, SYLLABUS_PAGES } from './helpers.mjs';
 import { buildIndex, documentsFromSnapshot, search, tokenize } from '../extension/lib/search.js';
-import { ask, createTools, partialAnswer, resolveCitations, stripStaleCitations, summarizeResult, thinkingText } from '../extension/lib/agent.js';
+import { ask, createTools, partialAnswer, resolveCitations, stripStaleCitations, summarizeResult, thinkingText, toolMessageContent } from '../extension/lib/agent.js';
 import { readEventStream } from '../extension/lib/genai.js';
 import { locationUrl } from '../extension/lib/links.js';
 
@@ -51,7 +51,7 @@ test('tools give exact dates, resolve course labels and never include grades', a
 
   const courses = await tools.run('list_courses', {});
   assert.deepEqual(courses.map((c) => c.label), ['CS 25200', 'MA 26500'], 'past enrollments are left out');
-  assert.equal(courses[0].ai_policy, 'restricted');
+  assert.equal(courses[0].ai_policy, 'restricted. No AI-written code.');
 
   const detail = await tools.run('get_item', { item_key: 'assignment:11' });
   assert.match(detail.instructions, /Unix shell/);
@@ -60,6 +60,22 @@ test('tools give exact dates, resolve course labels and never include grades', a
 
   const everything = JSON.stringify([upcoming, courses, detail, await tools.run('get_syllabus_facts', { course_id: 1600001 }), await tools.run('list_announcements', {})]);
   assert.ok(!everything.includes('9 / 10'));
+});
+
+test('list_items returns quizzes and assignments that are already due', async () => {
+  const snapshot = snapshotFixture();
+  snapshot.data[0].quizzes.push({ kind: 'quiz', id: 20, courseId: 1600001, title: 'Quiz 4', dueAt: '2026-10-01T15:00:00.000Z', instructions: 'Covers pipes and files.', timeLimitMinutes: 15, attempts: 1, url: 'https://purdue.brightspace.com/q/20' });
+  const tools = createTools({ snapshot, syllabi: {}, now: NOW });
+  const past = await tools.run('list_items', { course_id: 1600001, when: 'past' });
+  assert.deepEqual(past.items.map((item) => item.title), ['Quiz 4']);
+  assert.equal(past.items[0].item_key, 'quiz:20');
+  assert.equal(past.items[0].days_from_today < 0, true);
+  assert.match(past.items[0].instructions, /pipes and files/);
+  const upcoming = await tools.run('list_upcoming', { course_id: 1600001, days: 60 });
+  assert.equal(upcoming.items.some((item) => item.title === 'Quiz 4'), false);
+  const quizzes = await tools.run('list_items', { course_id: 1600001, kind: 'quiz', when: 'all' });
+  assert.deepEqual(quizzes.items.map((item) => item.title), ['Quiz 5', 'Quiz 4']);
+  assert.equal(JSON.stringify(past).includes('9 / 10'), false);
 });
 
 test('course files can be listed and opened, with passages matched to the question', async () => {
@@ -114,7 +130,11 @@ test('the agent loop calls tools, passes results back and returns cited sources'
   assert.deepEqual(answer.steps, ['Checked what is due']);
   assert.equal(calls.length, 2);
   assert.match(calls[0].messages[0].content, /Today is Tuesday, October 13, 2026/);
-  assert.match(calls[0].messages[0].content, /CS 25200 \(course_id 1600001\): AI policy restricted/);
+  assert.match(calls[0].messages[0].content, /CS 25200 \(course_id 1600001\): AI policy restricted\. No AI-written code\./);
+  assert.match(calls[0].messages[0].content, /restricted AI policy limits how work may be submitted/);
+  assert.match(calls[0].messages[0].content, /open the lecture files that scope names/);
+  assert.match(calls[0].messages[0].content, /applies while that exam is being taken/);
+  assert.match(calls[0].messages[0].content, /Call list_items/);
   assert.equal(calls[1].messages.at(-1).role, 'tool');
   assert.match(answer.text, /Quiz 5 on Wed, Oct 14, 2026/);
   assert.equal(answer.citations.length, 1);
@@ -129,7 +149,7 @@ test('the agent stops calling tools after the turn limit', async () => {
     return { role: 'assistant', content: null, tool_calls: [{ id: `c${count}`, type: 'function', function: { name: 'list_courses', arguments: '{}' } }] };
   };
   const answer = await ask({ question: 'loop', snapshot: snapshotFixture(), syllabi: {}, reviews: {}, now: NOW, complete });
-  assert.equal(count, 8);
+  assert.equal(count, 12);
   assert.equal(answer.text, 'Here is what I found.');
 });
 
@@ -294,6 +314,90 @@ test('a reply with no lookup is sent back to look the course up, and a PDF is li
   const titles = (await createTools({ snapshot, syllabi: {}, now: NOW }).run('list_course_files', { course_id: 1600001 })).files.map((f) => f.title);
   assert.ok(titles.includes('Lecture 12 slides.pdf'));
   assert.ok(!titles.includes('Lecture 12 slides.pptx'));
+});
+
+test('read_quiz reports the questions and does not pass a score through', async () => {
+  const snapshot = snapshotFixture();
+  const tools = createTools({
+    snapshot,
+    syllabi: {},
+    now: NOW,
+    readQuiz: async (quiz) => ({ questions: [{ number: 1, text: 'What does fork return?' }], score: 8, note: undefined }),
+  });
+  const result = await tools.run('read_quiz', { item_key: 'quiz:21' });
+  assert.equal(result.title, 'Quiz 5');
+  assert.equal(result.questions[0].text, 'What does fork return?');
+  assert.equal(JSON.stringify(result).includes('score'), false);
+  assert.equal(tools.stepLabels('read_quiz', { item_key: 'quiz:21' })[0], 'Reading Quiz 5');
+});
+
+test('a picture is attached for the model to see and left out of the tool text', async () => {
+  const seen = [];
+  const readFile = async (_topic, options) => {
+    const pages = [{ page: 4, label: 'slide 4', text: 'Diagram of the energy budget.' }];
+    if (options?.seeImages) return { kind: 'pptx', pages, images: [{ mediaType: 'image/jpeg', data: 'abc' }] };
+    return { kind: 'pptx', pages };
+  };
+  const answer = await ask({
+    question: 'What does the figure on slide 4 show?',
+    snapshot: snapshotFixture(),
+    syllabi: {},
+    now: NOW,
+    readFile,
+    complete: async (body) => {
+      seen.push(body.messages.at(-1));
+      const call = body.messages.find((message) => message.role === 'tool');
+      if (!call) {
+        return { role: 'assistant', content: null, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'read_course_file', arguments: '{"file_key":"content:77","location":"slide 4","see_images":true}' } }] };
+      }
+      return { role: 'assistant', content: 'The figure shows the energy budget.' };
+    },
+  });
+  const content = seen.at(-1).content;
+  assert.equal(Array.isArray(content), true);
+  assert.equal(content.some((part) => part.type === 'image_url' && part.image_url.url === 'data:image/jpeg;base64,abc'), true);
+  assert.equal(content.find((part) => part.type === 'text').text.includes('abc'), false);
+  assert.match(answer.text, /energy budget/);
+  const packed = toolMessageContent({ title: 'Deck', images: [{ mediaType: 'image/png', data: 'zzz' }] });
+  assert.equal(packed.find((part) => part.type === 'text').text.includes('zzz'), false);
+});
+
+test('an exam-contents reply that never opened a lecture is sent back to open one', async () => {
+  const followups = [];
+  let calls = 0;
+  const answer = await ask({
+    question: 'What are the exact contents of the upcoming exam?',
+    snapshot: snapshotFixture(),
+    syllabi: SYLLABI,
+    now: NOW,
+    complete: async (body) => {
+      calls += 1;
+      followups.push(body.messages.at(-1).content);
+      if (calls === 1) {
+        return { role: 'assistant', content: null, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'read_course_file', arguments: '{"file_key":"overview:1600001","query":"exam"}' } }] };
+      }
+      if (calls === 2) return { role: 'assistant', content: 'It covers chapters 1 to 8. I can pull the learning goals if you want.' };
+      return { role: 'assistant', content: 'The lecture states these objectives.' };
+    },
+  });
+  assert.match(followups.at(-1), /Open the lecture files/);
+  assert.match(answer.text, /objectives/);
+
+  calls = 0;
+  await ask({
+    question: 'What are the exact contents of the upcoming exam?',
+    snapshot: snapshotFixture(),
+    syllabi: SYLLABI,
+    now: NOW,
+    complete: async () => {
+      calls += 1;
+      if (calls === 1) {
+        return { role: 'assistant', content: null, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'read_course_file', arguments: '{"file_key":"content:77","query":"objectives"}' } }] };
+      }
+      return { role: 'assistant', content: 'The lecture states these objectives.' };
+    },
+  });
+  assert.equal(calls, 2, 'opening a lecture file is enough to answer');
 });
 
 test('read_course_file finds a passage deep in a long file, outlines it once, and reads a page by location', async () => {

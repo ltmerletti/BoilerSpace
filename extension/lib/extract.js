@@ -28,13 +28,21 @@ export function decodeXmlEntities(text) {
 
 const tidy = (text) => text.replace(/[ \t\u00a0]+/g, ' ').replace(/ *\n */g, '\n').replace(/\n{3,}/g, '\n\n').trim();
 
+function looksLikeHtml(bytes) {
+  let head = '';
+  const end = Math.min(bytes.length, 80);
+  for (let i = 0; i < end; i++) head += String.fromCharCode(bytes[i]);
+  const start = head.trimStart().slice(0, 40).toLowerCase();
+  return start.startsWith('<!doctype html') || start.startsWith('<html') || start.startsWith('<head') || start.startsWith('<body');
+}
+
 export function detectKind(bytes, fileName = '', contentType = '') {
   if (bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46) return 'pdf';
   if (bytes[0] === 0x50 && bytes[1] === 0x4b) {
     if (/\.pptx$/i.test(fileName) || /presentation/i.test(contentType)) return 'pptx';
     return 'docx';
   }
-  if (/html/i.test(contentType) || /\.html?$/i.test(fileName)) return 'html';
+  if (/html/i.test(contentType) || /\.html?$/i.test(fileName) || looksLikeHtml(bytes)) return 'html';
   if (/^text\//i.test(contentType) || /\.(txt|md)$/i.test(fileName)) return 'text';
   return 'unknown';
 }
@@ -59,7 +67,7 @@ async function extractPdf(bytes) {
   const totalChars = pages.reduce((sum, p) => sum + p.text.length, 0);
   const warning =
     totalChars < SCANNED_PDF_CHARS_PER_PAGE * pages.length
-      ? 'This PDF has little or no selectable text. It is probably a scan, and BoilerSpace does not run OCR.'
+      ? 'This PDF has little or no selectable text. It is probably a scan. Open one page with see_images to read the picture.'
       : null;
   return { pages, warning };
 }
@@ -98,7 +106,16 @@ function extractDocx(bytes) {
 }
 
 function extractPptx(bytes) {
-  const files = unzipSync(bytes, { filter: (file) => /^ppt\/slides\/slide\d+\.xml$/.test(file.name) });
+  let pictures = 0;
+  const files = unzipSync(bytes, {
+    filter(file) {
+      if (/^ppt\/media\//.test(file.name)) {
+        pictures += 1;
+        return false;
+      }
+      return /^ppt\/slides\/slide\d+\.xml$/.test(file.name);
+    },
+  });
   const slides = Object.entries(files)
     .map(([name, data]) => ({ number: Number(/slide(\d+)\.xml$/.exec(name)[1]), xml: strFromU8(data) }))
     .sort((a, b) => a.number - b.number);
@@ -106,7 +123,91 @@ function extractPptx(bytes) {
     const text = [...xml.replace(/<\/a:p>/g, '\n<a:t>\n</a:t>').matchAll(/<a:t>([^<]*)<\/a:t>/g)].map((m) => m[1]).join(' ');
     return { page: number, label: `slide ${number}`, text: tidy(decodeXmlEntities(text)) };
   });
-  return { pages, warning: pages.every((p) => !p.text) ? 'These slides have no text.' : null };
+  const warning = [
+    pages.every((p) => !p.text) ? 'These slides have no text.' : null,
+    pictures ? 'Pictures in this deck were skipped.' : null,
+  ].filter(Boolean).join(' ') || null;
+  return { pages, warning };
+}
+
+const PICTURE_NAME = /\.(png|jpe?g|gif|webp)$/i;
+const PICTURE_TYPE = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' };
+const MAX_PICTURE_BYTES = 40_000_000;
+const MAX_PICTURES = 4;
+
+function mediaName(target) {
+  try {
+    return `ppt/media/${decodeURIComponent(target.split('/').pop())}`;
+  } catch {
+    return '';
+  }
+}
+
+// Pictures on one slide. The zip is scanned again so the rest of the deck's photos stay packed.
+export function slidePictures(bytes, location) {
+  const number = /(\d+)\s*$/.exec(String(location ?? ''))?.[1];
+  if (!number) return [];
+  const packed = unzipSync(bytes, {
+    filter: (file) => file.name === `ppt/slides/slide${number}.xml` || file.name === `ppt/slides/_rels/slide${number}.xml.rels`,
+  });
+  const slide = packed[`ppt/slides/slide${number}.xml`];
+  const rels = packed[`ppt/slides/_rels/slide${number}.xml.rels`];
+  if (!slide || !rels) return [];
+  const targets = new Map();
+  for (const rel of strFromU8(rels).matchAll(/<Relationship\b([^>]*)\/?>/g)) {
+    const id = /Id="([^"]+)"/.exec(rel[1])?.[1];
+    const target = /Target="([^"]+)"/.exec(rel[1])?.[1];
+    if (id && target) targets.set(id, mediaName(target));
+  }
+  const names = [];
+  for (const embed of strFromU8(slide).matchAll(/r:embed="([^"]+)"/g)) {
+    const name = targets.get(embed[1]);
+    if (name && PICTURE_NAME.test(name) && !names.includes(name)) names.push(name);
+  }
+  const pictures = [];
+  for (const name of names.slice(0, MAX_PICTURES)) {
+    const media = unzipSync(bytes, { filter: (file) => file.name === name && file.originalSize <= MAX_PICTURE_BYTES });
+    const data = media[name];
+    if (!data) continue;
+    const ext = name.split('.').pop().toLowerCase();
+    pictures.push({ bytes: data, mediaType: PICTURE_TYPE[ext] });
+  }
+  return pictures;
+}
+
+export async function pagePicture(bytes, location) {
+  if (typeof OffscreenCanvas === 'undefined') return null;
+  const number = Number(/(\d+)\s*$/.exec(String(location ?? ''))?.[1]);
+  if (!number) return null;
+  const pdfjs = await loadPdfJs();
+  const doc = await pdfjs.getDocument({
+    data: bytes.slice(),
+    isEvalSupported: false,
+    cMapUrl: chrome.runtime.getURL('vendor/pdfjs/cmaps/'),
+    cMapPacked: true,
+    standardFontDataUrl: chrome.runtime.getURL('vendor/pdfjs/standard_fonts/'),
+  }).promise;
+  try {
+    if (number > doc.numPages) return null;
+    const page = await doc.getPage(number);
+    const base = page.getViewport({ scale: 1 });
+    const viewport = page.getViewport({ scale: Math.min(2, 1280 / Math.max(base.width, base.height)) });
+    const canvas = new OffscreenCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
+    const canvasContext = canvas.getContext('2d');
+    await page.render({ canvasContext, viewport, canvas }).promise;
+    const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.72 });
+    let binary = '';
+    const raw = new Uint8Array(await blob.arrayBuffer());
+    for (let i = 0; i < raw.length; i += 0x8000) {
+      const end = Math.min(i + 0x8000, raw.length);
+      const codes = new Array(end - i);
+      for (let j = i; j < end; j++) codes[j - i] = raw[j];
+      binary += String.fromCharCode.apply(null, codes);
+    }
+    return { mediaType: 'image/jpeg', data: btoa(binary) };
+  } finally {
+    await doc.destroy();
+  }
 }
 
 export function htmlToText(html) {

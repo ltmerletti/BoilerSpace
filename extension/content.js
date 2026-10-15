@@ -32,7 +32,8 @@
     const token = await xsrfToken(args.xsrfToken);
     const sync = await loadLib('page-sync.js');
     if (action === 'sync') return sync.syncHere({ xsrfToken: token });
-    if (action === 'download') return sync.downloadHere(args.path, { xsrfToken: token });
+    if (action === 'download') return sync.downloadHere(args.path, { xsrfToken: token, seeImages: args.seeImages, location: args.location });
+    if (action === 'read-quiz') return sync.readQuizHere({ ...args, xsrfToken: token });
     throw new Error(`Unknown request ${action}`);
   }
 
@@ -49,6 +50,8 @@
         return reply(pageWork('sync', message));
       case 'boilerspace-download':
         return reply(pageWork('download', message));
+      case 'boilerspace-read-quiz':
+        return reply(pageWork('read-quiz', message));
       case 'boilerspace-toggle':
         toggleDrawer();
         sendResponse({ ok: true });

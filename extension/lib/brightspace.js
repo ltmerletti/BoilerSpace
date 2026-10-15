@@ -7,7 +7,9 @@ import { shortCourseLabel } from './courses.js';
 export const DEFAULT_VERSIONS = { lp: '1.62', le: '1.96' };
 
 const REQUEST_TIMEOUT_MS = 20_000;
-const MAX_FILE_BYTES = 25_000_000;
+const FILE_TIMEOUT_MS = 120_000;
+const MAX_FILE_BYTES = 100_000_000;
+const DECK_FILE_BYTES = 200_000_000;
 const MAX_CONCURRENT_REQUESTS = 3;
 const DAY_MS = 86_400_000;
 const COURSE_GRACE_DAYS = 14;
@@ -46,13 +48,13 @@ export function createClient({ origin, fetchImpl = fetch, xsrfToken = null } = {
     if (!bearer) throw new BrightspaceError('Token response had no access_token.');
   }
 
-  async function request(path) {
+  async function request(path, { timeoutMs = REQUEST_TIMEOUT_MS } = {}) {
     for (let attempt = 0; ; attempt++) {
       const started = Date.now();
       const res = await fetchImpl(origin + path, {
         credentials: 'include',
         headers: bearer ? { Authorization: `Bearer ${bearer}` } : {},
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        signal: AbortSignal.timeout(timeoutMs),
       });
       const usedBearer = Boolean(bearer);
       requestLog.push({ path, status: res.status, ms: Date.now() - started, auth: usedBearer ? 'token' : 'cookie' });
@@ -77,13 +79,33 @@ export function createClient({ origin, fetchImpl = fetch, xsrfToken = null } = {
     return JSON.parse(await res.text());
   }
 
+  // Cookie only. A bearer header makes Brightspace answer this HTML page with something other than the navbar.
+  async function getText(path, { maxBytes = 1_500_000 } = {}) {
+    const started = Date.now();
+    const res = await fetchImpl(origin + path, {
+      credentials: 'include',
+      headers: { Accept: 'text/html' },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    requestLog.push({ path, status: res.status, ms: Date.now() - started, auth: 'cookie' });
+    if (!res.ok) throw new BrightspaceError(`HTTP ${res.status}`, { status: res.status, path });
+    const source = new Uint8Array(await res.arrayBuffer());
+    const length = Math.min(source.length, maxBytes);
+    const bytes = new Uint8Array(length);
+    for (let i = 0; i < length; i++) bytes[i] = source[i];
+    return new TextDecoder().decode(bytes);
+  }
+
   async function getFile(path) {
-    const res = await request(path);
+    const res = await request(path, { timeoutMs: FILE_TIMEOUT_MS });
     const contentType = res.headers.get('content-type') ?? '';
-    const view = new Uint8Array(await res.arrayBuffer());
-    const bytes = new Uint8Array(view.length);
-    bytes.set(view);
-    if (bytes.length > MAX_FILE_BYTES) throw new BrightspaceError(`File is larger than ${MAX_FILE_BYTES / 1_000_000} MB.`, { path });
+    const source = new Uint8Array(await res.arrayBuffer());
+    const limit = fileByteLimit(source);
+    if (source.length > limit) {
+      const sizeMb = Math.max(1, Math.round(source.length / 1_000_000));
+      throw new BrightspaceError(`File is ${sizeMb} MB, over the ${limit / 1_000_000} MB limit.`, { path });
+    }
+    const bytes = await ownBytes(source);
     return { bytes, contentType, fileName: fileNameFromDisposition(res.headers.get('content-disposition')) };
   }
 
@@ -108,7 +130,7 @@ export function createClient({ origin, fetchImpl = fetch, xsrfToken = null } = {
     return results;
   }
 
-  return { getJson, getAll, getFile, requestLog, get authMode() { return bearer ? 'token' : 'cookie'; } };
+  return { getJson, getAll, getText, getFile, requestLog, get authMode() { return bearer ? 'token' : 'cookie'; } };
 }
 
 export function fileNameFromDisposition(header) {
@@ -231,6 +253,92 @@ export function normalizeAssignment(folder, courseId, origin) {
     isHidden: Boolean(folder.IsHidden),
     url: `${origin}/d2l/lms/dropbox/user/folder_submit_files.d2l?db=${folder.Id}&ou=${courseId}`,
   };
+}
+
+const QUIZ_QUESTION_CHARS = 900;
+const QUIZ_QUESTION_LIMIT = 40;
+
+// A quiz with no end stays open. Once the later of the due date and the end date has passed, it is closed.
+export function quizStillOpen(quiz, now = new Date()) {
+  const times = [quiz?.endAt, quiz?.dueAt].map((value) => Date.parse(value)).filter((n) => !Number.isNaN(n));
+  if (!times.length) return true;
+  return Math.max(...times) > now.getTime();
+}
+
+function choiceText(answer) {
+  if (answer == null) return '';
+  if (typeof answer === 'string') return answer.trim();
+  return richText(answer.Answer ?? answer.AnswerText ?? answer.Text ?? '');
+}
+
+// Question text and the choices that were shown. Weights, correct flags and scores stay out.
+export function visibleQuizQuestions(payload) {
+  const list = Array.isArray(payload) ? payload : payload?.Objects ?? payload?.Items ?? [];
+  const questions = [];
+  for (const item of list) {
+    const question = item?.Question ?? item;
+    if (!question || typeof question !== 'object') continue;
+    const info = question.QuestionInfo ?? {};
+    let text = richText(info.QuestionText ?? question.QuestionText ?? question.Name);
+    if (Array.isArray(info.Segments) && info.Segments.length) {
+      text = info.Segments.map((segment) => (segment.Blank ? '____' : richText(segment.Text))).join(' ');
+    }
+    text = text.replace(/\s+/g, ' ').trim().slice(0, QUIZ_QUESTION_CHARS);
+    if (!text) continue;
+    let choices = [];
+    if (Array.isArray(info.Answers)) choices = info.Answers.map(choiceText).filter(Boolean).slice(0, 12);
+    else if (Object.prototype.hasOwnProperty.call(info, 'IsTrue')) choices = ['True', 'False'];
+    questions.push({ number: questions.length + 1, text, ...(choices.length ? { choices } : {}) });
+    if (questions.length >= QUIZ_QUESTION_LIMIT) break;
+  }
+  return questions;
+}
+
+export function questionsFromReviewHtml(html) {
+  const clean = String(html ?? '').replace(/<(script|style)[\s\S]*?<\/\1>/gi, '');
+  const parts = clean.split(/<(?:div|td)\b[^>]*class="[^"]*(?:d2l-quiz-question-text|dco_qtext)[^"]*"[^>]*>/i);
+  if (parts.length < 2) return [];
+  const questions = [];
+  for (const part of parts.slice(1)) {
+    const text = htmlToText(part.split(/<\/(?:div|td)>/i)[0] ?? '').replace(/\s+/g, ' ').trim().slice(0, QUIZ_QUESTION_CHARS);
+    if (!text) continue;
+    questions.push({ number: questions.length + 1, text });
+    if (questions.length >= QUIZ_QUESTION_LIMIT) break;
+  }
+  return questions;
+}
+
+async function quietGet(client, path, { text = false } = {}) {
+  try {
+    return text ? await client.getText(path) : await client.getJson(path);
+  } catch (err) {
+    if (err.status === 403 || err.status === 404) return null;
+    throw err;
+  }
+}
+
+// Questions the student already saw on a finished attempt, or the quiz itself after it has closed.
+// An open quiz with no finished attempt stays unread. Scores are never returned.
+export async function readQuiz(client, { courseId, quizId, le, dueAt = null, endAt = null, now = new Date() }) {
+  const base = `/d2l/api/le/${le}/${courseId}/quizzes/${quizId}`;
+  const attempts = (await quietGet(client, `${base}/attempts/`)) ?? [];
+  const finished = (Array.isArray(attempts) ? attempts : attempts.Objects ?? []).filter((attempt) => attempt?.Completed);
+  const latest = finished.at(-1);
+  if (latest?.AttemptId) {
+    const fromAttempt = visibleQuizQuestions(await quietGet(client, `${base}/attempts/${latest.AttemptId}/questions/`));
+    if (fromAttempt.length) return { questions: fromAttempt };
+    const reviewPath = `/d2l/lms/quizzing/user/attempt/quiz_review.d2l?qi=${quizId}&ou=${courseId}&ai=${latest.AttemptId}`;
+    const fromReview = questionsFromReviewHtml(await quietGet(client, reviewPath, { text: true }));
+    if (fromReview.length) return { questions: fromReview };
+  }
+  if (quizStillOpen({ dueAt, endAt }, now)) {
+    return { questions: [], note: 'This quiz can still be taken, so its questions stay hidden.' };
+  }
+  const fromBank = visibleQuizQuestions(await quietGet(client, `${base}/questions/`));
+  if (fromBank.length) return { questions: fromBank };
+  const submissions = questionsFromReviewHtml(await quietGet(client, `/d2l/lms/quizzing/user/quiz_submissions.d2l?qi=${quizId}&ou=${courseId}`, { text: true }));
+  if (submissions.length) return { questions: submissions };
+  return { questions: [], note: 'Brightspace did not release the questions for this quiz.' };
 }
 
 export function normalizeQuiz(quiz, courseId, origin) {
@@ -390,6 +498,7 @@ async function section(errors, courseId, name, load, { empty = [], missingOk = f
   }
 }
 
+
 // The course overview is where many instructors attach the syllabus.
 export function normalizeOverview(overview, courseId, le) {
   if (!overview) return null;
@@ -474,9 +583,34 @@ export async function syncCurrentCourses(client, { origin, now = new Date(), onP
 
 // ---------- Entry point, run inside a Brightspace tab ----------
 
-function toBase64(bytes) {
+// Firefox wraps bytes from content.fetch. Spreading a subarray looks up constructor across
+// compartments and throws "Permission denied to access property constructor".
+// A PowerPoint or Word file is a zip. The pictures make it large, and a text read never unpacks them.
+export function fileByteLimit(bytes) {
+  const zip = bytes[0] === 0x50 && bytes[1] === 0x4b;
+  return zip ? DECK_FILE_BYTES : MAX_FILE_BYTES;
+}
+
+async function ownBytes(source) {
+  const bytes = new Uint8Array(source.length);
+  const step = 1_048_576;
+  for (let i = 0; i < source.length; i += step) {
+    const end = Math.min(i + step, source.length);
+    for (let j = i; j < end; j++) bytes[j] = source[j];
+    if (end < source.length) await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  return bytes;
+}
+
+export function toBase64(bytes) {
   let binary = '';
-  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    const end = Math.min(i + chunk, bytes.length);
+    const codes = new Array(end - i);
+    for (let j = i; j < end; j++) codes[j - i] = bytes[j];
+    binary += String.fromCharCode.apply(null, codes);
+  }
   return btoa(binary);
 }
 
@@ -492,6 +626,24 @@ function fetchAsPage() {
 }
 
 const DOWNLOAD_PATHS = [/^\/d2l\/api\/le\/[\d.]+\/\d+\/content\/topics\/\d+\/file$/, /^\/d2l\/api\/le\/[\d.]+\/\d+\/overview\/attachment$/, COURSE_FILE_PATH];
+const PICTURE_EDGE = 1280;
+let heldFile = null;
+
+async function shrinkPicture(bytes, mediaType) {
+  if (typeof createImageBitmap !== 'function' || typeof OffscreenCanvas === 'undefined') {
+    if (bytes.length > 400_000) return null;
+    return { mediaType, data: toBase64(bytes) };
+  }
+  const bitmap = await createImageBitmap(new Blob([bytes], { type: mediaType }));
+  const scale = Math.min(1, PICTURE_EDGE / Math.max(bitmap.width, bitmap.height));
+  const width = Math.max(1, Math.round(bitmap.width * scale));
+  const height = Math.max(1, Math.round(bitmap.height * scale));
+  const canvas = new OffscreenCanvas(width, height);
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, width, height);
+  bitmap.close?.();
+  const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.72 });
+  return { mediaType: 'image/jpeg', data: toBase64(new Uint8Array(await blob.arrayBuffer())) };
+}
 
 export async function runInPage(action, args = {}, { onProgress = () => {} } = {}) {
   const xsrfToken =
@@ -504,11 +656,46 @@ export async function runInPage(action, args = {}, { onProgress = () => {} } = {
     if (action === 'sync') {
       return { ok: true, result: await syncCurrentCourses(client, { origin: location.origin, onProgress }) };
     }
+    if (action === 'read-quiz') {
+      const versions = await discoverVersions(client);
+      const result = await readQuiz(client, { ...args, le: args.le ?? versions.le, origin: location.origin, now: new Date() });
+      return { ok: true, result };
+    }
     if (action === 'download') {
       if (!DOWNLOAD_PATHS.some((pattern) => pattern.test(args.path ?? ''))) {
         throw new BrightspaceError('Refusing to download from an unexpected path.', { path: args.path });
       }
-      const file = await client.getFile(args.path);
+      const file = heldFile?.path === args.path ? heldFile.file : await client.getFile(args.path);
+      heldFile = { path: args.path, file };
+      const isPdf = file.bytes[0] === 0x25 && file.bytes[1] === 0x50 && file.bytes[2] === 0x44 && file.bytes[3] === 0x46;
+      // Slide decks are mostly images. Read the text here and send that back, instead of a base64 copy of the whole file.
+      // The import stays inside this branch so a PDF download does not depend on it.
+      if (!isPdf) {
+        const { extractText, slidePictures } = await import('./extract.js');
+        const extracted = await extractText(file);
+        const images = [];
+        if (args.seeImages && args.location) {
+          for (const picture of slidePictures(file.bytes, args.location)) {
+            try {
+              const shrunk = await shrinkPicture(picture.bytes, picture.mediaType);
+              if (shrunk) images.push(shrunk);
+            } catch {
+              /* a picture that will not decode is left out */
+            }
+          }
+        }
+        return {
+          ok: true,
+          result: {
+            kind: extracted.kind,
+            pages: extracted.pages,
+            warning: extracted.warning,
+            contentType: file.contentType,
+            fileName: file.fileName,
+            ...(images.length ? { images } : {}),
+          },
+        };
+      }
       return { ok: true, result: { base64: toBase64(file.bytes), contentType: file.contentType, fileName: file.fileName } };
     }
     throw new BrightspaceError(`Unknown action ${action}`);

@@ -17,6 +17,10 @@ export async function autoSyncIfDue(options) {
   return syncHere(options);
 }
 
-export function downloadHere(path, { xsrfToken = null } = {}) {
-  return runInPage('download', { path, xsrfToken });
+export function readQuizHere({ xsrfToken = null, courseId, quizId, dueAt = null, endAt = null } = {}) {
+  return runInPage('read-quiz', { xsrfToken, courseId, quizId, dueAt, endAt });
+}
+
+export function downloadHere(path, { xsrfToken = null, seeImages = false, location = null } = {}) {
+  return runInPage('download', { path, xsrfToken, seeImages, location });
 }

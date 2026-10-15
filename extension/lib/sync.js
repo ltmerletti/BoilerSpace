@@ -126,15 +126,38 @@ export async function syncNow({ tabId = null, onStatus = () => {} } = {}) {
   return askTab(tab.id, { type: 'boilerspace-sync' });
 }
 
-async function requestDownload(path, { open, onStatus }) {
-  if (pageBridge) return pageBridge('download', { path });
+async function requestDownload(path, { open, onStatus, seeImages = false, location = null }) {
+  const args = { path, seeImages: Boolean(seeImages), location };
+  if (pageBridge) return pageBridge('download', args);
   const tab = await findBrightspaceTab({ open, onStatus });
   if (!tab) throw new Error('Open Brightspace to read course files.');
-  return askTab(tab.id, { type: 'boilerspace-download', path });
+  return askTab(tab.id, { type: 'boilerspace-download', ...args });
 }
 
-export async function downloadTopicFile(path, { open = true, onStatus = () => {} } = {}) {
-  const { result } = await requestDownload(path, { open, onStatus });
+export async function readQuizOnPage(quiz, { open = true, onStatus = () => {} } = {}) {
+  const args = { courseId: quiz.courseId, quizId: quiz.id, dueAt: quiz.dueAt ?? null, endAt: quiz.endAt ?? null };
+  if (pageBridge) {
+    const { result } = await pageBridge('read-quiz', args);
+    return result;
+  }
+  const tab = await findBrightspaceTab({ open, onStatus });
+  if (!tab) throw new Error('Open Brightspace to read this quiz.');
+  const { result } = await askTab(tab.id, { type: 'boilerspace-read-quiz', ...args });
+  return result;
+}
+
+export async function downloadTopicFile(path, { open = true, onStatus = () => {}, seeImages = false, location = null } = {}) {
+  const { result } = await requestDownload(path, { open, onStatus, seeImages, location });
+  if (Array.isArray(result.pages)) {
+    return {
+      kind: result.kind,
+      pages: result.pages,
+      warning: result.warning ?? null,
+      contentType: result.contentType ?? '',
+      fileName: result.fileName ?? null,
+      ...(result.images ? { images: result.images } : {}),
+    };
+  }
   const binary = atob(result.base64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);

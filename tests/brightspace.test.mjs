@@ -13,7 +13,13 @@ import {
   normalizeEnrollment,
   normalizeQuiz,
   richText,
+  fileByteLimit,
+  questionsFromReviewHtml,
+  quizStillOpen,
+  readQuiz,
   syncCurrentCourses,
+  toBase64,
+  visibleQuizQuestions,
 } from '../extension/lib/brightspace.js';
 import { fakeBrightspace } from './helpers.mjs';
 
@@ -134,6 +140,81 @@ test('file downloads use the same auth fallback and keep the file name', async (
   assert.deepEqual([...file.bytes.slice(0, 4)], [0x25, 0x50, 0x44, 0x46]);
   assert.equal(fileNameFromDisposition('inline; filename="Syllabus Fall 2026.docx"'), 'Syllabus Fall 2026.docx');
   assert.equal(fileNameFromDisposition(null), null);
+});
+
+test('a finished quiz returns its questions and leaves out the score and the answer key', async () => {
+  assert.equal(quizStillOpen({ dueAt: '2026-09-21T03:59:00.000Z' }, new Date('2026-10-15T16:00:00Z')), false);
+  assert.equal(quizStillOpen({ dueAt: '2026-10-20T03:59:00.000Z' }, new Date('2026-10-15T16:00:00Z')), true);
+  const calls = [];
+  const client = {
+    async getJson(path) {
+      calls.push(path);
+      if (path.endsWith('/attempts/')) {
+        return { Objects: [{ AttemptId: 9, Completed: '2026-09-21T04:00:00.000Z', Score: 8 }] };
+      }
+      if (path.endsWith('/attempts/9/questions/')) {
+        return {
+          Objects: [{
+            Points: 1,
+            QuestionInfo: {
+              QuestionText: { Text: 'A stack removes the most recent item first.' },
+              IsTrue: true,
+              Answers: [
+                { Answer: { Text: 'True' }, Weight: 100 },
+                { Answer: { Text: 'False' }, Weight: 0 },
+              ],
+            },
+          }],
+        };
+      }
+      throw Object.assign(new Error('HTTP 404'), { status: 404 });
+    },
+    async getText() {
+      throw Object.assign(new Error('HTTP 404'), { status: 404 });
+    },
+  };
+  const result = await readQuiz(client, { courseId: 5, quizId: 21, le: '1.96', dueAt: '2026-09-21T03:59:00.000Z', now: new Date('2026-10-15T16:00:00Z') });
+  assert.equal(result.questions[0].text, 'A stack removes the most recent item first.');
+  assert.deepEqual(result.questions[0].choices, ['True', 'False']);
+  assert.equal(JSON.stringify(result).includes('100'), false);
+  assert.equal(JSON.stringify(result).includes('Score'), false);
+  assert.equal(calls.some((path) => path.endsWith('/questions/') && !path.includes('/attempts/')), false);
+
+  const openCalls = [];
+  const open = await readQuiz({
+    async getJson(path) {
+      openCalls.push(path);
+      return { Objects: [] };
+    },
+    async getText() {
+      return '';
+    },
+  }, { courseId: 5, quizId: 22, le: '1.96', dueAt: '2026-10-20T03:59:00.000Z', now: new Date('2026-10-15T16:00:00Z') });
+  assert.match(open.note, /can still be taken/);
+  assert.equal(openCalls.some((path) => path.endsWith('/questions/')), false);
+
+  const reviewed = questionsFromReviewHtml('<div class="d2l-quiz-question-text">Which sort is stable?</div><div>Score: 9 / 10</div>');
+  assert.equal(reviewed[0].text, 'Which sort is stable?');
+  assert.equal(JSON.stringify(reviewed).includes('9 / 10'), false);
+  assert.deepEqual(visibleQuizQuestions({ Objects: [] }), []);
+});
+
+test('a slide deck may be larger than a pdf because its pictures stay packed', () => {
+  assert.equal(fileByteLimit(Uint8Array.from([0x50, 0x4b, 0, 0])), 200_000_000);
+  assert.equal(fileByteLimit(Uint8Array.from([0x25, 0x50, 0x44, 0x46])), 100_000_000);
+});
+
+test('file bytes are encoded without slicing the typed array', () => {
+  const raw = new Uint8Array(40_000);
+  for (let i = 0; i < raw.length; i++) raw[i] = i % 256;
+  const hostile = {
+    length: raw.length,
+    subarray() {
+      throw new Error('Permission denied to access property "constructor"');
+    },
+  };
+  for (let i = 0; i < raw.length; i++) hostile[i] = raw[i];
+  assert.equal(Buffer.from(toBase64(hostile), 'base64').equals(Buffer.from(raw)), true);
 });
 
 test('an expired session reports clearly instead of parsing a sign-in page', async () => {

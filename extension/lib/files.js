@@ -1,6 +1,6 @@
 // Opens course files on request (for the assistant), reusing syllabus text that was already read.
 
-import { extractText } from './extract.js';
+import { extractText, pagePicture } from './extract.js';
 import { downloadTopicFile } from './sync.js';
 
 const MAX_CACHED_FILES = 12;
@@ -17,7 +17,7 @@ const findSyllabusRecord = (syllabi, topic) =>
       r.pages?.length,
   );
 
-export async function readCourseFile(topic, { syllabi = {}, download = downloadTopicFile } = {}) {
+async function loadText(topic, syllabi, download) {
   const record = findSyllabusRecord(syllabi, topic);
   if (record) return { kind: record.kind, pages: record.pages, warning: record.warning ?? null };
   if (topic.text) return { kind: 'text', pages: [{ page: 1, label: 'overview', text: topic.text }], warning: null };
@@ -27,12 +27,28 @@ export async function readCourseFile(topic, { syllabi = {}, download = downloadT
   }
   const key = `${topic.courseId ?? ''}:${topic.id}|${topic.updatedAt ?? ''}`;
   if (!cache.has(key)) {
-    const loading = download(topic.fileUrl, { open: false }).then(extractText);
+    const loading = download(topic.fileUrl, { open: false }).then((file) => (Array.isArray(file.pages) ? file : extractText(file)));
     cache.set(key, loading);
     loading.catch(() => cache.delete(key));
     while (cache.size > MAX_CACHED_FILES) cache.delete(cache.keys().next().value);
   }
   return cache.get(key);
+}
+
+export async function readCourseFile(topic, { syllabi = {}, download = downloadTopicFile, seeImages = false, location = null } = {}) {
+  const text = await loadText(topic, syllabi, download);
+  if (!seeImages || !location || !topic.fileUrl) return text;
+  try {
+    const extra = await download(topic.fileUrl, { open: false, seeImages: true, location });
+    let images = extra.images ?? [];
+    if (!images.length && extra.bytes) {
+      const picture = await pagePicture(extra.bytes, location);
+      if (picture) images = [picture];
+    }
+    return images.length ? { ...text, images } : text;
+  } catch (err) {
+    return { ...text, warning: [text.warning, `Pictures could not be opened (${err.message}).`].filter(Boolean).join(' ') };
+  }
 }
 
 export function getCachedCourseFile(topic, { syllabi = {} } = {}) {

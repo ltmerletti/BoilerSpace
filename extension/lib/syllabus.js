@@ -403,7 +403,7 @@ async function readAndExtract({ snapshot, course, base, existing, force, onStatu
   try {
     onStatus(`Reading the ${label} syllabus…`);
     const file = await load();
-    const { kind, pages, warning } = await extractText(file);
+    const { kind, pages, warning } = Array.isArray(file.pages) ? file : await extractText(file);
     const readable = pages.filter((p) => p.text);
     if (!readable.length) return save({ ...base, status: 'unreadable', kind, warning: warning ?? 'No text could be read from this file.' });
 

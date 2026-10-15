@@ -33,7 +33,7 @@ export function syllabusFile(record, snapshot) {
   const data = snapshot?.data?.find((d) => d.courseId === record.courseId);
   const key = syllabusFileKey(record, snapshot);
   const topic = key?.startsWith('overview:') ? data?.overview
-    : data?.syllabusTab?.id === record.topicId ? data.syllabusTab
+    : data?.syllabusTab && data.syllabusTab.id === record.topicId ? data.syllabusTab
       : data?.content?.find((t) => String(t.id) === String(record.topicId));
   return { ...topic, ...record, fileHref: record.fileHref || topic?.fileHref, fileUrl: record.fileUrl || topic?.fileUrl, key };
 }

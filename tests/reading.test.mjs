@@ -150,3 +150,11 @@ test('new extraction requires a time in its evidence quote and preserves explici
   assert.equal(timeIsQuoted('Midterm at 7:00 p.m.', '07:00'), false);
   assert.equal(timeIsQuoted('Due by 23:59.', '23:59'), true);
 });
+
+test('a missing syllabus for a course absent from the current snapshot does not break links or the planner', async () => {
+  const snapshot = snapshotFixture();
+  const missing = { courseId: 9999, status: 'none' };
+  assert.equal(syllabusFile(missing, snapshot).key, null);
+  const { agendaItems } = await import('../extension/lib/planner.js');
+  assert.doesNotThrow(() => agendaItems(snapshot, { 9999: missing }, {}));
+});

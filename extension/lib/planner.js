@@ -32,8 +32,10 @@ export function brightspaceItems(snapshot) {
 export function syllabusItems(syllabi, reviews = {}, snapshot = null) {
   const out = [];
   for (const record of Object.values(syllabi ?? {})) {
-    const file = syllabusFile(record, snapshot);
-    for (const d of usableRecord(record)?.deadlines ?? []) {
+    const usable = usableRecord(record);
+    if (!usable?.deadlines?.length) continue;
+    const file = syllabusFile(usable, snapshot);
+    for (const d of usable.deadlines) {
       const review = reviews[d.id];
       if (review === 'dismissed') continue;
       if (d.matchedItem && !d.dateDiffers && review !== 'confirmed') continue;

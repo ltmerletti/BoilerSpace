@@ -20,7 +20,7 @@ After you pull new code, reload the extension. Chrome caches the old scripts unt
 
 The Week tab is the agenda. Dates come from Brightspace and from syllabi the extension has read. A syllabus date that Brightspace does not list yet is marked that way.
 
-Course sync saves assignments, quizzes, announcements, and calendar dates separately from syllabus discovery and reading. A slow syllabus page does not hold up that sync. Some courses do not post a syllabus; BoilerSpace remembers a missing result for a day, and the course page's Check again button retries immediately.
+Course sync saves assignments, quizzes, announcements, and calendar dates separately from syllabus discovery and reading. A slow syllabus page does not hold up that sync. After course sync, BoilerSpace checks syllabi for every current course automatically. Some courses do not post a syllabus; a missing overview attachment triggers a search of the remaining sources. Missing results are remembered for a day. Courses offers Check all syllabi, and each course has a retry control even when discovery failed before finding a file. Read again downloads the file afresh. The header distinguishes course-sync completion from syllabus work.
 
 The Ask tab answers from your synced courses. It can open PDF, PowerPoint (`.pptx`), Word (`.docx`), and HTML files in Brightspace. It cannot read old `.ppt` files, `.rtf`, scanned PDFs, video, or links that leave Brightspace. It does not run on quiz attempt pages.
 
@@ -37,4 +37,4 @@ node bench/run.mjs --check
 
 `npm test` runs the unit tests. `node bench/run.mjs --check` checks the benchmark cases against a local capture and makes no network calls. Live benchmark runs and the capture format are documented in [bench/README.md](bench/README.md).
 
-`scripts/open-chrome.sh` opens Chrome for Testing with the extension loaded and a profile in `.chrome-profile/`. That profile is gitignored. `scripts/verify.mjs` loads the extension in a throwaway browser and checks the panel against fake course data. It needs Playwright, which this repo does not install itself.
+`scripts/open-chrome.sh` opens Chrome for Testing with the extension loaded and a profile in `.chrome-profile/`. That profile is gitignored. `scripts/verify.mjs` loads the extension in a throwaway browser and checks the panel against fake course data. `scripts/verify-syllabi.mjs` separately checks the automatic pass for all current courses, a missing overview attachment, a navbar link rendered after ten seconds, retry controls, and consecutive fresh downloads. Both browser scripts need Playwright, which this repo does not install itself.

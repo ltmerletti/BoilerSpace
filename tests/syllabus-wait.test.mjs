@@ -61,3 +61,13 @@ test('extracts the document frame rather than a longer course wrapper', () => {
   frame.body.innerText = 'Loading…';
   assert.equal(snapshotSyllabus(null, doc).text, '');
 });
+
+test('a rendered Syllabus link to a course file is discovered inside shadow DOM', () => {
+  const href = '/content/enforced/6824-template/syllabus.html';
+  const link = { getAttribute: (name) => ({ href, text: 'Syllabus' })[name], textContent: '' };
+  const nav = { getAttribute: () => null, shadowRoot: { querySelectorAll: () => [link] } };
+  const doc = { location: { origin: 'https://purdue.brightspace.com' }, querySelectorAll: (selector) => selector === '*' ? [nav] : [], querySelector: () => null };
+  assert.deepEqual(snapshotSyllabus(1631466, doc).hrefs, [href]);
+  link.getAttribute = (name) => ({ href: 'https://example.com/content/enforced/6824-template/syllabus.html', text: 'Syllabus' })[name];
+  assert.deepEqual(snapshotSyllabus(1631466, doc).hrefs, []);
+});

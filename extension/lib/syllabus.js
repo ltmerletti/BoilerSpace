@@ -413,45 +413,87 @@ export async function chooseSyllabus(courseId, choice) {
 const textFile = (text) => ({ bytes: new TextEncoder().encode(text), fileName: 'overview.txt', contentType: 'text/plain' });
 
 // Automatic runs use an existing Brightspace session. Syllabus discovery never holds the course-sync lock.
-export async function processCourse(snapshot, courseId, { force = false, openTab = true, onStatus = () => {}, now = new Date(), discover = discoverSyllabusOnPage } = {}) {
+export async function processCourse(snapshot, courseId, { force = false, openTab = true, onStatus = () => {}, now = new Date(), discover = discoverSyllabusOnPage, download = downloadTopicFile } = {}) {
   const course = snapshot.courses.find((c) => c.id === courseId);
   const data = snapshot.data.find((d) => d.courseId === courseId);
   if (!course || !data) return null;
-  const syllabi = (await store.get(store.KEYS.syllabi)) ?? {};
-  const existing = syllabi[courseId];
+  const existing = ((await store.get(store.KEYS.syllabi)) ?? {})[courseId];
   const choice = ((await store.get(store.KEYS.syllabusChoice)) ?? {})[courseId];
   if (choice === 'upload' && existing?.source === 'upload') return existing;
-  let topic = pickSyllabus(data, course, choice);
-  const save = (record) => saveRecord(courseId, record);
+  const picked = pickSyllabus(data, course, choice);
+  const candidates = picked?.chosen ? [picked] : syllabusCandidates(data, course);
+  const unavailableSources = (existing?.unavailableSources ?? []).filter((source) => now - Date.parse(source.checkedAt) < DISCOVERY_RETRY_MS);
+  const sourceMatches = (source, topic) => source.id === topic.id && source.fileUrl === topic.fileUrl && source.updatedAt === topic.updatedAt;
+  const save = (record) => saveRecord(courseId, { ...record, unavailableSources });
+  let discovered = false;
 
-  if (!topic || (force && topic.id?.toString().startsWith('tab'))) {
+  // A manual retry of a navigation source must resolve its current link again.
+  if (force && !picked?.chosen && picked?.id?.toString().startsWith('tab')) {
     if (!openTab && !(await canReachBrightspace())) return existing ?? null;
+    discovered = true;
     onStatus(`Looking for the ${shortCourseLabel(course)} syllabus…`);
     try {
-      topic = await discoverSource(snapshot, courseId, { force, openTab, now, discover }) ?? topic;
+      const refreshed = await discoverSource(snapshot, courseId, { force, openTab, now, discover });
+      if (refreshed) candidates[0] = refreshed;
+      else candidates.shift();
     } catch (err) {
       return save({ courseId, status: 'error', error: err.message, checkedAt: now.toISOString(), previous: usableRecord(existing) });
     }
   }
+  while (true) {
+    let topic = candidates.shift();
+    if (!topic) {
+      if (discovered || picked?.chosen) break;
+      if (!openTab && !(await canReachBrightspace())) return existing ?? null;
+      discovered = true;
+      onStatus(`Looking for the ${shortCourseLabel(course)} syllabus…`);
+      try {
+        topic = await discoverSource(snapshot, courseId, { force, openTab, now, discover });
+      } catch (err) {
+        return save({ courseId, status: 'error', error: err.message, checkedAt: now.toISOString(), previous: usableRecord(existing) });
+      }
+      if (!topic) break;
+    }
+    if (!force && unavailableSources.some((source) => sourceMatches(source, topic))) continue;
+    if (!topic.fileUrl && !topic.text) {
+      return save({ courseId, status: 'external', topicId: topic.id, title: topic.title, url: topic.url, externalUrl: topic.externalUrl, checkedAt: now.toISOString() });
+    }
+    if (!force && existing?.topicId === topic.id && existing.updatedAt === topic.updatedAt && ['done', 'unreadable'].includes(existing.status)) return existing;
+    if (!force && existing?.status === 'error' && existing.topicId === topic.id && now - Date.parse(existing.checkedAt) < ERROR_RETRY_MS && existing.errorStatus !== 404 && existing.error !== 'HTTP 404') return existing;
+    if (!topic.text && !openTab && !(await canReachBrightspace())) return existing ?? null;
 
-  if (!topic) {
-    if (!force && existing?.status === 'none') return existing;
-    return save({ courseId, status: 'none', checkedAt: now.toISOString(), previous: usableRecord(existing) });
+    const base = { courseId, topicId: topic.id, title: topic.title, url: topic.url, fileHref: topic.fileHref ?? null, updatedAt: topic.updatedAt, chosen: Boolean(topic.chosen), checkedAt: now.toISOString() };
+    onStatus(`Reading the ${shortCourseLabel(course)} syllabus…`);
+    let file;
+    try {
+      file = topic.text ? textFile(topic.text) : await download(topic.fileUrl, { open: openTab, refresh: force });
+    } catch (err) {
+      if (err.status === 404 && !topic.chosen) {
+        const at = unavailableSources.findIndex((source) => sourceMatches(source, topic));
+        if (at !== -1) unavailableSources.splice(at, 1);
+        unavailableSources.push({ id: topic.id, fileUrl: topic.fileUrl, updatedAt: topic.updatedAt, checkedAt: now.toISOString() });
+        continue;
+      }
+      return save({ ...base, status: 'error', error: err.status === 404 ? 'The selected file is no longer available in Brightspace. Choose another file or upload the syllabus.' : err.message, errorStatus: err.status ?? null, previous: usableRecord(existing) });
+    }
+    // A successful manual retry clears an earlier missing-file result for this source.
+    for (let i = unavailableSources.length - 1; i >= 0; i--) if (sourceMatches(unavailableSources[i], topic)) unavailableSources.splice(i, 1);
+    return readAndExtract({ snapshot, course, base: { ...base, unavailableSources }, existing, force, onStatus, now, load: async () => file });
   }
-  if (!topic.fileUrl && !topic.text) {
-    return save({ courseId, status: 'external', topicId: topic.id, title: topic.title, url: topic.url, externalUrl: topic.externalUrl, checkedAt: now.toISOString() });
-  }
-  if (!force && existing?.topicId === topic.id && existing.updatedAt === topic.updatedAt && ['done', 'unreadable'].includes(existing.status)) {
-    return existing;
-  }
-  if (!force && existing?.status === 'error' && existing.topicId === topic.id && now - Date.parse(existing.checkedAt) < ERROR_RETRY_MS) {
-    return existing;
-  }
+  return save({ courseId, status: 'none', checkedAt: now.toISOString(), previous: usableRecord(existing) });
+}
 
-  if (!topic.text && !openTab && !(await canReachBrightspace())) return existing ?? null;
-
-  const base = { courseId, topicId: topic.id, title: topic.title, url: topic.url, fileHref: topic.fileHref ?? null, updatedAt: topic.updatedAt, chosen: Boolean(topic.chosen), checkedAt: now.toISOString() };
-  return readAndExtract({ snapshot, course, base, existing, force, onStatus, now, load: () => (topic.text ? textFile(topic.text) : downloadTopicFile(topic.fileUrl)) });
+// Each automatic pass covers every current course, regardless of the open Courses detail.
+export async function processCurrentSyllabi(snapshot, { courseId = null, onStatus = () => {}, ...options } = {}) {
+  const courses = (snapshot?.courses ?? []).filter((course) => course.current && (!courseId || course.id === courseId));
+  const hasSource = (course) => syllabusCandidates(snapshot.data.find((d) => d.courseId === course.id) ?? {}, course).length > 0;
+  courses.sort((a, b) => Number(hasSource(b)) - Number(hasSource(a)));
+  const records = [];
+  for (const [index, course] of courses.entries()) {
+    const progress = (text) => onStatus(`Syllabi ${index + 1} of ${courses.length}: ${text}`);
+    records.push(await processCourse(snapshot, course.id, { ...options, onStatus: progress }));
+  }
+  return records;
 }
 
 // A syllabus the student uploaded because it isn't in Brightspace as a file (or BoilerSpace picked the wrong one).

@@ -440,3 +440,27 @@ test('an expired session reports clearly instead of parsing a sign-in page', asy
   const client = createClient({ origin: ORIGIN, fetchImpl });
   await assert.rejects(syncCurrentCourses(client, { origin: ORIGIN, now: NOW }), /session may have expired/);
 });
+
+test('a direct file on another open course is not used as this course syllabus', async () => {
+  const paths = [];
+  const tab = await findSyllabusTab({
+    async getText(path) { paths.push(path); return '<nav>Course Home</nav>'; },
+  }, { courseId: 1631466, le: '1.96', origin: ORIGIN,
+    pageLinks: ['/content/enforced/1632050-eaps/syllabus.pdf'],
+    readTab: { links: async () => [] },
+  });
+  assert.equal(tab, null);
+  assert.deepEqual(paths, ['/d2l/home/1631466', '/d2l/le/content/1631466/Home']);
+});
+
+test('a direct template file in the requested course rendered navbar is accepted', async () => {
+  const path = '/content/enforced/6824-template/syllabus.html';
+  const text = 'Syllabus for this course. Assessment policies and schedule. '.repeat(30);
+  const tab = await findSyllabusTab({
+    async getText(url) { return url === path ? `<html><body>${text}</body></html>` : '<nav>Course Home</nav>'; },
+  }, { courseId: 1631466, le: '1.96', origin: ORIGIN,
+    readTab: { links: async (id) => { assert.equal(id, 1631466); return [path]; } },
+  });
+  assert.equal(tab.fileUrl, path);
+  assert.match(tab.text, /Assessment policies/);
+});

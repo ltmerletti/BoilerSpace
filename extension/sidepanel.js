@@ -2,7 +2,7 @@ import * as store from './lib/store.js';
 import { BRIGHTSPACE_ORIGIN, canReachBrightspace, connectParentPage, syncNow } from './lib/sync.js';
 import { lockIsFresh } from './lib/sync-store.js';
 import { DEFAULT_MODEL, getConnection, linkAccount, refreshModels, setModel, unlink } from './lib/genai.js';
-import { choosableFiles, chooseSyllabus, pendingReviews, processCourse, readUploadedSyllabus, usableRecord, withSyllabusSources, syllabusCandidates } from './lib/syllabus.js';
+import { choosableFiles, chooseSyllabus, pendingReviews, processCurrentSyllabi, readUploadedSyllabus, usableRecord, withSyllabusSources } from './lib/syllabus.js';
 import { agendaItems, aiPolicyFor, calendarEvents, courseTitle, currentCourses, groupByDay, itemDayKey, shortCourseLabel } from './lib/planner.js';
 import { buildCalendar } from './lib/ics.js';
 import { locationUrl, syllabusFile } from './lib/links.js';
@@ -237,22 +237,14 @@ let queuedSyllabusRun = null;
 async function processSyllabi(options = {}) {
   if (!state.genai || !state.snapshot) return;
   if (state.busy.syllabi) {
-    if (options.force) queuedSyllabusRun = options;
+    if (!queuedSyllabusRun?.force) queuedSyllabusRun = options;
     return;
   }
   const { force = false, courseId = null } = options;
   state.busy.syllabi = true;
   render();
   try {
-    // Read known files before spending time checking courses that may have no syllabus.
-    const queue = courses().sort((a, b) => {
-      const hasSource = (course) => syllabusCandidates(state.snapshot.data.find((d) => d.courseId === course.id) ?? {}, course).length > 0;
-      return Number(hasSource(b)) - Number(hasSource(a));
-    });
-    for (const course of queue) {
-      if (courseId && course.id !== courseId) continue;
-      await processCourse(state.snapshot, course.id, { force, openTab: force, onStatus: setStatus });
-    }
+    await processCurrentSyllabi(state.snapshot, { force, courseId, openTab: force, onStatus: setStatus });
   } finally {
     state.busy.syllabi = false;
     setStatus('');
@@ -796,6 +788,8 @@ function coursesList() {
   const now = new Date().toISOString();
   return [
     h('p', { class: 'lede', style: 'padding-bottom:8px' }, `${plural(list.length, 'current course')} this term.`),
+    state.genai && h('p', { class: 'meta' }, state.busy.syllabi ? 'Checking syllabi for your courses…' : 'Syllabi are checked automatically after course sync.'),
+    state.genai && h('div', { class: 'button-row' }, h('button', { class: 'button secondary', type: 'button', disabled: state.busy.syllabi, onclick: () => processSyllabi({ force: true }) }, 'Check all syllabi')),
     list.map((course) => {
       const next = items.find((i) => i.courseId === course.id && i.dueAt >= now);
       const record = usableRecord(state.syllabi[course.id]);
@@ -896,8 +890,7 @@ function syllabusPicker(course, raw, data) {
         'Upload the syllabus',
         h('input', { type: 'file', accept: '.pdf,.docx,.pptx,.html,.htm,.txt', disabled: state.busy.syllabi, onchange: (e) => uploadSyllabus(course.id, e.target.files?.[0]) }),
       ),
-      raw?.topicId && raw.source !== 'upload' && h('button', { class: 'button secondary', type: 'button', disabled: state.busy.syllabi, onclick: () => processSyllabi({ force: true, courseId: course.id }) }, 'Read again'),
-      raw?.status === 'none' && h('button', { class: 'button secondary', type: 'button', disabled: state.busy.syllabi, onclick: () => processSyllabi({ force: true, courseId: course.id }) }, 'Check again'),
+      raw?.source !== 'upload' && h('button', { class: 'button secondary', type: 'button', disabled: state.busy.syllabi, onclick: () => processSyllabi({ force: true, courseId: course.id }) }, raw?.topicId ? 'Read again' : raw ? 'Check again' : 'Check for syllabus'),
     ),
   );
   return missing ? controls : h('details', { style: 'margin-top:10px' }, h('summary', null, 'Wrong file?'), controls);
@@ -924,7 +917,7 @@ function courseDetail(course) {
       h('div', { class: 'section-head' }, h('h2', { class: 'heading' }, 'Syllabus')),
       raw?.title && h('p', null, link(raw.externalUrl ?? raw.url, raw.title)),
       h('p', { class: 'meta' }, syllabusStatusLine(raw)),
-      raw?.status === 'error' && record && h('p', { class: 'meta' }, 'Showing what was read last time.'),
+      raw?.status !== 'done' && record && h('p', { class: 'meta' }, 'Showing what was read last time.'),
       record?.warning && h('p', { class: 'note' }, record.warning),
       record?.dropped?.length > 0 && h('p', { class: 'meta', style: 'margin-top:4px' }, `${plural(record.dropped.length, 'item was', 'items were')} left out because the wording could not be found in the file.`),
       syllabusPicker(course, raw, data),
@@ -1368,7 +1361,7 @@ function syncLine() {
   if (!meta?.lastSuccessAt) return '';
   const minutes = Math.round((Date.now() - Date.parse(meta.lastSuccessAt)) / 60_000);
   const age = minutes < 1 ? 'just now' : minutes < 60 ? `${minutes} min ago` : formatDateTime(meta.lastSuccessAt);
-  return `Synced ${age}`;
+  return state.busy.syllabi ? 'Checking syllabi…' : `Courses synced ${age}`;
 }
 
 const VIEWS = { week: weekView, courses: coursesView, ask: askView, settings: settingsView };

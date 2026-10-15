@@ -135,8 +135,8 @@ export async function discoverSyllabusOnPage(courseId, { versions, open = false 
   return (await askTab(tab.id, { type: 'boilerspace-discover-syllabus', ...args })).result;
 }
 
-async function requestDownload(path, { open, onStatus, seeImages = false, location = null }) {
-  const args = { path, seeImages: Boolean(seeImages), location };
+async function requestDownload(path, { open, onStatus, seeImages = false, location = null, refresh = false }) {
+  const args = { path, seeImages: Boolean(seeImages), location, refresh };
   if (pageBridge) return pageBridge('download', args);
   const tab = await findBrightspaceTab({ open, onStatus });
   if (!tab) throw new Error('Open Brightspace to read course files.');
@@ -155,8 +155,8 @@ export async function readQuizOnPage(quiz, { open = true, onStatus = () => {} } 
   return result;
 }
 
-export async function downloadTopicFile(path, { open = true, onStatus = () => {}, seeImages = false, location = null } = {}) {
-  const { result } = await requestDownload(path, { open, onStatus, seeImages, location });
+export async function downloadTopicFile(path, { open = true, onStatus = () => {}, seeImages = false, location = null, refresh = false } = {}) {
+  const { result } = await requestDownload(path, { open, onStatus, seeImages, location, refresh });
   if (Array.isArray(result.pages)) {
     return {
       kind: result.kind,

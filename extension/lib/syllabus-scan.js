@@ -19,6 +19,8 @@ export function snapshotSyllabus(courseId, root) {
     } catch {
       return null;
     }
+    if (url.origin !== origin) return null;
+    if (/^\/content\/enforced\/[^/?#]+\/.+/.test(url.pathname)) return { orgUnitId: null };
     if (/quickLink\.d2l$/i.test(url.pathname)) {
       const type = (url.searchParams.get('type') ?? '').toLowerCase();
       if (type && type !== 'content') return null;

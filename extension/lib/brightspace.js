@@ -638,12 +638,17 @@ function topicAsToc(topic, topicId) {
 }
 
 // The Syllabus tab is a navbar link. It is often an HTML page, and it is often missing from Content.
-function syllabusLinkForCourse(hrefs, courseId) {
+function syllabusLinkForCourse(hrefs, courseId, { scopedPage = false } = {}) {
   for (const href of hrefs) {
     if (!href) continue;
     const target = contentTargetFromHref(href);
     if (!target?.topicId && !target?.filePath) continue;
     if (target.orgUnitId && target.orgUnitId !== Number(courseId)) continue;
+    if (!target.orgUnitId && !scopedPage) {
+      const owner = /^\/content\/enforced\/(\d+)(?:-|\/)/.exec(target.filePath ?? '')?.[1];
+      if (Number(owner) !== Number(courseId)) continue;
+    }
+    if (new URL(href, 'https://purdue.brightspace.com').origin !== 'https://purdue.brightspace.com') continue;
     return { href, text: 'Syllabus' };
   }
   return null;
@@ -757,7 +762,9 @@ async function readSyllabusTabText(client, tab, readTab, href) {
 
 export async function findSyllabusTab(client, { courseId, le, lp = null, origin, pageLinks = [], readTab = null }) {
   const live = typeof globalThis.document === 'undefined' ? [] : syllabusHrefsInDocument(globalThis.document);
-  let link = syllabusLinkForCourse([...pageLinks, ...live], courseId);
+  const page = globalThis.document?.location?.href ?? '';
+  const scopedPage = new RegExp(`/(?:home|content)/${courseId}(?:[/?#]|$)`).test(page) || new URL(page || origin).searchParams.get('ou') === String(courseId);
+  let link = syllabusLinkForCourse([...pageLinks, ...live], courseId, { scopedPage });
   if (!link) {
     const fromTemplate = await syllabusFromTemplate(client, { courseId, le, lp, origin });
     if (fromTemplate) {
@@ -773,12 +780,12 @@ export async function findSyllabusTab(client, { courseId, le, lp = null, origin,
         if (err.status === 404) continue;
         throw err;
       }
-      link = syllabusLinkForCourse(syllabusNavLinks(html).map((item) => item.href), courseId);
+      link = syllabusLinkForCourse(syllabusNavLinks(html).map((item) => item.href), courseId, { scopedPage: true });
       if (link) break;
     }
   }
   if (!link && readTab?.links) {
-    link = syllabusLinkForCourse((await readTab.links(courseId)) ?? [], courseId);
+    link = syllabusLinkForCourse((await readTab.links(courseId)) ?? [], courseId, { scopedPage: true });
   }
   if (!link) return null;
   const target = contentTargetFromHref(link.href);
@@ -1012,7 +1019,7 @@ export async function runInPage(action, args = {}, { onProgress = () => {} } = {
       if (!DOWNLOAD_PATHS.some((pattern) => pattern.test(args.path ?? ''))) {
         throw new BrightspaceError('Refusing to download from an unexpected path.', { path: args.path });
       }
-      const file = heldFile?.path === args.path ? heldFile.file : await client.getFile(args.path);
+      const file = !args.refresh && heldFile?.path === args.path ? heldFile.file : await client.getFile(args.path);
       heldFile = { path: args.path, file };
       const isPdf = file.bytes[0] === 0x25 && file.bytes[1] === 0x50 && file.bytes[2] === 0x44 && file.bytes[3] === 0x46;
       // Slide decks are mostly images. Read the text here and send that back, instead of a base64 copy of the whole file.

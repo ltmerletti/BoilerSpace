@@ -352,6 +352,35 @@ try {
   check('no bottom-right launcher appears when the navbar is missing', await noNavbar.locator('#boilerspace-root .floating').count() === 0);
   await noNavbar.close();
 
+  // Exercise the actual background reader with a slow JavaScript document inside a wrapper.
+  const delayedText = 'Course syllabus. Midterm October 22. Attendance and grading policies. '.repeat(20);
+  const delayedFile = '/content/enforced/999-test/syllabus.html';
+  const delayedView = '/d2l/le/content/999/viewContent/1/View';
+  await context.route(`https://purdue.brightspace.com${delayedFile}*`, (route) => route.fulfill({
+    contentType: 'text/html',
+    body: `<!doctype html><html><body><main id="document">Loading…</main><script>setTimeout(() => { document.getElementById('document').textContent = ${JSON.stringify(delayedText)}; }, 10000);</script></body></html>`,
+  }));
+  await context.route(`https://purdue.brightspace.com${delayedView}*`, (route) => route.fulfill({
+    contentType: 'text/html',
+    body: `<!doctype html><html><body><nav>${'Unrelated Brightspace navigation. '.repeat(100)}</nav><main><iframe src="${delayedFile}"></iframe></main></body></html>`,
+  }));
+  const probe = await context.newPage();
+  await probe.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+  let renderedDone = false;
+  const scanOpened = context.waitForEvent('request', { predicate: (request) => new URL(request.url()).pathname === delayedView });
+  const rendered = probe.evaluate((href) => chrome.runtime.sendMessage({ type: 'boilerspace-syllabus', phase: 'page', href, origin: 'https://purdue.brightspace.com' }), delayedView)
+    .then((result) => { renderedDone = true; return result; });
+  rendered.catch(() => {});
+  const scanTab = (await scanOpened).frame().page();
+  await scanTab.waitForURL(`**${delayedView}*`);
+  const refreshed = await probe.evaluate(async () => (await import('./lib/sync.js')).syncNow());
+  const duringScan = await probe.evaluate(() => chrome.storage.local.get(['syncMeta', 'syncProgress', 'syncLock']));
+  check('course sync completes while a JavaScript syllabus is still loading', refreshed.ok && !renderedDone && duringScan.syncMeta.ok && duringScan.syncProgress.finished && !duringScan.syncLock);
+  const renderedResult = await rendered;
+  check('the rendered reader waits for the ten-second document and excludes the wrapper', renderedResult.text?.trim() === delayedText.trim(), renderedResult.error ?? `${renderedResult.text?.length} characters`);
+  check('the background syllabus tab closes after reading', scanTab.isClosed());
+  await probe.close();
+
   await bs.goto('https://purdue.brightspace.com/d2l/lms/quizzing/user/attempt/quiz_start_frame_auto.d2l?ou=1600001');
   await sleep(2000);
   check('nothing is added on quiz attempt pages', (await bs.locator('#boilerspace-root, .boilerspace-nav-item').count()) === 0);

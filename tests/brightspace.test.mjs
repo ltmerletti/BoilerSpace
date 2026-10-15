@@ -302,6 +302,28 @@ test('a syllabus on the course template is read when Content and the homepage do
   assert.equal(missed, null, 'a template module named Syllabus is not the syllabus unless a file in it is');
 });
 
+test('a linked PDF uses the file reader without opening a rendered syllabus tab', async () => {
+  const file = '/content/enforced/9-template/syllabus.pdf';
+  const tab = await findSyllabusTab({ getText: () => assert.fail('a PDF should not be fetched as HTML') }, {
+    courseId: 9, le: '1.96', origin: ORIGIN, pageLinks: [file],
+    readTab: { page: () => assert.fail('a PDF does not need a viewer tab') },
+  });
+  assert.equal(tab.fileUrl, file);
+  assert.equal(tab.id, 'tab:9:file');
+});
+
+test('an HTML template that initially shows Loading is read after rendering', async () => {
+  const file = '/content/enforced/9-template/syllabus.html';
+  const text = 'Course syllabus and assessment schedule. '.repeat(30);
+  const calls = [];
+  const tab = await findSyllabusTab({ getText: async () => `<html><body><p>Loading…</p><script src="syllabus.js"></script>${' '.repeat(800)}</body></html>` }, {
+    courseId: 9, le: '1.96', origin: ORIGIN, pageLinks: [file],
+    readTab: { page: async (href) => { calls.push(href); return text; } },
+  });
+  assert.deepEqual(calls, [file]);
+  assert.equal(tab.text, text);
+});
+
 test('an ordinary content page is not treated as the Syllabus tab', () => {
   const href = `${ORIGIN}/d2l/le/content/1631469/viewContent/123456/View`;
   const doc = { location: { href }, querySelectorAll: () => [] };
@@ -326,7 +348,8 @@ test('a Syllabus link inside the open course navbar is used', () => {
   assert.equal(syllabusHrefInDocument(doc, 1632050), null);
 
   const page = {
-    location: { origin: 'https://purdue.brightspace.com' },
+    location: { origin: 'https://purdue.brightspace.com', pathname: '/content/enforced/6824-template/syllabus.html' },
+    readyState: 'complete',
     body: { innerText: 'Each checkpoint covers the most recent topics. '.repeat(20) },
     querySelectorAll: () => [host],
   };

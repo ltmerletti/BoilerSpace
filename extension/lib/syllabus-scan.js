@@ -31,17 +31,25 @@ export function snapshotSyllabus(courseId, root) {
     if (view) return { topicId: Number(view[2]), orgUnitId: Number(view[1]) };
     return null;
   };
-  const longestText = (doc) => {
+  const documentText = (doc) => {
     let best = '';
+    let ready = false;
     const visit = (node, depth) => {
       if (!node || depth > 5) return;
       let text = '';
       try {
-        text = (node.body?.innerText || '').replace(/\s+/g, ' ').trim();
+        const path = node.location?.pathname ?? '';
+        const file = /^\/content\/enforced\//.test(path);
+        const container = file ? node.body : /\/viewContent\/\d+\/View$/i.test(path) ? node.querySelector?.('main, [role="main"], .d2l-page-main') : null;
+        text = (container?.innerText || '').replace(/\s+/g, ' ').trim();
+        if (container?.querySelector?.('[aria-busy="true"], d2l-loading-spinner') || /^(loading|please wait)[.…\s]*$/i.test(text)) text = '';
+        if (text.length > best.length) {
+          best = text;
+          ready = node.readyState === 'complete';
+        }
       } catch {
         return;
       }
-      if (text.length > best.length) best = text;
       let frames;
       try {
         frames = node.querySelectorAll('iframe, frame');
@@ -57,7 +65,7 @@ export function snapshotSyllabus(courseId, root) {
       }
     };
     visit(doc, 0);
-    return best;
+    return { text: best, contentReady: ready };
   };
 
   const doc = root ?? globalThis.document;
@@ -84,6 +92,7 @@ export function snapshotSyllabus(courseId, root) {
     }
   };
   visit(doc);
-  const body = `${doc?.body?.innerText ?? ''} ${longestText(doc)}`.replace(/\s+/g, ' ').trim();
-  return { hrefs, text: (longestText(doc) || body).slice(0, 120_000) };
+  const content = documentText(doc);
+  const navReady = doc?.readyState === 'complete' && Boolean(doc.querySelector?.('d2l-navigation, d2l-navigation-main-header, .d2l-navigation-s-header, nav, [role="navigation"]'));
+  return { hrefs, text: content.text.slice(0, 120_000), contentReady: content.contentReady, navReady };
 }

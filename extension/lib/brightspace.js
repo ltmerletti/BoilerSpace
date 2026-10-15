@@ -674,7 +674,9 @@ function withSyllabusText(tab, text) {
 async function syllabusFileText(client, fileHref) {
   if (!fileHref || !/\.html?($|\?)/i.test(fileHref)) return null;
   try {
-    return plainText(await client.getText(fileHref));
+    const html = await client.getText(fileHref);
+    if (/aria-busy\s*=\s*["']true|>\s*(?:Loading(?:\s+[^<]{0,40})?|Please wait)[.…\s]*</i.test(html)) return null;
+    return plainText(html);
   } catch {
     return null;
   }
@@ -742,13 +744,15 @@ async function syllabusFromTemplate(client, { courseId, le, lp, origin }) {
   }
 }
 
-async function optionalCall(fn, arg) {
-  if (!fn) return null;
-  try {
-    return await fn(arg);
-  } catch {
-    return null;
-  }
+async function readSyllabusTabText(client, tab, readTab, href) {
+  const fromFile = await syllabusFileText(client, tab.fileHref);
+  if (fromFile?.length >= SYLLABUS_TEXT_MIN) return withSyllabusText(tab, fromFile);
+  // Let the normal file reader handle PDFs and Office files, without loading a viewer tab.
+  if (tab.fileHref && /\.(pdf|docx?|pptx?)($|\?)/i.test(tab.fileHref)) return tab;
+  if (!readTab?.page) return tab;
+  const text = await readTab.page(href);
+  if (!text || text.length < SYLLABUS_TEXT_MIN) throw new Error('The syllabus page did not finish loading. Try reading it again.');
+  return withSyllabusText(tab, text);
 }
 
 export async function findSyllabusTab(client, { courseId, le, lp = null, origin, pageLinks = [], readTab = null }) {
@@ -757,8 +761,7 @@ export async function findSyllabusTab(client, { courseId, le, lp = null, origin,
   if (!link) {
     const fromTemplate = await syllabusFromTemplate(client, { courseId, le, lp, origin });
     if (fromTemplate) {
-      const fromFile = await syllabusFileText(client, fromTemplate.fileHref);
-      return withSyllabusText(fromTemplate, fromFile) ?? fromTemplate;
+      return readSyllabusTabText(client, fromTemplate, readTab, fromTemplate.fileHref || fromTemplate.url);
     }
   }
   if (!link) {
@@ -775,14 +778,14 @@ export async function findSyllabusTab(client, { courseId, le, lp = null, origin,
     }
   }
   if (!link && readTab?.links) {
-    link = syllabusLinkForCourse((await optionalCall(readTab.links, courseId)) ?? [], courseId);
+    link = syllabusLinkForCourse((await readTab.links(courseId)) ?? [], courseId);
   }
   if (!link) return null;
   const target = contentTargetFromHref(link.href);
   if (!target) return null;
   let tab;
   if (target.filePath) {
-    tab = { id: 'tab', title: 'Syllabus', modulePath: [], fileUrl: target.filePath, fileHref: target.filePath, url: new URL(link.href, origin).href, updatedAt: null };
+    tab = { id: `tab:${courseId}:file`, title: 'Syllabus', modulePath: [], fileUrl: target.filePath, fileHref: target.filePath, url: new URL(link.href, origin).href, updatedAt: null };
   } else {
     const orgUnits = [...new Set([target.sourceOrgUnitId, courseId, target.orgUnitId].filter(Boolean))];
     for (const ou of orgUnits) {
@@ -816,9 +819,7 @@ export async function findSyllabusTab(client, { courseId, le, lp = null, origin,
       };
     }
   }
-  const fromFile = await syllabusFileText(client, tab.fileHref);
-  if (fromFile && fromFile.length >= SYLLABUS_TEXT_MIN) return withSyllabusText(tab, fromFile);
-  return withSyllabusText(tab, await optionalCall(readTab?.page, link.href));
+  return readSyllabusTabText(client, tab, readTab, tab.fileHref || link.href);
 }
 
 // The course overview is where many instructors attach the syllabus.
@@ -973,7 +974,11 @@ async function shrinkPicture(bytes, mediaType) {
 // The navbar is drawn by the course page, so a fetch never includes the Syllabus tab. A background tab loads each course and reads it.
 function pageSyllabusReader() {
   if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) return null;
-  const ask = (body) => chrome.runtime.sendMessage({ type: 'boilerspace-syllabus', ...body }).catch(() => null);
+  const ask = async (body) => {
+    const reply = await chrome.runtime.sendMessage({ type: 'boilerspace-syllabus', ...body });
+    if (!reply || reply.error) throw new Error(reply?.error || 'The syllabus reader did not answer.');
+    return reply;
+  };
   return {
     links: async (courseId) => (await ask({ phase: 'links', courseId, origin: location.origin }))?.hrefs ?? [],
     page: async (href) => (await ask({ phase: 'page', href, origin: location.origin }))?.text ?? '',

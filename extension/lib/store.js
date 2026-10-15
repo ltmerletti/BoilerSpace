@@ -8,6 +8,7 @@ export const KEYS = {
   drawerOpen: 'drawerOpen',
   drawerWidth: 'drawerWidth',
   syllabusChoice: 'syllabusChoice',
+  syllabusSources: 'syllabusSources',
   changes: 'changes',
   genai: 'genai',
   syllabi: 'syllabi',

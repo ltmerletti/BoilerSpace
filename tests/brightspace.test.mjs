@@ -122,8 +122,8 @@ test('full sync against a fake Brightspace', async () => {
   assert.equal(cs252.grades[0].displayed, '9 / 10');
   assert.equal(cs252.content[0].looksLikeSyllabus, true);
   assert.equal(cs252.content[0].fileUrl, '/d2l/api/le/1.96/1600001/content/topics/77/file');
-  assert.equal(cs252.syllabusTab, null, 'a course that already has a syllabus file does not need the Syllabus tab');
-  assert.ok(calls.some((c) => c.path === '/d2l/home/412690'), 'a course with no syllabus file checks the Syllabus tab');
+  assert.equal(cs252.syllabusTab, undefined, 'course sync does not run syllabus discovery');
+  assert.ok(!calls.some((c) => c.path === '/d2l/home/412690'), 'a course with no syllabus does not delay course sync');
 
   assert.ok(result.errors.some((e) => e.courseId === 440703 && e.section === 'grades' && e.status === 403));
   assert.ok(calls.every((c) => c.method === 'GET' || c.path === '/d2l/lp/auth/oauth2/token'), 'only GETs plus the token request');

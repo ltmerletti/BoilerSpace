@@ -4,13 +4,48 @@
 import * as store from './store.js';
 import { chatCompletion } from './genai.js';
 import { extractText } from './extract.js';
-import { canReachBrightspace, downloadTopicFile } from './sync.js';
+import { canReachBrightspace, discoverSyllabusOnPage, downloadTopicFile } from './sync.js';
 import { dayKey, daysBetweenKeys, formatDayKey, isValidDate, isValidTime, zonedToUtc } from './dates.js';
 import { shortCourseLabel } from './courses.js';
 
 const MAX_PROMPT_CHARS = 90_000;
 const MAX_QUOTE_WORDS = 40;
 const ERROR_RETRY_MS = 30 * 60_000;
+const DISCOVERY_RETRY_MS = 24 * 60 * 60_000;
+const discoveries = new Map();
+
+export function withSyllabusSources(snapshot, sources = {}) {
+  if (!snapshot) return null;
+  return { ...snapshot, data: snapshot.data.map((data) => ({
+    ...data, syllabusTab: sources[data.courseId]?.topic ?? data.syllabusTab ?? null,
+  })) };
+}
+
+async function discoverSource(snapshot, courseId, { force, openTab, now, discover }) {
+  const cached = ((await store.get(store.KEYS.syllabusSources)) ?? {})[courseId];
+  const retryAfter = cached?.error ? ERROR_RETRY_MS : DISCOVERY_RETRY_MS;
+  if (!force && cached && now - Date.parse(cached.checkedAt) < retryAfter) {
+    if (cached.error) throw new Error(cached.error);
+    return cached.topic ?? null;
+  }
+  if (discoveries.has(courseId)) return discoveries.get(courseId);
+  const pending = (async () => {
+    try {
+      const topic = await discover(courseId, { versions: snapshot.versions, open: openTab });
+      await store.update(store.KEYS.syllabusSources, (sources) => ({ ...sources, [courseId]: { topic, checkedAt: now.toISOString() } }), {});
+      return topic;
+    } catch (err) {
+      await store.update(store.KEYS.syllabusSources, (sources) => ({ ...sources, [courseId]: { ...cached, error: err.message, checkedAt: now.toISOString() } }), {});
+      throw err;
+    }
+  })();
+  discoveries.set(courseId, pending);
+  try {
+    return await pending;
+  } finally {
+    discoveries.delete(courseId);
+  }
+}
 const DEADLINE_KINDS = ['exam', 'quiz', 'assignment', 'project', 'lab', 'presentation', 'other'];
 const AI_STANCES = ['allowed', 'restricted', 'prohibited', 'unclear'];
 
@@ -358,8 +393,8 @@ export async function chooseSyllabus(courseId, choice) {
 
 const textFile = (text) => ({ bytes: new TextEncoder().encode(text), fileName: 'overview.txt', contentType: 'text/plain' });
 
-// openTab: false skips the course quietly when Brightspace can't be reached, so automatic runs never open tabs.
-export async function processCourse(snapshot, courseId, { force = false, openTab = true, onStatus = () => {}, now = new Date() } = {}) {
+// Automatic runs use an existing Brightspace session. Syllabus discovery never holds the course-sync lock.
+export async function processCourse(snapshot, courseId, { force = false, openTab = true, onStatus = () => {}, now = new Date(), discover = discoverSyllabusOnPage } = {}) {
   const course = snapshot.courses.find((c) => c.id === courseId);
   const data = snapshot.data.find((d) => d.courseId === courseId);
   if (!course || !data) return null;
@@ -367,10 +402,23 @@ export async function processCourse(snapshot, courseId, { force = false, openTab
   const existing = syllabi[courseId];
   const choice = ((await store.get(store.KEYS.syllabusChoice)) ?? {})[courseId];
   if (choice === 'upload' && existing?.source === 'upload') return existing;
-  const topic = pickSyllabus(data, course, choice);
+  let topic = pickSyllabus(data, course, choice);
   const save = (record) => saveRecord(courseId, record);
 
-  if (!topic) return save({ courseId, status: 'none', checkedAt: now.toISOString() });
+  if (!topic || (force && topic.id?.toString().startsWith('tab'))) {
+    if (!openTab && !(await canReachBrightspace())) return existing ?? null;
+    onStatus(`Looking for the ${shortCourseLabel(course)} syllabus…`);
+    try {
+      topic = await discoverSource(snapshot, courseId, { force, openTab, now, discover }) ?? topic;
+    } catch (err) {
+      return save({ courseId, status: 'error', error: err.message, checkedAt: now.toISOString(), previous: usableRecord(existing) });
+    }
+  }
+
+  if (!topic) {
+    if (!force && existing?.status === 'none') return existing;
+    return save({ courseId, status: 'none', checkedAt: now.toISOString(), previous: usableRecord(existing) });
+  }
   if (!topic.fileUrl && !topic.text) {
     return save({ courseId, status: 'external', topicId: topic.id, title: topic.title, url: topic.url, externalUrl: topic.externalUrl, checkedAt: now.toISOString() });
   }

@@ -1,5 +1,5 @@
 // Storage side of syncing, shared by the Brightspace page (which runs the sync) and the panel (which shows it).
-// The lock carries a heartbeat that every progress update refreshes, so a sync cut off by leaving the
+// The lock has its own heartbeat, so a quiet request stays live and a sync cut off by leaving the
 // page frees the lock within LOCK_STALE_MS.
 
 import * as store from './store.js';
@@ -26,17 +26,25 @@ async function releaseLock(owner) {
 }
 
 function progressReporter(owner, startedAt) {
-  return (progress) =>
-    chrome.storage.local
-      .set({
-        [store.KEYS.syncLock]: { owner, heartbeat: Date.now() },
-        [store.KEYS.syncProgress]: { ...progress, owner, startedAt, at: Date.now(), finished: false },
-      })
-      .catch(() => {});
+  return async (progress) => {
+    if ((await store.get(store.KEYS.syncLock))?.owner !== owner) return;
+    await chrome.storage.local.set({
+      [store.KEYS.syncLock]: { owner, heartbeat: Date.now() },
+      [store.KEYS.syncProgress]: { ...progress, owner, startedAt, at: Date.now(), finished: false },
+    }).catch(() => {});
+  };
 }
 
 export async function saveSyncResult(result) {
   const previous = await store.get(store.KEYS.snapshot);
+  // Keep sources discovered by older versions; new discovery is stored separately.
+  result = {
+    ...result,
+    data: result.data.map((data) => {
+      const syllabusTab = previous?.data?.find((old) => old.courseId === data.courseId)?.syllabusTab;
+      return syllabusTab && !data.syllabusTab ? { ...data, syllabusTab } : data;
+    }),
+  };
   const changes = diffSnapshots(previous, result);
   await store.set(store.KEYS.snapshot, result);
   await store.update(store.KEYS.changes, (existing) => mergeChanges(existing ?? [], changes), []);
@@ -65,17 +73,28 @@ export async function runSync(owner, run) {
   if (!(await acquireLock(owner))) return { ok: true, skipped: true };
   const startedAt = Date.now();
   const onProgress = progressReporter(owner, startedAt);
+  let heartbeatWork = Promise.resolve();
+  const heartbeat = setInterval(() => {
+    heartbeatWork = heartbeatWork.then(async () => {
+      const lock = await store.get(store.KEYS.syncLock);
+      if (lock?.owner === owner) await store.set(store.KEYS.syncLock, { owner, heartbeat: Date.now() });
+    }).catch(() => {});
+  }, LOCK_STALE_MS / 3);
   try {
     await onProgress({ message: 'Starting…', done: 0, total: null });
     const result = await run(onProgress);
+    if ((await store.get(store.KEYS.syncLock))?.owner !== owner) return { ok: false, error: 'Another sync took over. Try syncing again.' };
     const changes = await saveSyncResult(result);
     await store.set(store.KEYS.syncProgress, { message: 'Done', done: 1, total: 1, owner, startedAt, at: Date.now(), finished: true });
     return { ok: true, newChanges: changes.length };
   } catch (err) {
+    if ((await store.get(store.KEYS.syncLock))?.owner !== owner) return { ok: false, error: err.message };
     await saveSyncFailure(err);
     await store.set(store.KEYS.syncProgress, { message: err.message, owner, startedAt, at: Date.now(), finished: true, failed: true });
     return { ok: false, error: err.message, status: err.status ?? null, path: err.path ?? null };
   } finally {
+    clearInterval(heartbeat);
+    await heartbeatWork;
     await releaseLock(owner);
   }
 }

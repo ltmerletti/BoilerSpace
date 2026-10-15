@@ -2,7 +2,7 @@ import * as store from './lib/store.js';
 import { BRIGHTSPACE_ORIGIN, canReachBrightspace, connectParentPage, syncNow } from './lib/sync.js';
 import { lockIsFresh } from './lib/sync-store.js';
 import { DEFAULT_MODEL, getConnection, linkAccount, refreshModels, setModel, unlink } from './lib/genai.js';
-import { choosableFiles, chooseSyllabus, pendingReviews, processCourse, readUploadedSyllabus, usableRecord } from './lib/syllabus.js';
+import { choosableFiles, chooseSyllabus, pendingReviews, processCourse, readUploadedSyllabus, usableRecord, withSyllabusSources, syllabusCandidates } from './lib/syllabus.js';
 import { agendaItems, aiPolicyFor, calendarEvents, courseTitle, currentCourses, groupByDay, itemDayKey, shortCourseLabel } from './lib/planner.js';
 import { buildCalendar } from './lib/ics.js';
 import { locationUrl, syllabusFile } from './lib/links.js';
@@ -170,7 +170,7 @@ async function loadState({ includeChat = false } = {}) {
     state.askScope = ui.askScope ?? '';
     state.activeChatId = state.chats.some((c) => c.id === ui.activeChatId) ? ui.activeChatId : null;
   }
-  state.snapshot = all.snapshot ?? null;
+  state.snapshot = withSyllabusSources(all.snapshot, all.syllabusSources);
   state.syncMeta = all.syncMeta ?? null;
   state.changes = all.changes ?? [];
   state.genai = all.genai ? await getConnection() : null;
@@ -244,7 +244,12 @@ async function processSyllabi(options = {}) {
   state.busy.syllabi = true;
   render();
   try {
-    for (const course of courses()) {
+    // Read known files before spending time checking courses that may have no syllabus.
+    const queue = courses().sort((a, b) => {
+      const hasSource = (course) => syllabusCandidates(state.snapshot.data.find((d) => d.courseId === course.id) ?? {}, course).length > 0;
+      return Number(hasSource(b)) - Number(hasSource(a));
+    });
+    for (const course of queue) {
       if (courseId && course.id !== courseId) continue;
       await processCourse(state.snapshot, course.id, { force, openTab: force, onStatus: setStatus });
     }
@@ -839,7 +844,7 @@ function policyBlock(record, raw) {
 
 function syllabusStatusLine(raw) {
   if (!raw) return state.genai ? (state.busy.syllabi ? 'Reading…' : 'Not read yet.') : 'Connect GenAI Studio to read it.';
-  if (raw.status === 'none') return 'No syllabus was found in Content, the course overview, or the Syllabus tab.';
+  if (raw.status === 'none') return 'No syllabus was found for this course. Some courses do not post one.';
   if (raw.status === 'external') return `The syllabus is a link to ${raw.externalUrl ? new URL(raw.externalUrl).hostname : 'another site'}, which BoilerSpace can't open. Upload a copy to read it.`;
   if (raw.status === 'unreadable') return raw.warning;
   if (raw.status === 'error') return `Reading failed: ${raw.error}`;
@@ -892,6 +897,7 @@ function syllabusPicker(course, raw, data) {
         h('input', { type: 'file', accept: '.pdf,.docx,.pptx,.html,.htm,.txt', disabled: state.busy.syllabi, onchange: (e) => uploadSyllabus(course.id, e.target.files?.[0]) }),
       ),
       raw?.topicId && raw.source !== 'upload' && h('button', { class: 'button secondary', type: 'button', disabled: state.busy.syllabi, onclick: () => processSyllabi({ force: true, courseId: course.id }) }, 'Read again'),
+      raw?.status === 'none' && h('button', { class: 'button secondary', type: 'button', disabled: state.busy.syllabi, onclick: () => processSyllabi({ force: true, courseId: course.id }) }, 'Check again'),
     ),
   );
   return missing ? controls : h('details', { style: 'margin-top:10px' }, h('summary', null, 'Wrong file?'), controls);

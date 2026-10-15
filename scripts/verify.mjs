@@ -295,6 +295,7 @@ try {
     await sleep(200);
   }
   check('automatic sync finishes from the Brightspace page', Boolean(meta?.ok), meta ? `${meta.requestCount} requests, ${meta.authMode} auth` : 'no sync result');
+  check('syllabus discovery does not show a stopped course-sync warning', !(await frame.locator('#status').textContent()).includes('The last sync stopped'));
 
   let syllabus = null;
   for (let i = 0; i < 100 && !['done', 'error', 'unreadable'].includes(syllabus?.status); i++) {

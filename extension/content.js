@@ -43,9 +43,9 @@
     const token = await xsrfToken(args.xsrfToken);
     const sync = await loadLib('page-sync.js');
     if (action === 'sync') {
-      const { syllabusHrefsInDocument } = await loadLib('brightspace.js');
-      return sync.syncHere({ xsrfToken: token, pageLinks: syllabusHrefsInDocument(document) });
+      return sync.syncHere({ xsrfToken: token });
     }
+    if (action === 'discover-syllabus') return sync.discoverSyllabusHere({ ...args, xsrfToken: token });
     if (action === 'download') return sync.downloadHere(args.path, { xsrfToken: token, seeImages: args.seeImages, location: args.location });
     if (action === 'read-quiz') return sync.readQuizHere({ ...args, xsrfToken: token });
     throw new Error(`Unknown request ${action}`);
@@ -64,6 +64,8 @@
         return reply(pageWork('sync', message));
       case 'boilerspace-download':
         return reply(pageWork('download', message));
+      case 'boilerspace-discover-syllabus':
+        return reply(pageWork('discover-syllabus', message));
       case 'boilerspace-read-quiz':
         return reply(pageWork('read-quiz', message));
       case 'boilerspace-toggle':
@@ -77,8 +79,8 @@
 
   setTimeout(async () => {
     const token = await xsrfToken(null);
-    Promise.all([loadLib('page-sync.js'), loadLib('brightspace.js')])
-      .then(([sync, brightspace]) => sync.autoSyncIfDue({ xsrfToken: token, pageLinks: brightspace.syllabusHrefsInDocument(document) }))
+    loadLib('page-sync.js')
+      .then((sync) => sync.autoSyncIfDue({ xsrfToken: token }))
       .catch(() => {});
   }, AUTO_SYNC_DELAY_MS);
 

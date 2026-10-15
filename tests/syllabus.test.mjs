@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { zipSync, strToU8 } from '../extension/vendor/fflate/fflate.js';
 import { installChrome, MODEL_OUTPUT, snapshotFixture, SYLLABUS_PAGES } from './helpers.mjs';
-import { chooseSyllabus, locateQuote, matchToBrightspace, pendingReviews, processCourse, rankSyllabusCandidates, readUploadedSyllabus, syllabusCandidates, validateExtraction } from '../extension/lib/syllabus.js';
+import { chooseSyllabus, locateQuote, matchToBrightspace, pendingReviews, processCourse, rankSyllabusCandidates, readUploadedSyllabus, syllabusCandidates, validateExtraction, withSyllabusSources } from '../extension/lib/syllabus.js';
+import { runSync } from '../extension/lib/sync-store.js';
 import { flattenToc } from '../extension/lib/brightspace.js';
 import { agendaItems, calendarEvents, shortCourseLabel } from '../extension/lib/planner.js';
 
@@ -10,6 +11,49 @@ test('picks the syllabus file and ignores lecture slides', () => {
   const [best, ...rest] = rankSyllabusCandidates(snapshotFixture().data[0].content);
   assert.equal(best.id, 77);
   assert.equal(rest.length, 0);
+});
+
+test('a slow syllabus lookup does not block saving course data, and missing syllabi are cached', async () => {
+  const data = installChrome();
+  const snapshot = snapshotFixture();
+  let finish;
+  let calls = 0;
+  const discover = async () => {
+    calls++;
+    return new Promise((resolve) => { finish = resolve; });
+  };
+  const pending = processCourse(snapshot, 1600002, { discover, now: new Date('2026-10-15T17:00:00Z') });
+  while (!finish) await Promise.resolve();
+  const result = await runSync('normal', async () => snapshot);
+  assert.equal(result.ok, true);
+  assert.equal(data.syncProgress.finished, true);
+  assert.equal(data.syllabi, undefined, 'course data saved before syllabus lookup finished');
+  finish(null);
+  assert.equal((await pending).status, 'none');
+  const again = await processCourse(snapshot, 1600002, { discover, now: new Date('2026-10-15T18:00:00Z') });
+  assert.equal(again.status, 'none');
+  assert.equal(calls, 1);
+  const forced = await processCourse(snapshot, 1600002, { force: true, discover: async () => { calls++; return null; } });
+  assert.equal(forced.status, 'none');
+  assert.equal(calls, 2, 'Check again bypasses the missing-source cache');
+});
+
+test('discovery sources are stored separately and appear in the panel snapshot', async () => {
+  const data = installChrome();
+  const snapshot = snapshotFixture();
+  const topic = { id: 'tab:9', title: 'Syllabus', externalUrl: 'https://example.com/syllabus', url: 'https://example.com/syllabus' };
+  const record = await processCourse(snapshot, 1600002, { discover: async () => topic });
+  assert.equal(record.status, 'external');
+  assert.equal(snapshot.data[1].syllabusTab, undefined, 'a lookup does not rewrite a concurrently syncing snapshot');
+  assert.equal(withSyllabusSources(snapshot, data.syllabusSources).data[1].syllabusTab.id, 'tab:9');
+});
+
+test('a discovery loading failure is kept separate from a course with no syllabus', async () => {
+  const data = installChrome();
+  const record = await processCourse(snapshotFixture(), 1600002, { discover: async () => { throw new Error('The course navigation did not finish loading.'); } });
+  assert.equal(record.status, 'error');
+  assert.match(record.error, /did not finish loading/);
+  assert.match(data.syllabusSources[1600002].error, /did not finish loading/);
 });
 
 test('finds syllabi posted as links to course files, outside links, or in the course overview', () => {

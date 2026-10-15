@@ -20,6 +20,8 @@ After you pull new code, reload the extension. Chrome caches the old scripts unt
 
 The Week tab is the agenda. Dates come from Brightspace and from syllabi the extension has read. A syllabus date that Brightspace does not list yet is marked that way.
 
+Course sync saves assignments, quizzes, announcements, and calendar dates separately from syllabus discovery and reading. A slow syllabus page does not hold up that sync. Some courses do not post a syllabus; BoilerSpace remembers a missing result for a day, and the course page's Check again button retries immediately.
+
 The Ask tab answers from your synced courses. It can open PDF, PowerPoint (`.pptx`), Word (`.docx`), and HTML files in Brightspace. It cannot read old `.ppt` files, `.rtf`, scanned PDFs, video, or links that leave Brightspace. It does not run on quiz attempt pages.
 
 Settings can export an `.ics` file of Brightspace due dates plus syllabus dates you confirmed. Import that file into Google Calendar or Outlook. Settings can also save a benchmark capture of the synced courses.

@@ -30,7 +30,8 @@ function waitForTabLoad(tabId) {
 
 export async function findBrightspaceTab({ open = true, onStatus = () => {} } = {}) {
   const tabs = await chrome.tabs.query({ url: `${BRIGHTSPACE_ORIGIN}/d2l/*` });
-  const ready = tabs.find((t) => t.status === 'complete' && isSignedInUrl(t.url)) ?? tabs.find((t) => isSignedInUrl(t.url));
+  const usable = tabs.filter((t) => isSignedInUrl(t.url) && !t.url.includes('boilerspace-scan'));
+  const ready = usable.find((t) => t.status === 'complete') ?? usable[0];
   if (ready) return ready;
   if (!open) return null;
 
@@ -124,6 +125,14 @@ export async function syncNow({ tabId = null, onStatus = () => {} } = {}) {
   const tab = tabId ? { id: tabId } : await findBrightspaceTab({ onStatus });
   if (!tab) throw new Error('Brightspace sign-in was not completed.');
   return askTab(tab.id, { type: 'boilerspace-sync' });
+}
+
+export async function discoverSyllabusOnPage(courseId, { versions, open = false } = {}) {
+  const args = { courseId, versions };
+  if (pageBridge) return (await pageBridge('discover-syllabus', args)).result;
+  const tab = await findBrightspaceTab({ open });
+  if (!tab) throw new Error('Open Brightspace to look for a syllabus.');
+  return (await askTab(tab.id, { type: 'boilerspace-discover-syllabus', ...args })).result;
 }
 
 async function requestDownload(path, { open, onStatus, seeImages = false, location = null }) {

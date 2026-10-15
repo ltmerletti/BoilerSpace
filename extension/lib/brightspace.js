@@ -831,7 +831,7 @@ export function normalizeOverview(overview, courseId, le) {
   };
 }
 
-export async function syncCurrentCourses(client, { origin, now = new Date(), onProgress = () => {}, pageLinks = [], readTab = null } = {}) {
+export async function syncCurrentCourses(client, { origin, now = new Date(), onProgress = () => {} } = {}) {
   const started = Date.now();
   const versions = await discoverVersions(client);
   const { lp, le } = versions;
@@ -862,8 +862,9 @@ export async function syncCurrentCourses(client, { origin, now = new Date(), onP
   const calendarStart = new Date(now.getTime() - CALENDAR_PAST_DAYS * DAY_MS).toISOString();
   const calendarEnd = new Date(now.getTime() + CALENDAR_FUTURE_DAYS * DAY_MS).toISOString();
 
-  const perCourse = await mapWithLimit(current, 1, async (course, index) => {
-    onProgress({ message: `Syncing ${shortCourseLabel(course)} (${index + 1} of ${current.length})…`, done: index, total: current.length });
+  let completed = 0;
+  onProgress({ message: 'Syncing your courses…', done: 0, total: current.length });
+  const perCourse = await mapWithLimit(current, 1, async (course) => {
     const base = `/d2l/api/le/${le}/${course.id}`;
     const [assignments, quizzes, announcements, content, events, grades, overview] = await Promise.all([
       section(errors, course.id, 'assignments', async () =>
@@ -885,13 +886,9 @@ export async function syncCurrentCourses(client, { origin, now = new Date(), onP
         (await client.getAll(`${base}/grades/values/myGradeValues/`)).map(normalizeGrade)),
       section(errors, course.id, 'overview', async () => normalizeOverview(await client.getJson(`${base}/overview`), course.id, le), { empty: null, missingOk: true }),
     ]);
-    const namedSyllabus = content.some((t) => t.fileUrl && !t.isHidden && /syllab/i.test(`${t.title} ${(t.modulePath ?? []).join(' ')} ${t.fileHref ?? ''}`));
-    let syllabusTab = null;
-    if (!namedSyllabus) {
-      onProgress({ message: `Opening the ${shortCourseLabel(course)} syllabus…`, done: index, total: current.length });
-      syllabusTab = await section(errors, course.id, 'syllabus tab', () => findSyllabusTab(client, { courseId: course.id, le, lp, origin, pageLinks, readTab }), { empty: null, missingOk: true });
-    }
-    return { courseId: course.id, assignments, quizzes, announcements, content, events, grades, overview, syllabusTab };
+    completed++;
+    onProgress({ message: `Synced ${shortCourseLabel(course)} (${completed} of ${current.length})…`, done: completed, total: current.length });
+    return { courseId: course.id, assignments, quizzes, announcements, content, events, grades, overview };
   });
   onProgress({ message: 'Saving…', done: current.length, total: current.length });
 
@@ -992,8 +989,14 @@ export async function runInPage(action, args = {}, { onProgress = () => {} } = {
   const client = createClient({ origin: location.origin, fetchImpl: fetchAsPage(), xsrfToken });
   try {
     if (action === 'sync') {
-      const readTab = pageSyllabusReader();
-      return { ok: true, result: await syncCurrentCourses(client, { origin: location.origin, onProgress, pageLinks: args.pageLinks ?? [], readTab }) };
+      return { ok: true, result: await syncCurrentCourses(client, { origin: location.origin, onProgress }) };
+    }
+    if (action === 'discover-syllabus') {
+      const versions = args.versions ?? await discoverVersions(client);
+      return { ok: true, result: await findSyllabusTab(client, {
+        courseId: args.courseId, ...versions, origin: location.origin,
+        pageLinks: syllabusHrefsInDocument(globalThis.document), readTab: pageSyllabusReader(),
+      }) };
     }
     if (action === 'read-quiz') {
       const versions = await discoverVersions(client);

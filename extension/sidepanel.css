@@ -912,6 +912,18 @@ details > summary:hover {
   color: var(--tungsten);
 }
 
+.message-actions {
+  display: flex;
+  gap: 14px;
+  margin-top: 8px;
+}
+
+.message-actions .text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
 .cite {
   display: inline-block;
   min-width: 18px;

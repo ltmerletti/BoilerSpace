@@ -99,6 +99,16 @@
         position: absolute; top: 0; bottom: 0; left: -4px; width: 8px; cursor: col-resize; z-index: 1;
       }
       .handle:hover, .drawer.resizing .handle { background: linear-gradient(to right, transparent 3px, #006fbf 3px, #006fbf 5px, transparent 5px); }
+      .collapse {
+        position: absolute; top: 14px; left: -32px; z-index: 2;
+        width: 32px; height: 36px; padding: 0; cursor: pointer;
+        display: none; place-items: center;
+        border: 1px solid #d3d9e3; border-right: 0; border-radius: 8px 0 0 8px;
+        background: #fff; color: #202122;
+        box-shadow: -4px 0 12px rgba(32, 33, 34, 0.08);
+      }
+      .drawer.open .collapse { display: grid; }
+      .collapse:hover { color: #006fbf; }
       .floating {
         position: fixed; right: 20px; bottom: 20px; z-index: 2147482999;
         width: 48px; height: 48px; border-radius: 12px; border: 1px solid #d3d9e3; padding: 0; cursor: pointer;
@@ -109,11 +119,17 @@
       .floating img { width: 30px; height: 30px; }
       @media (prefers-reduced-motion: reduce) { .drawer, .drawer.open { transition: none; } }
     </style>
-    <div class="drawer" role="complementary" aria-label="BoilerSpace"><div class="handle" title="Drag to resize"></div></div>
+    <div class="drawer" role="complementary" aria-label="BoilerSpace">
+      <button class="collapse" type="button" title="Collapse BoilerSpace" aria-label="Collapse BoilerSpace">
+        <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M7.5 5l5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <div class="handle" title="Drag to resize"></div>
+    </div>
     <button class="floating" type="button" title="BoilerSpace" aria-label="Open BoilerSpace"><img alt="" src="${extensionUrl('icons/icon48.png')}"></button>
   `;
   const drawer = shadow.querySelector('.drawer');
   const handle = shadow.querySelector('.handle');
+  const collapse = shadow.querySelector('.collapse');
   const floating = shadow.querySelector('.floating');
   document.documentElement.append(root);
 
@@ -149,6 +165,7 @@
 
   const toggleDrawer = () => setOpen(!isOpen());
   floating.addEventListener('click', toggleDrawer);
+  collapse.addEventListener('click', () => setOpen(false));
   window.addEventListener('resize', () => layout());
 
   handle.addEventListener('pointerdown', (event) => {

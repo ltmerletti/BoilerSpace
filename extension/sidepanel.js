@@ -206,10 +206,9 @@ function renderStatus() {
     text = 'The last sync stopped partway, probably because the Brightspace page changed. It tries again on the next page, or press sync.';
   }
   el.hidden = !text;
-  el.replaceChildren(
-    h('span', null, text),
-    bar && h('div', { class: `progress${fraction === null ? ' indeterminate' : ''}` }, h('div', { class: 'progress-fill', style: fraction === null ? null : `width:${Math.round(fraction * 100)}%` })),
-  );
+  const nodes = [h('span', null, text ?? '')];
+  if (bar) nodes.push(h('div', { class: `progress${fraction === null ? ' indeterminate' : ''}` }, h('div', { class: 'progress-fill', style: fraction === null ? null : `width:${Math.round(fraction * 100)}%` })));
+  el.replaceChildren(...nodes);
 }
 
 // ---------- Actions ----------
@@ -361,7 +360,17 @@ async function deleteChat(id) {
 const storedTrace = (trace) =>
   trace.map((entry) => (entry.type === 'thought' ? { ...entry, text: entry.text.slice(-MAX_THOUGHT_CHARS) } : { ...entry, active: false }));
 
-async function sendQuestion(question) {
+function stoppedDraft(message) {
+  const tools = (message.trace ?? []).filter((entry) => entry.type === 'tool' && (entry.label || entry.summary));
+  const work = tools.map((entry) => `${entry.label ?? entry.name}: ${entry.summary ?? 'done'}`).join('\n');
+  const written = message.content && message.content !== 'Stopped.' ? message.content.trim() : '';
+  const parts = [];
+  if (work) parts.push(`Already checked:\n${work}`);
+  if (written) parts.push(written);
+  return parts.join('\n\n') || 'Stopped before writing an answer.';
+}
+
+async function sendQuestion(question, { reuse = false, resume = null } = {}) {
   const text = question.trim();
   if (!text || state.pending) return;
   const scopeCourseId = state.askScope ? Number(state.askScope) : null;
@@ -374,12 +383,21 @@ async function sendQuestion(question) {
     saveUi();
   }
   const chatId = chat.id;
-  const history = chat.messages.filter((m) => !m.error && !m.stopped).map(({ role, content }) => ({ role, content }));
+  let history = resume?.history ?? null;
+  if (!history) {
+    let prior = chat.messages.filter((m) => !m.error && !m.stopped);
+    if (reuse) {
+      const at = prior.findLastIndex((m) => m.role === 'user' && m.content.trim() === text);
+      if (at >= 0) prior = prior.slice(0, at);
+    }
+    history = prior.map(({ role, content }) => ({ role, content }));
+  }
   state.draft = '';
   state.showChats = false;
-  state.pending = { chatId, trace: [], text: '', startedAt: Date.now(), open: true };
+  const keptTrace = (resume?.trace ?? []).map((entry) => ({ ...entry, active: false }));
+  state.pending = { chatId, trace: keptTrace, text: '', startedAt: Date.now(), open: true };
   state.abort = new AbortController();
-  await addMessage(chatId, { id: crypto.randomUUID(), role: 'user', content: text });
+  if (!reuse && !resume) await addMessage(chatId, { id: crypto.randomUUID(), role: 'user', content: text });
   render();
   const ticker = setInterval(updatePending, 1000);
   let reply;
@@ -393,7 +411,7 @@ async function sendQuestion(question) {
       scopeCourseId,
       signal: state.abort.signal,
       onTrace: (trace) => {
-        state.pending.trace = trace;
+        state.pending.trace = [...keptTrace, ...trace];
         updatePending();
       },
       onText: (partial) => {
@@ -401,10 +419,11 @@ async function sendQuestion(question) {
         updatePending();
       },
     });
-    reply = { role: 'assistant', content: answer.text, citations: answer.citations, trace: storedTrace(answer.trace) };
+    reply = { role: 'assistant', content: answer.text, citations: answer.citations, trace: [...keptTrace, ...storedTrace(answer.trace)] };
   } catch (err) {
     const stopped = err.name === 'AbortError' || state.abort?.signal.aborted;
-    reply = { role: 'assistant', content: stopped ? 'Stopped.' : err.message, error: !stopped, stopped, trace: storedTrace(state.pending.trace) };
+    const partial = state.pending?.text?.trim() ?? '';
+    reply = { role: 'assistant', content: stopped ? partial || 'Stopped.' : err.message, error: !stopped, stopped, trace: storedTrace(state.pending.trace) };
   } finally {
     clearInterval(ticker);
   }
@@ -414,6 +433,57 @@ async function sendQuestion(question) {
   state.abort = null;
   await addMessage(chatId, reply);
   render();
+}
+
+async function retryMessage(index) {
+  const chat = activeChat();
+  if (!chat || state.pending) return;
+  const failed = chat.messages[index];
+  if (!failed?.stopped && !failed?.error) return;
+  let question = '';
+  for (let i = index - 1; i >= 0; i--) {
+    if (chat.messages[i].role === 'user') {
+      question = chat.messages[i].content;
+      break;
+    }
+  }
+  if (!question.trim()) return;
+  const at = new Date().toISOString();
+  const messages = chat.messages.filter((_, i) => i !== index);
+  state.chats = state.chats.map((c) => (c.id === chat.id ? { ...c, updatedAt: at, messages } : c));
+  await saveChats();
+  await sendQuestion(question, { reuse: true });
+}
+
+async function continueMessage(index) {
+  const chat = activeChat();
+  if (!chat || state.pending) return;
+  const failed = chat.messages[index];
+  if (!failed?.stopped) return;
+  let question = '';
+  let questionAt = -1;
+  for (let i = index - 1; i >= 0; i--) {
+    if (chat.messages[i].role === 'user') {
+      question = chat.messages[i].content;
+      questionAt = i;
+      break;
+    }
+  }
+  if (!question.trim() || questionAt < 0) return;
+  const kept = chat.messages.filter((_, i) => i !== index);
+  const earlier = kept
+    .slice(0, questionAt)
+    .filter((m) => !m.error && !m.stopped)
+    .map(({ role, content }) => ({ role, content }));
+  const at = new Date().toISOString();
+  state.chats = state.chats.map((c) => (c.id === chat.id ? { ...c, updatedAt: at, messages: kept } : c));
+  await saveChats();
+  await sendQuestion('Continue from where you stopped. Finish the answer from the work already done. Do not repeat those lookups.', {
+    resume: {
+      history: [...earlier, { role: 'user', content: question }, { role: 'assistant', content: stoppedDraft(failed) }],
+      trace: failed.trace ?? [],
+    },
+  });
 }
 
 function download(fileName, content, type) {
@@ -985,7 +1055,22 @@ function messageView(message, index) {
     open: state.openTraces.has(key),
     ontoggle: (e) => (e.target.open ? state.openTraces.add(key) : state.openTraces.delete(key)),
   });
-  if (message.error || message.stopped) return h('div', { class: `message assistant${message.error ? ' error' : ' stopped'}` }, trace, h('p', null, message.content));
+  if (message.error || message.stopped) {
+    const latest = index === chatMessages().length - 1;
+    return h(
+      'div',
+      { class: `message assistant${message.error ? ' error' : ' stopped'}` },
+      trace,
+      h('p', null, message.content),
+      latest &&
+        h(
+          'div',
+          { class: 'message-actions' },
+          message.stopped && h('button', { class: 'text-button', type: 'button', disabled: Boolean(state.pending), onclick: () => continueMessage(index) }, icon('continue'), 'Continue'),
+          h('button', { class: 'text-button', type: 'button', disabled: Boolean(state.pending), onclick: () => retryMessage(index) }, icon('retry'), 'Retry'),
+        ),
+    );
+  }
   const citations = message.citations ?? [];
   return h(
     'div',

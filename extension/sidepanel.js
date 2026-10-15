@@ -439,7 +439,7 @@ async function retryMessage(index) {
   const chat = activeChat();
   if (!chat || state.pending) return;
   const failed = chat.messages[index];
-  if (!failed?.stopped && !failed?.error) return;
+  if (!failed || failed.role !== 'assistant') return;
   let question = '';
   for (let i = index - 1; i >= 0; i--) {
     if (chat.messages[i].role === 'user') {
@@ -1055,20 +1055,22 @@ function messageView(message, index) {
     open: state.openTraces.has(key),
     ontoggle: (e) => (e.target.open ? state.openTraces.add(key) : state.openTraces.delete(key)),
   });
+  const latest = index === chatMessages().length - 1;
+  const actions =
+    latest &&
+    h(
+      'div',
+      { class: 'message-actions' },
+      message.stopped && h('button', { class: 'text-button', type: 'button', disabled: Boolean(state.pending), onclick: () => continueMessage(index) }, icon('continue'), 'Continue'),
+      h('button', { class: 'text-button', type: 'button', disabled: Boolean(state.pending), onclick: () => retryMessage(index) }, icon('retry'), 'Retry'),
+    );
   if (message.error || message.stopped) {
-    const latest = index === chatMessages().length - 1;
     return h(
       'div',
       { class: `message assistant${message.error ? ' error' : ' stopped'}` },
       trace,
       h('p', null, message.content),
-      latest &&
-        h(
-          'div',
-          { class: 'message-actions' },
-          message.stopped && h('button', { class: 'text-button', type: 'button', disabled: Boolean(state.pending), onclick: () => continueMessage(index) }, icon('continue'), 'Continue'),
-          h('button', { class: 'text-button', type: 'button', disabled: Boolean(state.pending), onclick: () => retryMessage(index) }, icon('retry'), 'Retry'),
-        ),
+      actions,
     );
   }
   const citations = message.citations ?? [];
@@ -1078,6 +1080,7 @@ function messageView(message, index) {
     trace,
     answerBody(message.content, citations),
     citations.length > 0 && h('div', { class: 'sources' }, citations.map((c, i) => link(c.url, [h('span', { class: 'cite' }, i + 1), h('span', null, c.label)], { title: c.label }))),
+    actions,
   );
 }
 

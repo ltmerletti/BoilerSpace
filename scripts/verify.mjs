@@ -228,6 +228,11 @@ try {
   await page.click('.chat-open');
   check('opening a chat brings its messages back', await page.isVisible('.message.user >> text=What do I have due this week?'));
 
+  await page.locator('.message.assistant .message-actions button', { hasText: 'Retry' }).click();
+  await page.waitForSelector('.message.assistant:not(.pending) .sources', { timeout: 20_000 });
+  check('a completed answer can be retried without duplicating the question',
+    modelRequests.length === 4 && (await page.locator('.message.user').count()) === 1 && (await page.locator('.message.assistant:not(.pending)').count()) === 1);
+
   await page.click('.tabs button[data-view="settings"]');
   await page.waitForSelector('.field select option >> nth=2', { state: 'attached', timeout: 5000 });
   await page.screenshot({ path: path.join(outDir, '6-settings.png') });

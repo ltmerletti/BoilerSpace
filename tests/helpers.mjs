@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { saveSyllabusEntryHere } from '../extension/lib/syllabus-store.js';
 
 const ORIGIN = 'https://purdue.brightspace.com';
 const FIXTURES = new URL('../../open-source-workbench/repos/Brightspace-Bar/session-capture/tests/fixtures/', import.meta.url);
@@ -12,7 +13,11 @@ export function installChrome({ executeScript = async () => [{ result: null }], 
   globalThis.chrome = {
     runtime: {
       getURL: (path) => new URL(`../extension/${path}`, import.meta.url).href,
-      sendMessage: async () => {},
+      sendMessage: async (message) => {
+        if (message.type !== 'boilerspace-save-syllabus') return;
+        await saveSyllabusEntryHere(message.key, message.courseId, message.entry);
+        return { ok: true };
+      },
     },
     storage: {
       local: {

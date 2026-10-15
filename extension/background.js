@@ -1,3 +1,4 @@
+import { saveSyllabusEntryHere } from './lib/syllabus-store.js';
 import { readXsrf } from './lib/sync.js';
 import { snapshotSyllabus } from './lib/syllabus-scan.js';
 import { waitForSyllabus } from './lib/syllabus-wait.js';
@@ -74,6 +75,10 @@ if (chrome.sidePanel) {
 
 // Content scripts cannot call the page's own XSRF helper, so they ask for it here.
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === 'boilerspace-save-syllabus') {
+    saveSyllabusEntryHere(message.key, message.courseId, message.entry).then(() => sendResponse({ ok: true }), (err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
   if (message?.type === 'boilerspace-syllabus') {
     readSyllabusRequest(message).then(sendResponse, (err) => sendResponse({ hrefs: [], text: '', error: err.message }));
     return true;

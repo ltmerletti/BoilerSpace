@@ -2,6 +2,7 @@
 // The model reads the text; code checks that every quote is really in the file and does all date math.
 
 import * as store from './store.js';
+import { saveSyllabusEntry } from './syllabus-store.js';
 import { chatCompletion } from './genai.js';
 import { extractText } from './extract.js';
 import { canReachBrightspace, discoverSyllabusOnPage, downloadTopicFile } from './sync.js';
@@ -32,10 +33,10 @@ async function discoverSource(snapshot, courseId, { force, openTab, now, discove
   const pending = (async () => {
     try {
       const topic = await discover(courseId, { versions: snapshot.versions, open: openTab });
-      await store.update(store.KEYS.syllabusSources, (sources) => ({ ...sources, [courseId]: { topic, checkedAt: now.toISOString() } }), {});
+      await saveSyllabusEntry(store.KEYS.syllabusSources, courseId, { topic, checkedAt: now.toISOString() });
       return topic;
     } catch (err) {
-      await store.update(store.KEYS.syllabusSources, (sources) => ({ ...sources, [courseId]: { ...cached, error: err.message, checkedAt: now.toISOString() } }), {});
+      await saveSyllabusEntry(store.KEYS.syllabusSources, courseId, { ...cached, error: err.message, checkedAt: now.toISOString() });
       throw err;
     }
   })();
@@ -396,7 +397,7 @@ function brightspaceItemsFor(snapshot, courseId) {
 }
 
 const saveRecord = async (courseId, record) => {
-  await store.update(store.KEYS.syllabi, (all) => ({ ...(all ?? {}), [courseId]: record }), {});
+  await saveSyllabusEntry(store.KEYS.syllabi, courseId, record);
   return record;
 };
 

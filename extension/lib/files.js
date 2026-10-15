@@ -6,12 +6,23 @@ import { downloadTopicFile } from './sync.js';
 const MAX_CACHED_FILES = 12;
 const cache = new Map();
 
+export function courseFiles(snapshot, courseId) {
+  const data = snapshot?.data?.find((d) => d.courseId === courseId);
+  if (!data) return [];
+  const course = snapshot.courses.find((c) => c.id === courseId);
+  const files = (data.content ?? []).filter((t) => !t.isHidden && (t.fileUrl || t.externalUrl))
+    .map((t) => ({ ...t, courseId, key: `content:${t.id}` }));
+  if (data.syllabusTab && (data.syllabusTab.fileUrl || data.syllabusTab.text)) files.unshift({ ...data.syllabusTab, key: data.syllabusTab.id, courseId, modulePath: data.syllabusTab.modulePath ?? [] });
+  if (data.overview?.fileUrl) files.unshift({ key: `overview:${courseId}`, id: 'overview', courseId, title: 'Course overview attachment', modulePath: [], fileUrl: data.overview.fileUrl, url: course?.homeUrl ?? null });
+  else if (data.overview?.text) files.unshift({ key: `overview:${courseId}`, id: 'overview-text', courseId, title: 'Course overview', modulePath: [], text: data.overview.text, url: course?.homeUrl ?? null });
+  return files;
+}
+
 const findSyllabusRecord = (syllabi, topic) =>
-  Object.values(syllabi).find(
+  Object.values(syllabi).map((r) => r?.status === 'done' ? r : r?.previous).find(
     (r) =>
       r?.status === 'done' &&
       r.topicId !== undefined &&
-      r.topicId !== 'overview' &&
       r.topicId === topic.id &&
       (!topic.courseId || r.courseId === topic.courseId) &&
       r.pages?.length,
@@ -19,7 +30,7 @@ const findSyllabusRecord = (syllabi, topic) =>
 
 async function loadText(topic, syllabi, download) {
   const record = findSyllabusRecord(syllabi, topic);
-  if (record) return { kind: record.kind, pages: record.pages, warning: record.warning ?? null };
+  if (record) return { kind: record.kind, pages: record.pages, fileName: record.fileName, warning: record.warning ?? null };
   if (topic.text) return { kind: 'text', pages: [{ page: 1, label: topic.textLabel ?? 'overview', text: topic.text }], warning: null };
   if (!topic.fileUrl) {
     const host = topic.externalUrl ? new URL(topic.externalUrl).hostname : null;
@@ -54,7 +65,7 @@ export async function readCourseFile(topic, { syllabi = {}, download = downloadT
 export function getCachedCourseFile(topic, { syllabi = {} } = {}) {
   const record = findSyllabusRecord(syllabi, topic);
   if (record) return Promise.resolve({ kind: record.kind, pages: record.pages, warning: record.warning ?? null });
-  if (topic.text) return Promise.resolve({ kind: 'text', pages: [{ page: 1, label: 'overview', text: topic.text }], warning: null });
+  if (topic.text) return Promise.resolve({ kind: 'text', pages: [{ page: 1, label: topic.textLabel ?? 'overview', text: topic.text }], warning: null });
   const key = `${topic.courseId ?? ''}:${topic.id}|${topic.updatedAt ?? ''}`;
   return cache.get(key) ?? null;
 }

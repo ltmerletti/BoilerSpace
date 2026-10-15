@@ -381,6 +381,51 @@ try {
   check('the background syllabus tab closes after reading', scanTab.isClosed());
   await probe.close();
 
+  // Overview attachments have no direct fileHref. Their citations open the stored page,
+  // and the original PDF remains available through the signed-in Brightspace page.
+  const overviewLines = [
+    ...Array.from({ length: 40 }, () => 'Course resources and preparation materials are posted in the course modules.'),
+    'Midterm: in class, Wednesday October 21, 7:00 PM.',
+    'There is no final exam.',
+    'Make-ups are only for university-excused absences.',
+  ];
+  const overviewPages = SYLLABUS_PAGES.map((p) => p.page === 3 ? { ...p, text: overviewLines.join('\n') } : p);
+  const overviewPdf = Buffer.from(pdfWithPages(overviewPages.map((p) => p.text.replace(/\u2013/g, '-').split('\n'))));
+  await context.route('https://purdue.brightspace.com/d2l/api/le/1.96/1600001/overview/attachment', (route) => route.fulfill({ contentType: 'application/pdf', body: overviewPdf }));
+  const viewerHref = await reopened.evaluate(async ({ pages }) => {
+    const all = await chrome.storage.local.get(null);
+    const data = all.snapshot.data.find((d) => d.courseId === 1600001);
+    data.content = data.content.filter((t) => t.id !== 77);
+    data.overview = { fileUrl: '/d2l/api/le/1.96/1600001/overview/attachment', text: '' };
+    all.syllabi[1600001] = { ...all.syllabi[1600001], topicId: 'overview', updatedAt: null, kind: 'pdf', fileName: 'Course Syllabus.pdf', fileHref: null, title: 'Course overview attachment', url: 'https://purdue.brightspace.com/d2l/home/1600001', pages };
+    const { locationUrl, syllabusFile } = await import('./lib/links.js');
+    const href = locationUrl(syllabusFile(all.syllabi[1600001], all.snapshot), 'page 3');
+    const chat = all.chats.find((c) => c.id === all.ui?.activeChatId) ?? all.chats[0];
+    chat.messages = [
+      { role: 'user', content: 'What does the syllabus say about make-ups?' },
+      { role: 'assistant', content: 'Make-ups require an excused absence [1].', citations: [{ label: 'CS 25200 syllabus, page 3', url: href }] },
+    ];
+    await chrome.storage.local.set({ snapshot: all.snapshot, syllabi: all.syllabi, chats: all.chats });
+    return href;
+  }, { pages: overviewPages });
+  await reopened.locator('.tabs button[data-view="ask"]').click();
+  const viewerOpened = context.waitForEvent('page');
+  await reopened.locator(`.sources a[href="${viewerHref}"]`).click();
+  const viewer = await viewerOpened;
+  viewer.on('pageerror', (err) => consoleErrors.push(`document: ${err.message}`));
+  await viewer.locator('#page-text').filter({ hasText: 'university-excused absences' }).waitFor();
+  check('an overview citation opens the complete saved page at page 3', new URL(viewer.url()).hash === '#page=3' && await viewer.locator('#page').inputValue() === '3' && (await viewer.locator('#page-text').textContent()) === overviewPages[2].text);
+  await viewer.locator('#previous').click();
+  await viewer.waitForURL('**#page=2');
+  check('the document reader navigates between saved pages', await viewer.locator('#page-text').textContent() === overviewPages[1].text);
+  await viewer.locator('#next').click();
+  await viewer.waitForURL('**#page=3');
+  await viewer.locator('#original').click();
+  await viewer.locator('#pdf-page:not([hidden])').waitFor({ timeout: 15_000 });
+  check('the overview reader can display the original PDF at the cited page', await viewer.locator('#page').inputValue() === '3' && await viewer.locator('#pdf-page').evaluate((canvas) => canvas.width > 0 && canvas.height > 0));
+  await viewer.screenshot({ path: path.join(outDir, '12-cited-document.png') });
+  await viewer.close();
+
   await bs.goto('https://purdue.brightspace.com/d2l/lms/quizzing/user/attempt/quiz_start_frame_auto.d2l?ou=1600001');
   await sleep(2000);
   check('nothing is added on quiz attempt pages', (await bs.locator('#boilerspace-root, .boilerspace-nav-item').count()) === 0);

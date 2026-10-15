@@ -32,7 +32,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["lib/*.js", "vendor/fflate/fflate.js", "icons/*.png", "fonts/*.woff2", "sidepanel.html", "sidepanel.css", "sidepanel.js"],
+      "resources": ["lib/*.js", "vendor/fflate/fflate.js", "icons/*.png", "fonts/*.woff2", "sidepanel.html", "sidepanel.css", "sidepanel.js", "document.html"],
       "matches": ["https://purdue.brightspace.com/*"]
     }
   ],

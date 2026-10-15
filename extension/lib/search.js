@@ -2,7 +2,7 @@
 
 import { dueDisplay } from './dates.js';
 import { shortCourseLabel } from './courses.js';
-import { locationUrl, syllabusFile, syllabusFileKey } from './links.js';
+import { fileSourceKey, locationUrl, pageLocation, syllabusFile, syllabusFileKey } from './links.js';
 
 const CHUNK_CHARS = 900;
 const CHUNK_OVERLAP = 150;
@@ -146,17 +146,18 @@ export function documentsFromSnapshot(snapshot, syllabi = {}, { files = [] } = {
     if (usable.topicId) indexedSyllabusKeys.add(`${courseId}:${usable.topicId}`);
     const fileKey = syllabusFileKey({ ...usable, courseId }, snapshot);
     for (const page of usable.pages) {
-      docs.push({ id: `syllabus:${courseId}:${page.page}`, file_key: fileKey ?? undefined, courseId, kind: 'syllabus', title: usable.title, label: `${course} syllabus, ${page.label}`, url: locationUrl(file, page.label), text: page.text });
+      docs.push({ id: `syllabus:${courseId}:${page.page}`, source_key: fileKey ? fileSourceKey(fileKey, page.label) : undefined, file_key: fileKey ?? undefined, location: pageLocation(page.label), courseId, kind: 'syllabus', title: usable.title, label: `${course} syllabus, ${pageLocation(page.label)}`, url: locationUrl(file, page.label), text: page.text });
     }
   }
   for (const f of files) {
     if (!f?.pages?.length || indexedSyllabusKeys.has(`${f.courseId}:${f.id}`)) continue;
     const fileKey = f.key ?? (f.id === 'overview' ? `overview:${f.courseId}` : `content:${f.id}`);
-    const file = { url: f.url, fileHref: f.fileHref, kind: f.kind };
+    const file = { ...f, key: fileKey };
     for (const page of f.pages) {
       if (!page.text) continue;
       docs.push({
         id: `file:${fileKey}:${page.label}`,
+        source_key: fileSourceKey(fileKey, page.label),
         file_key: fileKey,
         courseId: f.courseId,
         kind: 'file',

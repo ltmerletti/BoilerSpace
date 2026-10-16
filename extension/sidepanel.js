@@ -10,6 +10,7 @@ import { locationUrl, syllabusFile } from './lib/links.js';
 import { ask, SUGGESTED_QUESTIONS } from './lib/agent.js';
 import { captureBenchmark } from './lib/capture.js';
 import { addDaysToKey, dayKey, daysBetweenKeys, formatDateTime, formatDayKey, formatTime, relativeDay } from './lib/dates.js';
+import { DISCUSSION_SITES, discussionName, discussionRequest, parseDiscussionUrl } from './lib/discussions.js';
 
 const sheet = document.createElement('link');
 sheet.rel = 'stylesheet';
@@ -29,6 +30,7 @@ const PARAMS = new URLSearchParams(location.search);
 const EMBEDDED = PARAMS.has('embedded');
 const CONNECT_PAGE = PARAMS.has('connect');
 const ACCESS_PAGE = PARAMS.has('syllabus-access');
+const DISCUSSION_ACCESS = DISCUSSION_SITES[PARAMS.get('discussions-access')] ? PARAMS.get('discussions-access') : null;
 const STOPPED_SYNC_NOTICE_MS = 10 * 60_000;
 const SYNC_ON_OPEN_AFTER_MS = 10 * 60_000;
 
@@ -57,6 +59,10 @@ const state = {
   genai: null,
   syllabi: {},
   reviews: {},
+  discussions: { sources: [] },
+  discussionError: '',
+  discussionAccessDone: false,
+  piazzaUrl: '',
   chats: [],
   activeChatId: null,
   showChats: false,
@@ -73,7 +79,7 @@ const state = {
   progress: null,
   runningSync: false,
   status: '',
-  busy: { sync: false, syllabi: false, link: false, capture: false },
+  busy: { sync: false, syllabi: false, link: false, capture: false, discussions: false },
   linkStatus: '',
   linkError: '',
   syncError: '',
@@ -181,6 +187,7 @@ async function loadState({ includeChat = false } = {}) {
   state.syllabi = all.syllabi ?? {};
   state.syllabusAccess = all.syllabusAccess ?? null;
   state.reviews = all.reviews ?? {};
+  state.discussions = all.discussions ?? { sources: [] };
   state.syncLock = all.syncLock ?? null;
   state.progress = all.syncProgress ?? null;
   state.busy.sync = computeSyncBusy();
@@ -234,7 +241,58 @@ async function runSync() {
     await loadState();
     render();
     processSyllabi();
+    refreshDiscussions();
   }
+}
+
+async function refreshDiscussions(force = false) {
+  if (state.busy.discussions || !state.discussions.sources.length || DISCUSSION_ACCESS) return;
+  state.busy.discussions = true;
+  state.discussionError = '';
+  render();
+  try { await syncDiscussionBatches({ force }); }
+  catch (error) { state.discussionError = error.message; }
+  finally { state.busy.discussions = false; await loadState(); render(); }
+}
+
+async function syncDiscussionBatches({ force = false, sourceId } = {}) {
+  let result;
+  do {
+    result = await discussionRequest('sync', { force, sourceId });
+    force = false;
+    await loadState();
+    render();
+  } while (result.pending);
+}
+
+async function openDiscussionAccess(platform) {
+  state.discussionError = '';
+  try {
+    const url = platform === 'piazza' ? parseDiscussionUrl(state.piazzaUrl).url : undefined;
+    await discussionRequest('open-access', { platform, url });
+  } catch (error) { state.discussionError = error.message; render(); }
+}
+
+async function connectDiscussions() {
+  state.discussionError = '';
+  try {
+    const granted = await chrome.permissions.request({ origins: DISCUSSION_SITES[DISCUSSION_ACCESS] });
+    if (!granted) throw new Error('Site access was not allowed. Allow access to connect this discussion source.');
+    state.busy.discussions = true;
+    render();
+    const connected = await discussionRequest('connect', { platform: DISCUSSION_ACCESS, url: PARAMS.get('course') });
+    await syncDiscussionBatches({ force: true, sourceId: connected.connectedIds });
+    state.discussionAccessDone = true;
+  } catch (error) { state.discussionError = error.message; }
+  finally { state.busy.discussions = false; await loadState(); render(); }
+}
+
+async function updateDiscussion(action, sourceId, courseId = null) {
+  state.discussionError = '';
+  try { await discussionRequest(action, { sourceId, courseId }); }
+  catch (error) { state.discussionError = error.message; }
+  await loadState();
+  render();
 }
 
 let queuedSyllabusRun = null;
@@ -410,6 +468,7 @@ async function sendQuestion(question, { reuse = false, resume = null } = {}) {
       snapshot: state.snapshot,
       syllabi: state.syllabi,
       reviews: state.reviews,
+      discussions: state.discussions,
       scopeCourseId,
       signal: state.abort.signal,
       onTrace: (trace) => {
@@ -969,6 +1028,14 @@ function courseDetail(course) {
         !record.policies.gradingAddsUp && h('p', { class: 'meta', style: 'margin-top:4px' }, `These add up to ${Math.round(gradingTotal * 10) / 10}%, so the syllabus may describe weights differently. Check the original.`),
       ),
     pending.length > 0 && h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', { class: 'heading' }, 'Syllabus dates to check')), pending.map(reviewCard)),
+    state.discussions.sources.some((s) => s.courseId === course.id) && h('section', { class: 'section' },
+      h('h2', { class: 'heading' }, 'Discussions (beta)'),
+      state.discussions.sources.filter((s) => s.courseId === course.id).map((source) => h('div', { class: 'discussion-preview' },
+        h('p', { class: 'meta' }, `${discussionName(source.platform)} · ${source.status === 'syncing' ? 'Syncing…' : source.lastSyncedAt ? `Synced ${formatDateTime(source.lastSyncedAt)}` : 'Not synced yet'}`),
+        source.error && h('p', { class: 'small error-text' }, source.error),
+        h('ul', { class: 'list' }, (source.threads ?? []).slice(0, 5).map((thread) => h('li', null, link(thread.url, thread.title), h('div', { class: 'meta' }, `${thread.role === 'instructor' ? 'Instructor post · ' : ''}${thread.replies.length} replies`)))),
+      )),
+    ),
     h(
       'section',
       { class: 'section' },
@@ -1257,7 +1324,7 @@ function askView() {
           'div',
           { class: 'empty-chat' },
           h('h2', { class: 'heading' }, 'Ask about your courses'),
-          h('p', { class: 'muted small', style: 'margin-top:4px' }, 'BoilerSpace looks through your Brightspace data, syllabi, slides and other course files, and links to where it found each answer.'),
+          h('p', { class: 'muted small', style: 'margin-top:4px' }, `BoilerSpace looks through your Brightspace data, syllabi, slides and other course files${state.discussions.sources.length ? ', plus connected Ed and Piazza posts' : ''}, and links to where it found each answer.`),
           h('ul', { class: 'suggestions' }, SUGGESTED_QUESTIONS.map((q) => h('li', null, h('button', { type: 'button', onclick: () => sendQuestion(q) }, q)))),
         ),
       messages.map(messageView),
@@ -1267,13 +1334,62 @@ function askView() {
       'div',
       { class: 'composer' },
       h('form', { onsubmit: (e) => (e.preventDefault(), sendQuestion(state.draft)) }, textarea, send),
-      h('div', { class: 'footnote' }, `Answers from ${state.genai.model} on Purdue GenAI Studio. Check anything important in Brightspace.`),
+      h('div', { class: 'footnote' }, `Answers from ${state.genai.model} on Purdue GenAI Studio. Check important details in the cited sources.`),
     ),
   );
 }
 
 
 // ---------- Settings ----------
+
+function discussionProgress(source) {
+  const count = plural(source.threads?.length ?? 0, 'saved post');
+  if (source.status === 'syncing') return `${count} · Checking history (${source.checkedCount ?? 0} posts checked)…`;
+  if (source.sync || !source.historyComplete) return `${count} · Import incomplete; the next sync resumes where it stopped.`;
+  return `${count} · Full history checked${source.lastSyncedAt ? ` ${formatDateTime(source.lastSyncedAt)}` : ''}`;
+}
+
+function discussionSourceCard(source) {
+  return h('div', { class: 'discussion-source', 'data-source-id': source.id },
+    h('h3', { class: 'small' }, `${discussionName(source.platform)} · ${source.name}`),
+    h('p', { class: 'meta' }, discussionProgress(source)),
+    source.error && h('p', { class: 'small error-text' }, source.error),
+    source.warning && h('p', { class: 'small' }, source.warning),
+    h('label', { class: 'field' }, 'Brightspace course', h('select', { onchange: (event) => updateDiscussion('link', source.id, event.target.value ? Number(event.target.value) : null) },
+      h('option', { value: '', selected: !source.courseId }, 'Keep as a separate discussion course'),
+      courses().map((course) => h('option', { value: course.id, selected: source.courseId === course.id }, shortCourseLabel(course))),
+    )),
+    h('div', { class: 'button-row' }, link(source.url, `Open ${discussionName(source.platform)}`, { class: 'small' }), h('button', { type: 'button', class: 'text-button', disabled: state.busy.discussions, onclick: () => updateDiscussion('remove', source.id) }, 'Disconnect')),
+    source.threads?.length > 0 && h('details', null, h('summary', { class: 'small' }, 'Recent saved posts'), h('ul', { class: 'list' }, source.threads.slice(0, 10).map((thread) => h('li', null, link(thread.url, thread.title))))),
+  );
+}
+
+function discussionsSettings() {
+  return h('section', { class: 'settings-group', id: 'discussions-beta' },
+    h('h2', { class: 'heading' }, 'Discussions (beta)'),
+    h('p', { class: 'muted small' }, 'Bring Ed and Piazza posts into Ask. Uses your signed-in sessions to read course posts and replies; it does not post, reply, or vote.'),
+    h('p', { class: 'meta', style: 'margin-top:8px' }, 'The full available history is imported in batches. Progress is saved after each batch, and interrupted imports resume on the next sync. Relevant post text may be sent to Purdue GenAI Studio when you ask a question. Attachments are not read. No discussion passwords or session tokens are saved by BoilerSpace.'),
+    state.discussionError && h('p', { class: 'small error-text' }, state.discussionError),
+    h('div', { class: 'button-row' }, h('button', { type: 'button', class: 'button secondary', disabled: state.busy.discussions, onclick: () => openDiscussionAccess('ed') }, 'Connect Ed courses')),
+    h('label', { class: 'field' }, 'Piazza class URL', h('input', { type: 'url', value: state.piazzaUrl, placeholder: 'https://piazza.com/class/…', oninput: (event) => { state.piazzaUrl = event.target.value; } })),
+    h('div', { class: 'button-row' }, h('button', { type: 'button', class: 'button secondary', disabled: state.busy.discussions, onclick: () => openDiscussionAccess('piazza') }, 'Connect Piazza class')),
+    state.discussions.sources.map(discussionSourceCard),
+    state.discussions.sources.length > 0 && h('div', { class: 'button-row' }, h('button', { type: 'button', class: 'button secondary', disabled: state.busy.discussions, onclick: () => refreshDiscussions(true) }, state.busy.discussions ? 'Syncing discussions…' : 'Sync discussions now')),
+    h('p', { class: 'meta', style: 'margin-top:8px' }, 'Connected discussions refresh separately from course and syllabus sync, at most every 20 minutes while BoilerSpace is open. Older or unlinked courses stay separate unless you choose a Brightspace course above.'),
+  );
+}
+
+function discussionAccessView() {
+  const name = discussionName(DISCUSSION_ACCESS);
+  return [h('section', { class: 'setup' },
+    h('h2', { class: 'setup-intro' }, `Connect ${name} (beta)`),
+    h('p', null, state.discussionAccessDone ? `${name} is connected. You can close this tab and return to BoilerSpace Settings to see the course results.` : `Allow ${name} site access, then BoilerSpace will import discussion history in batches using your signed-in session. ${DISCUSSION_ACCESS === 'ed' ? 'Active Ed courses are discovered automatically.' : 'Only the Piazza class you entered is connected.'}`),
+    h('p', { class: 'meta', style: 'margin-top:8px' }, 'Relevant discussion text can be sent to Purdue GenAI Studio when you ask. BoilerSpace does not post or reply.'),
+    state.discussionError && h('p', { class: 'error-text' }, state.discussionError),
+    !state.discussionAccessDone && h('div', { class: 'button-row' }, h('button', { type: 'button', class: 'button', disabled: state.busy.discussions, onclick: connectDiscussions }, state.busy.discussions ? 'Reading discussion courses…' : `Allow ${name} and connect`)),
+    (state.busy.discussions || state.discussionAccessDone) && state.discussions.sources.filter((s) => s.platform === DISCUSSION_ACCESS).map((s) => h('p', { class: s.error ? 'small error-text' : 'small', style: 'margin-top:12px' }, `${s.name}: ${s.error || discussionProgress(s)}`)),
+  )];
+}
 
 function modelField() {
   const models = state.genai.models?.length ? state.genai.models : [state.genai.model];
@@ -1308,6 +1424,7 @@ function settingsView() {
   const errors = meta?.errors ?? [];
   return [
     hostAccessNotice(),
+    discussionsSettings(),
     h(
       'section',
       { class: 'settings-group' },
@@ -1401,7 +1518,7 @@ const VIEWS = { week: weekView, courses: coursesView, ask: askView, settings: se
 function render({ top = false } = {}) {
   const main = document.getElementById('view');
   const scroll = main.scrollTop;
-  const content = ACCESS_PAGE ? syllabusAccessPage() : CONNECT_PAGE ? connectPageView() : [syllabusAccessNotice(), state.view === 'settings' ? null : hostAccessNotice(), VIEWS[state.view]()];
+  const content = DISCUSSION_ACCESS ? discussionAccessView() : ACCESS_PAGE ? syllabusAccessPage() : CONNECT_PAGE ? connectPageView() : [syllabusAccessNotice(), state.view === 'settings' ? null : hostAccessNotice(), VIEWS[state.view]()];
   main.replaceChildren(h('div', { class: state.view === 'ask' && !CONNECT_PAGE ? 'view ask-view' : 'view' }, content));
   if (state.view === 'ask') main.scrollTop = main.scrollHeight;
   else main.scrollTop = top ? 0 : scroll;
@@ -1453,7 +1570,7 @@ async function attempt(fn) {
 }
 
 async function init() {
-  if (CONNECT_PAGE || ACCESS_PAGE) document.querySelector('.tabs').hidden = true;
+  if (CONNECT_PAGE || ACCESS_PAGE || DISCUSSION_ACCESS) document.querySelector('.tabs').hidden = true;
   for (const button of document.querySelectorAll('.tabs button')) {
     button.addEventListener('click', () => {
       if (state.view === 'ask' && button.dataset.view === 'ask') state.showChats = false;
@@ -1471,6 +1588,8 @@ async function init() {
 
   await loadState({ includeChat: true });
   render();
+
+  if (DISCUSSION_ACCESS) return;
 
   store.onChange(async (changes) => {
     const keys = Object.keys(changes);
@@ -1524,6 +1643,8 @@ async function init() {
   const syncAge = state.syncMeta?.lastSuccessAt ? Date.now() - Date.parse(state.syncMeta.lastSuccessAt) : Infinity;
   if (syncAge > SYNC_ON_OPEN_AFTER_MS && (await attempt(canReachBrightspace))) runSync();
   else processSyllabi();
+  refreshDiscussions();
+  setInterval(() => { if (document.visibilityState === 'visible') refreshDiscussions(); }, 20 * 60_000);
 }
 
 init();

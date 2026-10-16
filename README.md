@@ -25,6 +25,16 @@ BoilerSpace is a browser extension for Chrome, Firefox, and Zen. It reads your c
 
 Course sync and syllabus reading run separately. Assignments and announcements can finish syncing while a slow syllabus page is still loading. Some courses have no syllabus; a confirmed missing syllabus is shown separately from a failed check.
 
+## Ed and Piazza beta
+
+In **Settings → Discussions (beta)**, choose **Connect Ed courses** or enter a Piazza class URL and choose **Connect Piazza class**. Approve the optional site access in the extension tab. Sign into the discussion site in the same browser profile if prompted, then retry.
+
+Ed discovers active US courses and matches unambiguous course codes to current Brightspace courses. Piazza classes and unmatched courses can stay separate, or you can choose their Brightspace course in Settings. That keeps an older class from being mixed into a current course's answers.
+
+The beta imports **the full available discussion history**, including available replies, in batches. It saves progress after each batch and resumes interrupted imports on the next sync. Later syncs check every history page and only reopen new or changed posts. Settings shows the saved post count and whether the history check is complete. Ask can search those saved posts, open a saved thread, distinguish staff replies from student suggestions, and cite the original Ed/Piazza link. Linked courses also show recent post links on their course page. Discussion sync has its own status and **Sync discussions now** control; it refreshes independently at most every 20 minutes while BoilerSpace is open.
+
+The beta does not read attachments, post, reply, or vote. It excludes private and deleted posts. Site changes can interrupt the reader; a failed refresh keeps the last successful posts and shows an error. Relevant discussion text may be sent to Purdue GenAI Studio when you ask. See [Privacy](PRIVACY.md#optional-ed-and-piazza-beta).
+
 ## Ask across your course material
 
 > Hey can you tell me what the Course C syllabus says about the midterm, what it covers, and what I should review in the course materials?

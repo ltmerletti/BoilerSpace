@@ -50,12 +50,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [ui, syllabi]
+        suite: [ui, syllabi, discussions]
         include:
           - suite: ui
             script: scripts/verify.mjs
           - suite: syllabi
             script: scripts/verify-syllabi.mjs
+          - suite: discussions
+            script: scripts/verify-discussions.mjs
     env:
       VERIFY_OUT: .verify-tmp/artifacts/${{ matrix.suite }}
     steps:

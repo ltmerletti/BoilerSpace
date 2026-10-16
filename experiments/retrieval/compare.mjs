@@ -24,10 +24,11 @@ mkdirSync(cacheDir, { recursive: true });
 env.cacheDir = cacheDir;
 env.allowLocalModels = false;
 const models = [
+  { name: 'granite-small-r2-q8', repo: 'onnx-community/granite-embedding-small-english-r2-ONNX', revision: '1dc7835ba0cb9c76a3618d0bf0c427c97671b3c8', pooling: 'cls', maxTokens: 512, prefix: '' },
   { name: 'arctic-xs-q8', repo: 'Snowflake/snowflake-arctic-embed-xs', revision: 'd8c86521100d3556476a063fc2342036d45c106f', pooling: 'cls', maxTokens: 512, prefix: 'Represent this sentence for searching relevant passages: ' },
   { name: 'minilm-l6-q8', repo: 'Xenova/all-MiniLM-L6-v2', revision: '751bff37182d3f1213fa05d7196b954e230abad9', pooling: 'mean', maxTokens: 256, prefix: '' },
 ].filter((m) => !option('--model', '') || m.name === option('--model', ''));
-if (!models.length) throw new Error('Unknown model; use arctic-xs-q8 or minilm-l6-q8.');
+if (!models.length) throw new Error('Unknown model; use granite-small-r2-q8, arctic-xs-q8, or minilm-l6-q8.');
 
 const capture = read(option('--capture', args.includes('--fixture') ? 'experiments/retrieval/fixtures/capture.json' : 'bench/data/capture.json'));
 const captured = buildCaptureEnv(capture);

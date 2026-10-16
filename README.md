@@ -37,7 +37,7 @@ The beta does not read attachments, post, reply, or vote. It excludes private an
 
 ## Retrieval experiments
 
-This beta branch includes a [local retrieval comparison](experiments/retrieval/README.md) for BM25, two small embedding models, and hybrid ranking. It has a public fixture and can also use private course captures. Model inference stays local; the extension keeps its existing keyword search by default.
+This beta branch includes a [local retrieval comparison](experiments/retrieval/README.md) for BM25, small embedding models, and hybrid ranking. It has a public fixture and can also use private course captures. Model inference stays local; the extension keeps its existing keyword search by default.
 
 ## Ask across your course material
 

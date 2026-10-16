@@ -1,0 +1,24 @@
+BoilerSpace
+Copyright (C) 2026 Luke Merletti
+
+BoilerSpace's original code is free software: you can redistribute it
+and/or modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation, version 3 only.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See COPYING for
+the GNU General Public License.
+
+Bundled components retain their own licenses and copyright notices:
+
+- PDF.js: Apache License 2.0; see vendor/pdfjs/LICENSE and source notices.
+- Adobe character maps: see vendor/pdfjs/cmaps/LICENSE.
+- Foxit/PDFium fonts: see vendor/pdfjs/standard_fonts/LICENSE_FOXIT.
+- Liberation fonts: see vendor/pdfjs/standard_fonts/LICENSE_LIBERATION.
+- fflate: MIT; see vendor/fflate/LICENSE.
+- Lato: SIL Open Font License 1.1; see fonts/OFL.txt.
+
+Keep these notices and license files with copies of the extension.
+The software license does not grant rights to third-party course
+documents, service content, or trademarks.

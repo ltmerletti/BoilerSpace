@@ -1,5 +1,15 @@
 {
   "name": "boilerspace",
+  "version": "0.2.0",
+  "description": "A planner and course assistant for Purdue Brightspace.",
+  "license": "GPL-3.0-only",
+  "author": "Luke Merletti",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ltmerletti/BoilerSpace.git"
+  },
+  "homepage": "https://github.com/ltmerletti/BoilerSpace#readme",
+  "bugs": "https://github.com/ltmerletti/BoilerSpace/issues",
   "private": true,
   "type": "module",
   "scripts": {

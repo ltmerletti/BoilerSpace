@@ -12,6 +12,8 @@ Offline and live evaluation suite for the course assistant (`ask()` in `extensio
 
 ## Offline Validation (`--check`)
 
+This suite requires both `bench/data/capture.json` and `bench/data/cases.json`. They contain private course material and are gitignored, so a fresh clone does not include the inputs. A benchmark export creates a capture; it does not create the separate evaluation cases. Use `npm test` with the fixture setup in [CONTRIBUTING.md](../CONTRIBUTING.md#unit-tests) for the public unit suite.
+
 Validate the schema of `bench/data/cases.json`, verify that every evidence quote appears in `bench/data/capture.json`, and run a scripted plumbing check through `ask()` and `readEventStream()` with no network calls:
 
 ```bash
@@ -47,3 +49,5 @@ node bench/retrieval.mjs --verbose
 ```
 
 `bench/data/` comes from the Settings tab's "Save benchmark data" button. Copy the downloaded file to `bench/data/capture.json`.
+
+Keep captures, cases built from private material, and live run reports out of public issues and pull requests. The export scrubs email addresses and phone numbers and omits grade records, but course identifiers, document text, and questions can still identify people or courses. See [PRIVACY.md](../PRIVACY.md).

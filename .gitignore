@@ -1,6 +1,11 @@
 .verify-tmp/
 .chrome-profile/
 node_modules/
+.freebuff/
+.DS_Store
+.env
+.env.*
+!.env.example
 # Real course captures and live run logs stay out of version control.
 bench/data/
 bench/runs/

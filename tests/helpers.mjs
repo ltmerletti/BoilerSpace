@@ -1,8 +1,12 @@
 import { readFileSync } from 'node:fs';
+import { resolve, sep } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { saveSyllabusEntryHere } from '../extension/lib/syllabus-store.js';
 
 const ORIGIN = 'https://purdue.brightspace.com';
-const FIXTURES = new URL('../../open-source-workbench/repos/Brightspace-Bar/session-capture/tests/fixtures/', import.meta.url);
+export const FIXTURES = process.env.BOILERSPACE_FIXTURES_DIR
+  ? pathToFileURL(resolve(process.env.BOILERSPACE_FIXTURES_DIR) + sep)
+  : new URL('../../open-source-workbench/repos/Brightspace-Bar/session-capture/tests/fixtures/', import.meta.url);
 const fixture = (name) => JSON.parse(readFileSync(new URL(name, FIXTURES), 'utf8'));
 
 // A small stand-in for the chrome.* APIs the libraries use, so pipelines can run under Node.

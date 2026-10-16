@@ -27,9 +27,8 @@ import {
   visibleQuizQuestions,
 } from '../extension/lib/brightspace.js';
 import { snapshotSyllabus } from '../extension/lib/syllabus-scan.js';
-import { fakeBrightspace } from './helpers.mjs';
+import { fakeBrightspace, FIXTURES } from './helpers.mjs';
 
-const FIXTURES = new URL('../../open-source-workbench/repos/Brightspace-Bar/session-capture/tests/fixtures/', import.meta.url);
 const fixture = (name) => JSON.parse(readFileSync(new URL(name, FIXTURES), 'utf8'));
 const ORIGIN = 'https://purdue.brightspace.com';
 const NOW = new Date('2026-10-12T16:00:00Z');

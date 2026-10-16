@@ -112,7 +112,8 @@ export async function verifyReloadAndReadAgain(panel, courses, records) {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const { chromium } = await import(pathToFileURL(path.join(root, '../course-companion/node_modules/playwright/index.mjs')));
+  const playwrightPath = path.resolve(process.env.PLAYWRIGHT_PATH ?? path.join(root, '../course-companion/node_modules/playwright/index.mjs'));
+  const { chromium } = await import(pathToFileURL(playwrightPath));
   const context = await chromium.launchPersistentContext(path.join(root, '.verify-tmp/live-profile'), {
     headless: false, viewport: null,
     args: [`--disable-extensions-except=${path.join(root, 'extension')}`, `--load-extension=${path.join(root, 'extension')}`],

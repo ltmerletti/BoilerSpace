@@ -120,13 +120,14 @@ const check = (name, ok, detail = '') => {
 
 const context = await chromium.launchPersistentContext(profile, {
   ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : { channel: 'chromium' }),
-  headless: true,
+  headless: process.env.VERIFY_HEADED !== '1',
   // Background scan tabs inherit this size. Match the Brightspace page so closing one
   // does not leave Chromium's emulated pointer coordinates at a different width.
   viewport: { width: 1280, height: 860 },
-  deviceScaleFactor: 2,
+  deviceScaleFactor: process.env.CI ? 1 : 2,
   args: [`--disable-extensions-except=${extensionPath}`, `--load-extension=${extensionPath}`],
 });
+if (process.env.CI) await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
 
 try {
   let [worker] = context.serviceWorkers();
@@ -367,12 +368,14 @@ try {
   const probe = await context.newPage();
   await probe.goto(`chrome-extension://${extensionId}/sidepanel.html`);
   let renderedDone = false;
-  const scanOpened = context.waitForEvent('request', { predicate: (request) => new URL(request.url()).pathname === delayedView });
+  const scanOpened = context.waitForEvent('page', {
+    predicate: (page) => page.waitForURL(`**${delayedView}*`, { timeout: 10_000 }).then(() => true, () => false),
+    timeout: 15_000,
+  });
   const rendered = probe.evaluate((href) => chrome.runtime.sendMessage({ type: 'boilerspace-syllabus', phase: 'page', href, origin: 'https://purdue.brightspace.com' }), delayedView)
     .then((result) => { renderedDone = true; return result; });
   rendered.catch(() => {});
-  const scanTab = (await scanOpened).frame().page();
-  await scanTab.waitForURL(`**${delayedView}*`);
+  const scanTab = await scanOpened;
   const refreshed = await probe.evaluate(async () => (await import('./lib/sync.js')).syncNow());
   const duringScan = await probe.evaluate(() => chrome.storage.local.get(['syncMeta', 'syncProgress', 'syncLock']));
   check('course sync completes while a JavaScript syllabus is still loading', refreshed.ok && !renderedDone && duringScan.syncMeta.ok && duringScan.syncProgress.finished && !duringScan.syncLock);
@@ -417,9 +420,11 @@ try {
   check('an overview citation opens the complete saved page at page 3', new URL(viewer.url()).hash === '#page=3' && await viewer.locator('#page').inputValue() === '3' && (await viewer.locator('#page-text').textContent()) === overviewPages[2].text);
   await viewer.locator('#previous').click();
   await viewer.waitForURL('**#page=2');
+  await viewer.waitForFunction((expected) => document.getElementById('page-text').textContent === expected, overviewPages[1].text);
   check('the document reader navigates between saved pages', await viewer.locator('#page-text').textContent() === overviewPages[1].text);
   await viewer.locator('#next').click();
   await viewer.waitForURL('**#page=3');
+  await viewer.waitForFunction((expected) => document.getElementById('page-text').textContent === expected, overviewPages[2].text);
   await viewer.locator('#original').click();
   await viewer.locator('#pdf-page:not([hidden])').waitFor({ timeout: 15_000 });
   check('the overview reader can display the original PDF at the cited page', await viewer.locator('#page').inputValue() === '3' && await viewer.locator('#pdf-page').evaluate((canvas) => canvas.width > 0 && canvas.height > 0));
@@ -431,7 +436,20 @@ try {
   check('nothing is added on quiz attempt pages', (await bs.locator('#boilerspace-root, .boilerspace-nav-item').count()) === 0);
 
   check('no page errors', consoleErrors.length === 0, consoleErrors.join(' | '));
+} catch (error) {
+  const pages = [];
+  for (const [index, page] of context.pages().entries()) {
+    const frames = [];
+    for (const frame of page.frames()) {
+      frames.push({ url: frame.url(), text: await frame.locator('body').innerText({ timeout: 2000 }).catch(() => '(unavailable)') });
+    }
+    pages.push({ url: page.url(), frames });
+    await page.screenshot({ path: path.join(outDir, `failure-${index}.png`), timeout: 5000 }).catch(() => {});
+  }
+  writeFileSync(path.join(outDir, 'failure.json'), JSON.stringify({ error: error.message, pages }, null, 2));
+  throw error;
 } finally {
+  if (process.env.CI) await context.tracing.stop({ path: path.join(outDir, 'trace.zip') });
   await context.close();
   rmSync(profile, { recursive: true, force: true });
 }

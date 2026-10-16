@@ -25,19 +25,27 @@ The unit suite does not need Purdue credentials or make live model requests.
 
 ### Isolated browser checks
 
-Install Playwright locally without changing the package metadata:
+Install the pinned development dependencies and Chromium:
 
 ```sh
-npm install --no-save --package-lock=false playwright@1.58.2
+npm ci --ignore-scripts
 npx playwright install chromium
 export BOILERSPACE_FIXTURES_DIR=.verify-tmp/Brightspace-Bar/session-capture/tests/fixtures
 node scripts/verify.mjs ./node_modules/playwright/index.mjs
 node scripts/verify-syllabi.mjs ./node_modules/playwright/index.mjs
 ```
 
-These scripts open a visible Chrome for Testing window with a throwaway profile. Brightspace and GenAI Studio requests are intercepted with fixtures. They do not use your real course session. `verify.mjs` checks the wider interface; `verify-syllabi.mjs` checks delayed syllabus rendering, missing sections, permissions, retries, fresh downloads, and concurrent readers.
+These scripts use throwaway Chromium profiles. The broader interface check runs headlessly by default; set `VERIFY_HEADED=1` to open a visible window. The syllabus check always opens a visible window. Brightspace and GenAI Studio requests are intercepted with fixtures. They do not use your real course session. `verify.mjs` checks the wider interface; `verify-syllabi.mjs` checks delayed syllabus rendering, missing sections, permissions, retries, fresh downloads, and concurrent readers.
 
 Use `VERIFY_OUT=/tmp/boilerspace-verification` to choose a screenshot directory. The broader script otherwise writes to `verification/`; the focused script defaults to a temporary directory. Review screenshots before committing them, since existing demonstration assets are tracked.
+
+### Continuous integration
+
+[CI](https://github.com/ltmerletti/BoilerSpace/actions/workflows/ci.yml) runs on pushes and pull requests, and can also be started manually from GitHub Actions. It runs the unit suite on Node.js 22 and 24, plus both isolated Chromium suites in separate jobs. The wider interface suite runs headlessly at standard pixel density; the syllabus suite uses visible Chromium under `xvfb-run`. Both exercise real pointer input into the embedded extension panel. The broader suite also saves a Playwright trace and captures page state if it throws.
+
+CI installs from `package-lock.json` and checks out the public fixtures at the same pinned commit shown above. It needs no Purdue credentials, API keys, or repository secrets. Each browser job uploads any generated fixture-test screenshots for seven days, including on failure. New runs cancel older runs on the same branch or pull request.
+
+These checks cover fixture behavior in Chromium. They do not replace signed-in verification of Purdue authentication, actual course pages, or Firefox/Zen behavior.
 
 ### Live verification
 

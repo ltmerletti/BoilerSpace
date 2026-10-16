@@ -2,6 +2,8 @@
 
 # BoilerSpace
 
+[![CI](https://github.com/ltmerletti/BoilerSpace/actions/workflows/ci.yml/badge.svg)](https://github.com/ltmerletti/BoilerSpace/actions/workflows/ci.yml)
+
 Your Purdue Brightspace courses, deadlines, syllabi, and course questions in one side panel.
 
 BoilerSpace is a browser extension for Chrome, Firefox, and Zen. It reads your current courses from Brightspace, finds syllabi, and answers questions with citations through your own Purdue GenAI Studio account. There is no separate BoilerSpace account or server.

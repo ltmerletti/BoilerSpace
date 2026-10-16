@@ -35,6 +35,10 @@ The beta imports **the full available discussion history**, including available 
 
 The beta does not read attachments, post, reply, or vote. It excludes private and deleted posts. Site changes can interrupt the reader; a failed refresh keeps the last successful posts and shows an error. Relevant discussion text may be sent to Purdue GenAI Studio when you ask. See [Privacy](PRIVACY.md#optional-ed-and-piazza-beta).
 
+## Retrieval experiments
+
+This beta branch includes a [local retrieval comparison](experiments/retrieval/README.md) for BM25, two small embedding models, and hybrid ranking. It has a public fixture and can also use private course captures. Model inference stays local; the extension keeps its existing keyword search by default.
+
 ## Ask across your course material
 
 > Hey can you tell me what the Course C syllabus says about the midterm, what it covers, and what I should review in the course materials?

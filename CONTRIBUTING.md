@@ -50,6 +50,10 @@ CI installs from `package-lock.json` and checks out the public fixtures at the s
 
 These checks cover fixture behavior in Chromium. They do not replace signed-in verification of Purdue authentication, actual course pages, or Firefox/Zen behavior.
 
+### Local retrieval experiments
+
+The pure ranking tests run in `npm test` without model downloads. To run real local embedding inference and compare source-evidence recall, use the separate [retrieval experiment](experiments/retrieval/README.md). Its optional dependencies, model cache, and private reports stay separate from the extension runtime.
+
 ### Live verification
 
 For a browser that Codex and Antigravity can both attach to, run `npm run browser:live`. See [Shared live browser](docs/LIVE_BROWSER.md) for the local CDP endpoint and connection instructions.

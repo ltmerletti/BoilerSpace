@@ -1,0 +1,189 @@
+{
+  "fetchedAt": "2026-10-13T12:00:00.000Z",
+  "versions": {
+    "lp": "1.62",
+    "le": "1.96"
+  },
+  "user": {
+    "firstName": "Boiler"
+  },
+  "courses": [
+    {
+      "id": 1600001,
+      "name": "Fall 2026 CS 25200-LE1 LEC",
+      "code": "wl.202620.CS.25200.LE1",
+      "current": true,
+      "startDate": "2026-08-24T04:00:00.000Z",
+      "endDate": "2026-12-20T04:59:00.000Z",
+      "homeUrl": "https://purdue.brightspace.com/d2l/home/1600001"
+    },
+    {
+      "id": 1600002,
+      "name": "Fall 2026 MA 26500-240 LEC",
+      "code": "wl.202620.MA.26500.240",
+      "current": true,
+      "homeUrl": "https://purdue.brightspace.com/d2l/home/1600002"
+    },
+    {
+      "id": 412690,
+      "name": "Fall 2024 CS 18000-BLK - Merge",
+      "code": "wl.202510.CS.18000.BLK",
+      "current": false,
+      "reason": "ended"
+    }
+  ],
+  "data": [
+    {
+      "courseId": 1600001,
+      "assignments": [
+        {
+          "kind": "assignment",
+          "id": 11,
+          "courseId": 1600001,
+          "title": "Project 1: Shell",
+          "dueAt": "2026-10-16T03:59:00.000Z",
+          "instructions": "Write a Unix shell in C. Submit shell.c through Gradescope and the report here.",
+          "url": "https://purdue.brightspace.com/a/11",
+          "points": 100
+        },
+        {
+          "kind": "assignment",
+          "id": 12,
+          "courseId": 1600001,
+          "title": "Project 2: Malloc",
+          "dueAt": "2026-11-06T04:59:00.000Z",
+          "instructions": "Implement malloc and free.",
+          "url": "https://purdue.brightspace.com/a/12"
+        }
+      ],
+      "quizzes": [
+        {
+          "kind": "quiz",
+          "id": 21,
+          "courseId": 1600001,
+          "title": "Quiz 5",
+          "dueAt": "2026-10-14T15:00:00.000Z",
+          "instructions": "Covers processes and signals.",
+          "timeLimitMinutes": 20,
+          "attempts": 1,
+          "url": "https://purdue.brightspace.com/q/21"
+        }
+      ],
+      "announcements": [
+        {
+          "kind": "announcement",
+          "id": 31,
+          "courseId": 1600001,
+          "title": "Midterm room change",
+          "body": "The midterm on October 21 is in ELLT 116, not WALC.",
+          "postedAt": "2026-10-12T14:00:00.000Z",
+          "url": "https://purdue.brightspace.com/n/31"
+        }
+      ],
+      "content": [
+        {
+          "id": 77,
+          "courseId": 1600001,
+          "title": "CS 25200 Syllabus Fall 2026.pdf",
+          "modulePath": [
+            "Start Here"
+          ],
+          "type": "File",
+          "fileUrl": "/d2l/api/le/1.96/1600001/content/topics/77/file",
+          "url": "https://purdue.brightspace.com/c/77",
+          "updatedAt": "2026-08-20T00:00:00.000Z",
+          "isHidden": false
+        },
+        {
+          "id": 78,
+          "courseId": 1600001,
+          "title": "Lecture 12 slides.pdf",
+          "modulePath": [
+            "Week 7"
+          ],
+          "type": "File",
+          "fileUrl": "/d2l/api/le/1.96/1600001/content/topics/78/file",
+          "url": "https://purdue.brightspace.com/c/78",
+          "isHidden": false
+        }
+      ],
+      "events": [
+        {
+          "kind": "event",
+          "id": 41,
+          "courseId": 1600001,
+          "title": "Midterm 1",
+          "startAt": "2026-10-21T23:00:00.000Z",
+          "endAt": "2026-10-22T01:00:00.000Z",
+          "isAllDay": false,
+          "location": "ELLT 116",
+          "linkedTo": null
+        }
+      ],
+      "grades": [
+        {
+          "name": "Quiz 4",
+          "displayed": "9 / 10"
+        }
+      ]
+    },
+    {
+      "courseId": 1600002,
+      "assignments": [],
+      "quizzes": [],
+      "announcements": [],
+      "content": [],
+      "events": [],
+      "grades": []
+    }
+  ],
+  "errors": [],
+  "requestLog": [],
+  "syllabi": {},
+  "files": [
+    {
+      "courseId": 1600001,
+      "topicId": 77,
+      "title": "Course handbook",
+      "kind": "pdf",
+      "pages": [
+        {
+          "page": 1,
+          "label": "1",
+          "text": "Teaching assistants hold office hours in Science Building room 200 on Wednesdays from 2 to 4 PM. No appointment is required."
+        },
+        {
+          "page": 2,
+          "label": "2",
+          "text": "Late assignments lose ten percent per calendar day. The maximum lateness is three days."
+        }
+      ]
+    },
+    {
+      "courseId": 1600001,
+      "topicId": 78,
+      "title": "Processes",
+      "kind": "pdf",
+      "pages": [
+        {
+          "page": 1,
+          "label": "1",
+          "text": "A child process receives a copy of the parent address space. After fork, parent and child execute independently."
+        }
+      ]
+    },
+    {
+      "courseId": 1600002,
+      "topicId": 88,
+      "title": "Math help",
+      "kind": "pdf",
+      "pages": [
+        {
+          "page": 1,
+          "label": "1",
+          "text": "Teaching assistants hold office hours in Mathematics room 100 on Mondays from 10 AM until noon."
+        }
+      ]
+    }
+  ]
+}

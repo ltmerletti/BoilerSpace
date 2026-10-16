@@ -1,0 +1,14 @@
+{
+  "name": "boilerspace-retrieval-experiment",
+  "version": "0.0.0",
+  "description": "Local BM25 and small embedding model comparisons for BoilerSpace",
+  "private": true,
+  "license": "GPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "compare": "node compare.mjs"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "3.8.1"
+  }
+}

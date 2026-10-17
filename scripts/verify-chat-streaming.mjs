@@ -31,10 +31,12 @@ try {
   await page.addInitScript(() => {
     const original = window.fetch;
     let streamTurn = 0;
+    window.syntheticRateLimits = 0;
     window.fetch = async (url, options) => {
       if (!String(url).includes('/api/chat/completions')) return original(url, options);
       const body = JSON.parse(options.body);
       if (!body.stream) return new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'Course review' } }] }), { headers: { 'content-type': 'application/json' } });
+      if (!window.syntheticRateLimits++) return new Response(JSON.stringify({ detail: 'Rate limit exceeded. Please try again later.' }), { status: 400, headers: { 'content-type': 'application/json', 'retry-after': '0.01' } });
       const turn = ++streamTurn;
       const isFinal = turn === 4;
       const deltas = isFinal
@@ -78,6 +80,7 @@ try {
   await page.getByLabel('Question', { exact: true }).fill('Check the posted work.');
   await page.getByRole('button', { name: 'Send', exact: true }).click();
   await page.locator('#pending .trace-commentary').first().waitFor({ state: 'attached' });
+  check('a Purdue-style HTTP 400 rate limit retries before streaming the first narration', await page.evaluate(() => window.syntheticRateLimits === 2));
   check('interim narration stays inside the collapsed activity block', !(await page.locator('#pending').innerText()).includes('Let me find') && await page.locator('#pending > .live-commentary').count() === 0);
   await page.locator('#pending .trace > summary').click();
   check('opening activity reveals narration from a separate assistant turn', await page.locator('#pending .trace-commentary').first().innerText() === 'Let me find the posted deadlines.');

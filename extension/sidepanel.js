@@ -1644,7 +1644,7 @@ function discussionConnection(platform) {
 }
 
 function discussionsSettings() {
-  return h('section', { class: 'connection-section', id: 'discussions-beta' },
+  return h('section', { class: 'connection-section', id: 'discussions' },
     discussionConnection('ed'), discussionConnection('piazza'),
     state.discussions.sources.length > 0 && h('div', { class: 'connection-actions' }, h('button', { type: 'button', class: 'text-button', disabled: state.busy.discussions, onclick: () => refreshDiscussions(true) }, state.busy.discussions ? 'Syncing discussions…' : 'Sync discussions now')),
   );
@@ -1727,7 +1727,7 @@ function settingsView() {
       ]],
     }),
     discussionsSettings(),
-    h('p', { class: 'connections-note' }, 'Ed and Piazza are in beta. Discussions update every 20 minutes while BoilerSpace is open.'),
+    h('p', { class: 'connections-note' }, 'Discussions update every 20 minutes while BoilerSpace is open.'),
     h('section', { class: 'settings-group' },
       h('div', { class: 'calendar-row' }, h('h2', { class: 'heading' }, 'Calendar'), h('button', { class: 'text-button', type: 'button', disabled: !state.snapshot, onclick: exportCalendar }, 'Export calendar (.ics)')),
     ),

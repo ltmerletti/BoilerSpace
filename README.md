@@ -25,7 +25,7 @@ BoilerSpace is a browser extension for Chrome, Firefox, and Zen. It reads your c
 
 Course sync and syllabus reading run separately. Assignments and announcements can finish syncing while a slow syllabus page is still loading. Some courses have no syllabus; a confirmed missing syllabus is shown separately from a failed check.
 
-## Ed and Piazza beta
+## Ed and Piazza
 
 In **Settings**, choose **Connect** on the Ed or Piazza row and approve site access. Ed discovers your active US courses. Piazza finds visible class links and the open class in your signed-in Piazza page, so pasting a URL is usually unnecessary. **Add a class by link** remains available inside the Piazza row when needed.
 
@@ -33,9 +33,9 @@ Connections use your existing sign-ins. If a sign-in is needed, it opens in a si
 
 Ed and Piazza courses match current Brightspace courses using course codes first, then distinctive titles with minor spelling differences. Explicitly older terms and ambiguous matches stay separate. **Connection row → Options → Brightspace course** provides an optional override, which later syncs preserve. Courses connected before Brightspace is loaded are matched when their metadata becomes available.
 
-The beta imports **the full available discussion history**, including available replies, in batches. It saves progress after each batch and resumes interrupted imports on the next sync. Later syncs check every history page and only reopen new or changed posts. Settings shows the saved post count and whether the history check is complete. Ask can search those saved posts, open a saved thread, distinguish staff replies from student suggestions, and cite the original Ed/Piazza link. Course pages offer a collapsed list of posts from the last seven days, sorted by posting date. Ask still searches the complete saved history. Discussion sync has its own status and **Sync discussions now** control; it refreshes independently at most every 20 minutes while BoilerSpace is open.
+The reader imports **the full available discussion history**, including available replies, in batches. It saves progress after each batch and resumes interrupted imports on the next sync. Later syncs check every history page and only reopen new or changed posts. Settings shows the saved post count and whether the history check is complete. Ask can search those saved posts, open a saved thread, distinguish staff replies from student suggestions, and cite the original Ed/Piazza link. Course pages offer a collapsed list of posts from the last seven days, sorted by posting date. Ask still searches the complete saved history. Discussion sync has its own status and **Sync discussions now** control; it refreshes independently at most every 20 minutes while BoilerSpace is open.
 
-The beta does not read attachments, post, reply, or vote. It excludes private and deleted posts. Site changes can interrupt the reader; a failed refresh keeps the last successful posts and shows an error. Relevant discussion text may be sent to Purdue GenAI Studio when you ask. See [Privacy](PRIVACY.md#optional-ed-and-piazza-beta).
+The reader does not read attachments, post, reply, or vote. It excludes private and deleted posts. Site changes can interrupt the reader; a failed refresh keeps the last successful posts and shows an error. Relevant discussion text may be sent to Purdue GenAI Studio when you ask. See [Privacy](PRIVACY.md#optional-ed-and-piazza).
 
 ## Local discussion search
 

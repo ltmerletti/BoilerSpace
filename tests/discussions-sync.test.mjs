@@ -12,7 +12,7 @@ function setup(reader, granted = true) {
       set: async (values) => Object.assign(data, structuredClone(values)),
     } },
     permissions: { contains: async () => granted },
-    tabs: { query: async () => [{ id: 1, url: 'https://edstem.org/us/', status: 'complete' }], get: async () => ({ status: 'complete' }) },
+    tabs: { query: async () => [{ id: 1, url: 'https://edstem.org/us/', status: 'complete' }], get: async () => ({ status: 'complete', url: (await chrome.tabs.query({}))[0]?.url }) },
     scripting: { executeScript: async ({ args }) => { calls.push(args[0]); return [{ result: await reader(args[0], data) }]; } },
   };
   return { data, calls };
@@ -36,6 +36,21 @@ async function connect() {
   await handleDiscussionRequest({ action: 'connect', platform: 'ed' });
   return sync(true);
 }
+
+test('a newly opened Firefox reader waits for the site URL after about:blank reports complete', async () => {
+  setup(async () => ({ courses: [{ remoteId: '1', name: 'CS 25200' }] }));
+  let polls = 0, removed = false;
+  chrome.tabs.query = async () => [];
+  chrome.tabs.create = async () => ({ id: 99 });
+  chrome.tabs.update = async () => ({ id: 99, url: 'about:blank', status: 'complete' });
+  chrome.tabs.get = async () => ({ status: 'complete', url: ++polls === 1 ? 'about:blank' : 'https://edstem.org/us/' });
+  chrome.tabs.remove = async id => { assert.equal(id, 99); removed = true; };
+  const execute = chrome.scripting.executeScript;
+  chrome.scripting.executeScript = async args => { assert.ok(polls >= 2, 'the site has committed before injection'); return execute(args); };
+  await handleDiscussionRequest({ action: 'connect', platform: 'ed' });
+  assert.equal(polls, 2);
+  assert.equal(removed, true);
+});
 
 test('Ed connect discovers all active courses and refreshes them independently', async () => {
   const { data } = setup(async ({ discover, remoteId, offset }) => discover ? { courses: [{ remoteId: '1', code: 'CS 25200', name: 'CS 25200' }, { remoteId: '2', code: 'MA 26500', name: 'MA 26500' }] } : remoteId === '2' ? Promise.reject(new Error('Temporary site error')) : feed(remoteId, offset));

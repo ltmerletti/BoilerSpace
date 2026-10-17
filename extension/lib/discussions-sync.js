@@ -20,7 +20,11 @@ async function readSite(platform, args) {
     let ready = false;
     for (let i = 0; i < 120; i++) {
       const current = await chrome.tabs.get(tab.id);
-      if (current.status === 'complete') { ready = true; break; }
+      // Firefox may still report the initial about:blank as complete after update().
+      // Injection must wait until the tab has committed to an allowed site.
+      const currentUrl = new URL(current.url ?? 'about:blank');
+      const allowed = currentUrl.protocol === 'https:' && (platform === 'ed' ? ['edstem.org', 'us.edstem.org'].includes(currentUrl.hostname) : currentUrl.hostname === 'piazza.com');
+      if (current.status === 'complete' && allowed) { ready = true; break; }
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
     if (!ready) throw new Error('The discussion page took too long to load. Sign in and retry.');

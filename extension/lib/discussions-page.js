@@ -14,11 +14,11 @@ export async function readDiscussionSite({ platform, remoteId, discover = false,
     };
     if (!Number.isInteger(offset) || offset < 0) throw new Error('Invalid discussion cursor.');
     const started = Date.now();
-    // Finish each message promptly, saving its cursor before the next batch.
+    // Short checkpoints also keep progress visible when hidden tabs throttle timers.
     const threads = [], errors = [], seenIds = [], pageIds = [], versions = {};
     const readBatch = async (items, idOf, versionOf, isPublic, read) => {
       for (const item of items) {
-        if (Date.now() - started > 60_000) break;
+        if (Date.now() - started > 10_000) break;
         const id = String(idOf(item));
         if (isPublic(item)) {
           const version = versionOf(item);

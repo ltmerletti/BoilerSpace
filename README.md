@@ -10,7 +10,7 @@ BoilerSpace is a browser extension for Chrome, Firefox, and Zen. It reads your c
 
 <p align="center">
   <img src="docs/images/week.png" width="270" alt="Week view showing upcoming work and verified syllabus dates">
-  <img src="docs/images/courses.png" width="270" alt="Courses view showing automatic syllabus checks and AI policy summaries">
+  <img src="docs/images/courses.png" width="270" alt="Courses view showing current courses and the last syllabus sync">
   <img src="docs/images/ask.png" width="270" alt="Ask view for searching syllabi, course files, and connected discussions">
 </p>
 
@@ -21,7 +21,7 @@ BoilerSpace is a browser extension for Chrome, Firefox, and Zen. It reads your c
 - **Week:** upcoming assignments, quizzes, and exams, plus syllabus dates verified against their source wording. Clear dates appear and export automatically. If sources disagree, the agenda uses Brightspace and keeps the discrepancy available to inspect.
 - **Courses:** current enrollments, upcoming work, syllabus text, and cited policy summaries. Syllabi are checked automatically, including Purdue Simple Syllabus pages.
 - **Ask:** questions about your course material, with citations to the source page or item. Conversations can be revisited and answers retried.
-- **Settings:** connect Brightspace, GenAI Studio, Ed, and Piazza. Expand a connection row for account details and course-link overrides. Export a calendar or manage local data below the connections.
+- **Settings:** connect Brightspace, GenAI Studio, Ed, and Piazza. Expand a connection row for account details and course-link overrides. Export a calendar below the connections. Local data tools are under **Advanced**.
 
 Course sync and syllabus reading run separately. Assignments and announcements can finish syncing while a slow syllabus page is still loading. Some courses have no syllabus; a confirmed missing syllabus is shown separately from a failed check.
 
@@ -31,9 +31,9 @@ In **Settings**, choose **Connect** on the Ed or Piazza row and approve site acc
 
 Connections use your existing sign-ins. If a sign-in is needed, it opens in a site tab and connecting resumes automatically afterward. The browser sidebar connects directly; the panel embedded in Brightspace uses a short extension-tab handoff for the permission request. History imports continue in the open panel after that handoff closes.
 
-Ed and Piazza courses match current Brightspace courses using course codes first, then distinctive titles with minor spelling differences. Explicitly older terms and ambiguous matches stay separate. **Connection row → Change course** provides an optional override, which later syncs preserve. Courses connected before Brightspace is loaded are matched when their metadata becomes available.
+Ed and Piazza courses match current Brightspace courses using course codes first, then distinctive titles with minor spelling differences. Explicitly older terms and ambiguous matches stay separate. **Connection row → Options → Brightspace course** provides an optional override, which later syncs preserve. Courses connected before Brightspace is loaded are matched when their metadata becomes available.
 
-The beta imports **the full available discussion history**, including available replies, in batches. It saves progress after each batch and resumes interrupted imports on the next sync. Later syncs check every history page and only reopen new or changed posts. Settings shows the saved post count and whether the history check is complete. Ask can search those saved posts, open a saved thread, distinguish staff replies from student suggestions, and cite the original Ed/Piazza link. Linked courses also show recent post links on their course page. Discussion sync has its own status and **Sync discussions now** control; it refreshes independently at most every 20 minutes while BoilerSpace is open.
+The beta imports **the full available discussion history**, including available replies, in batches. It saves progress after each batch and resumes interrupted imports on the next sync. Later syncs check every history page and only reopen new or changed posts. Settings shows the saved post count and whether the history check is complete. Ask can search those saved posts, open a saved thread, distinguish staff replies from student suggestions, and cite the original Ed/Piazza link. Course pages offer a collapsed list of posts from the last seven days, sorted by posting date. Ask still searches the complete saved history. Discussion sync has its own status and **Sync discussions now** control; it refreshes independently at most every 20 minutes while BoilerSpace is open.
 
 The beta does not read attachments, post, reply, or vote. It excludes private and deleted posts. Site changes can interrupt the reader; a failed refresh keeps the last successful posts and shows an error. Relevant discussion text may be sent to Purdue GenAI Studio when you ask. See [Privacy](PRIVACY.md#optional-ed-and-piazza-beta).
 

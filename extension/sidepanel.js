@@ -4,13 +4,13 @@ import { BRIGHTSPACE_ORIGIN, canReachBrightspace, connectParentPage, syncNow } f
 import { lockIsFresh } from './lib/sync-store.js';
 import { DEFAULT_MODEL, getConnection, linkAccount, refreshModels, setModel, unlink } from './lib/genai.js';
 import { choosableFiles, chooseSyllabus, pendingReviews, processCurrentSyllabi, readUploadedSyllabus, usableRecord, withSyllabusSources } from './lib/syllabus.js';
-import { agendaItems, aiPolicyFor, calendarEvents, courseTitle, currentCourses, groupByDay, itemDayKey, shortCourseLabel } from './lib/planner.js';
+import { agendaItems, calendarEvents, courseTitle, currentCourses, groupByDay, itemDayKey, shortCourseLabel } from './lib/planner.js';
 import { buildCalendar } from './lib/ics.js';
 import { locationUrl, syllabusFile } from './lib/links.js';
 import { ask, SUGGESTED_QUESTIONS } from './lib/agent.js';
 import { captureBenchmark } from './lib/capture.js';
 import { addDaysToKey, dayKey, daysBetweenKeys, formatDateTime, formatDayKey, formatTime, relativeDay } from './lib/dates.js';
-import { DISCUSSION_SITES, discussionName, discussionRequest, parseDiscussionUrl } from './lib/discussions.js';
+import { DISCUSSION_SITES, discussionName, discussionRequest, parseDiscussionUrl, recentDiscussionThreads } from './lib/discussions.js';
 import { deadlineIssue } from './lib/deadline-status.js';
 
 const sheet = document.createElement('link');
@@ -36,13 +36,6 @@ const STOPPED_SYNC_NOTICE_MS = 10 * 60_000;
 const SYNC_ON_OPEN_AFTER_MS = 10 * 60_000;
 
 if (EMBEDDED) connectParentPage();
-
-const STANCE_LABEL = {
-  allowed: 'AI allowed',
-  restricted: 'AI allowed with limits',
-  prohibited: 'No AI',
-  unclear: 'AI policy not stated',
-};
 
 const STANCE_SENTENCE = {
   allowed: 'AI tools are allowed',
@@ -909,12 +902,11 @@ function weekView() {
 
 // ---------- Courses ----------
 
-function stanceTag(stance, known, status) {
+function syllabusTag(known, status) {
+  if (status === 'error') return h('span', { class: 'tag' }, 'Syllabus check failed');
   if (!known && status === 'none') return h('span', { class: 'tag' }, 'No syllabus found');
-  if (!known && status === 'error') return h('span', { class: 'tag' }, 'Syllabus check failed');
   if (!known) return h('span', { class: 'tag' }, 'Syllabus not read');
-  const cls = { allowed: 'ok', restricted: 'gold', prohibited: 'danger' }[stance] ?? '';
-  return h('span', { class: `tag ${cls}` }, STANCE_LABEL[stance] ?? STANCE_LABEL.unclear);
+  return null;
 }
 
 function coursesList() {
@@ -936,7 +928,7 @@ function coursesList() {
         'button',
         { class: 'course-row', type: 'button', onclick: () => ((state.courseId = course.id), saveUi(), render({ top: true })) },
         h('span', { class: 'course-label' }, shortCourseLabel(course)),
-        stanceTag(record?.policies.aiUse.stance, Boolean(record), state.syllabi[course.id]?.status),
+        syllabusTag(Boolean(record), state.syllabi[course.id]?.status),
         title && h('div', { class: 'meta' }, title),
         h('div', { class: 'course-connections' }, state.discussions.sources.filter(source => source.courseId === course.id).map(source => h('span', { class: 'source-chip' }, h('span', { class: 'status-dot' }), discussionName(source.platform)))),
         h('div', { class: 'small', style: 'margin-top:2px' }, next ? `Next: ${next.title}, ${formatDateTime(next.dueAt, { allDay: next.allDay })}` : h('span', { class: 'muted' }, 'Nothing upcoming')),
@@ -973,21 +965,9 @@ function excludedNote() {
   );
 }
 
-function policyBlock(record, raw) {
-  if (!record) {
-    const text = !state.genai
-      ? 'Connect GenAI Studio to read the syllabus and find the AI policy.'
-      : raw?.status === 'none'
-        ? 'No syllabus is posted for this course.'
-        : raw?.status === 'external'
-          ? 'The syllabus is hosted outside Brightspace.'
-        : 'The syllabus has not been read yet.';
-    return h('section', { class: 'policy' }, h('div', { class: 'policy-stance' }, 'AI policy unknown'), h('p', { class: 'small muted' }, text));
-  }
+function policyBlock(record) {
   const ai = record.policies.aiUse;
-  return h(
-    'section',
-    { class: `policy ${ai.stance}` },
+  return disclosure(`ai-policy-${record.courseId}`, 'AI policy',
     h('div', { class: 'policy-stance' }, `${STANCE_SENTENCE[ai.stance]}.`),
     ai.summary && h('p', { class: 'small', style: 'margin-top:2px' }, ai.summary),
     ai.quote && h('p', { class: 'quote' }, `"${ai.quote}" (`, pageRef(record.courseId, ai.page), ')'),
@@ -1067,9 +1047,8 @@ function courseDetail(course) {
   const gradingTotal = grading.reduce((s, g) => s + g.weight, 0);
 
   return [
-    h('div', { class: 'back' }, h('button', { class: 'text-button', type: 'button', onclick: () => ((state.courseId = null), saveUi(), render({ top: true })) }, 'All courses')),
+    h('div', { class: 'back' }, h('button', { class: 'back-button', type: 'button', onclick: () => ((state.courseId = null), saveUi(), render({ top: true })) }, icon('chevron'), 'All courses')),
     h('header', { class: 'course-head' }, h('h2', null, shortCourseLabel(course)), h('p', { class: 'muted' }, courseTitle(course), ' ', link(course.homeUrl, 'Open in Brightspace', { class: 'small' }))),
-    policyBlock(record, raw),
     h(
       'section',
       { class: 'section' },
@@ -1080,6 +1059,7 @@ function courseDetail(course) {
       record?.warning && h('p', { class: 'note' }, record.warning),
       record?.dropped?.length > 0 && h('p', { class: 'meta', style: 'margin-top:4px' }, `${plural(record.dropped.length, 'item was', 'items were')} left out because the wording could not be found in the file.`),
       syllabusPicker(course, raw, data),
+      record && policyBlock(record),
     ),
     record &&
       h(
@@ -1097,11 +1077,16 @@ function courseDetail(course) {
       ),
     pending.length > 0 && h('section', { class: 'section' }, disclosure(`course-dates-${course.id}`, 'Where syllabus dates differ', pending.map(reviewCard))),
     state.discussions.sources.some((s) => s.courseId === course.id) && h('section', { class: 'section' },
-      h('h2', { class: 'heading' }, 'Discussions (beta)'),
+      h('h2', { class: 'heading' }, 'Discussions'),
       state.discussions.sources.filter((s) => s.courseId === course.id).map((source) => h('div', { class: 'discussion-preview' },
         h('p', { class: 'meta' }, `${discussionName(source.platform)} · ${source.status === 'syncing' ? 'Syncing…' : source.lastSyncedAt ? `Synced ${formatDateTime(source.lastSyncedAt)}` : 'Not synced yet'}`),
         source.error && h('p', { class: 'small error-text' }, source.error),
-        h('ul', { class: 'list' }, (source.threads ?? []).slice(0, 5).map((thread) => h('li', null, link(thread.url, thread.title), h('div', { class: 'meta' }, `${thread.role === 'instructor' ? 'Instructor post · ' : ''}${thread.replies.length} replies`)))),
+        link(source.url, `Open ${discussionName(source.platform)}`, { class: 'small discussion-open' }),
+        disclosure(`recent-posts-${source.id}`, 'Recent posts',
+          recentDiscussionThreads(source).length
+            ? h('ul', { class: 'list' }, recentDiscussionThreads(source).map((thread) => h('li', null, link(thread.url, thread.title), h('div', { class: 'meta' }, `${formatDateTime(thread.createdAt)}${thread.role === 'instructor' ? ' · Instructor post' : ''}`))))
+            : h('p', { class: 'meta' }, 'No posts in the last 7 days.'),
+        ),
       )),
     ),
     h(
@@ -1295,18 +1280,6 @@ function updatePending() {
   if (atBottom) main.scrollTop = main.scrollHeight;
 }
 
-function policyBanner() {
-  if (!state.askScope) return null;
-  const ai = aiPolicyFor(state.syllabi, Number(state.askScope));
-  if (!ai || !['prohibited', 'restricted'].includes(ai.stance)) return null;
-  const label = labelFor(Number(state.askScope));
-  const text =
-    ai.stance === 'prohibited'
-      ? `${label} does not allow AI tools. BoilerSpace will only help with dates, policies and finding things.`
-      : `${label} limits AI use${ai.summary ? `: ${ai.summary}` : '.'}`;
-  return h('section', { class: `policy ${ai.stance}`, style: 'margin-top:12px' }, h('p', { class: 'small' }, text));
-}
-
 function chatList() {
   if (!state.chats.length) return h('p', { class: 'chat-list-empty muted' }, 'No chats yet. Your questions are saved here on this device.');
   return h(
@@ -1401,7 +1374,6 @@ function askView() {
     h(
       'div',
       { class: 'messages', 'aria-label': 'Conversation' },
-      policyBanner(),
       empty &&
         h(
           'div',
@@ -1433,17 +1405,15 @@ function discussionProgress(source) {
 
 function discussionSourceCard(source) {
   return h('div', { class: 'discussion-source', 'data-source-id': source.id },
-    h('h3', { class: 'small' }, `${discussionName(source.platform)} · ${source.name}`),
+    h('h3', { class: 'small' }, link(source.url, [source.name, h('span', { class: 'external-mark', 'aria-hidden': 'true' }, '↗')], { class: 'discussion-class-link', title: `Open ${source.name} in ${discussionName(source.platform)}` })),
     h('p', { class: 'connection-match' }, source.courseId ? [h('span', { class: 'status-dot' }), ` ${labelFor(source.courseId)}${source.linkOrigin === 'manual' ? '' : ' · Matched automatically'}`] : 'Available in Ask as a separate course'),
     h('p', { class: 'meta' }, discussionProgress(source)),
     source.error && h('p', { class: 'small error-text' }, source.error),
     source.warning && h('p', { class: 'small' }, source.warning),
-    disclosure(`match-${source.id}`, 'Change course', h('label', { class: 'field' }, 'Brightspace course', h('select', { 'data-focus-key': `course-${source.id}`, onchange: (event) => updateDiscussion('link', source.id, event.target.value ? Number(event.target.value) : null) },
+    disclosure(`source-options-${source.id}`, 'Options', h('label', { class: 'field' }, 'Brightspace course', h('select', { 'aria-label': 'Brightspace course', 'data-focus-key': `course-${source.id}`, onchange: (event) => updateDiscussion('link', source.id, event.target.value ? Number(event.target.value) : null) },
       h('option', { value: '', selected: !source.courseId }, 'Keep as a separate discussion course'),
       courses().map((course) => h('option', { value: course.id, selected: source.courseId === course.id }, shortCourseLabel(course))),
-    ))),
-    h('div', { class: 'button-row' }, link(source.url, `Open ${discussionName(source.platform)}`, { class: 'small' }), h('button', { type: 'button', class: 'text-button', disabled: state.busy.discussions, onclick: () => updateDiscussion('remove', source.id) }, 'Disconnect')),
-    source.threads?.length > 0 && h('details', null, h('summary', { class: 'small' }, 'Recent saved posts'), h('ul', { class: 'list' }, source.threads.slice(0, 10).map((thread) => h('li', null, link(thread.url, thread.title))))),
+    )), h('div', { class: 'source-danger-action' }, h('button', { type: 'button', class: 'text-button danger-text', disabled: state.busy.discussions, onclick: () => updateDiscussion('remove', source.id) }, 'Disconnect class'))),
   );
 }
 
@@ -1491,7 +1461,7 @@ function discussionConnection(platform) {
     ],
     children: [connected && [
       sources.map(discussionSourceCard),
-      h('div', { class: 'button-row' }, h('button', { class: 'text-button', type: 'button', disabled: state.busy.discussionConnect, onclick: () => openDiscussionAccess(platform) }, 'Find courses')),
+      h('div', { class: 'platform-actions' }, h('button', { class: 'text-button', type: 'button', disabled: state.busy.discussionConnect, onclick: () => openDiscussionAccess(platform) }, 'Find more courses')),
     ], connected && classLink, !connected && h('p', { class: 'meta' }, `Connect ${name} to search its course discussions.`)],
   });
 }
@@ -1584,19 +1554,17 @@ function settingsView() {
     h('section', { class: 'settings-group' },
       h('div', { class: 'calendar-row' }, h('h2', { class: 'heading' }, 'Calendar'), h('button', { class: 'text-button', type: 'button', disabled: !state.snapshot, onclick: exportCalendar }, 'Export calendar (.ics)')),
     ),
-    h('section', { class: 'settings-group' },
-      h('h2', { class: 'heading' }, 'Data'),
-      disclosure('privacy-details', 'What is shared', h('p', { class: 'meta', style: 'margin-top:10px' }, 'Syllabus text is sent to read dates and policies. Ask sends the relevant course material and discussion excerpts it reads. Ed and Piazza connections read public text and available replies using your existing sign-in. Attachments and images stay on the original site. BoilerSpace does not post, reply, or vote, and does not save discussion passwords or session tokens.')),
-      disclosure('data-options', 'Data and advanced options',
+    h('section', { class: 'settings-group advanced-settings' },
+      disclosure('advanced-settings', 'Advanced',
         h('div', { class: 'button-row' },
-          h('button', { class: 'button secondary', type: 'button', disabled: !state.snapshot, onclick: exportData }, 'Download data (JSON)'),
-          h('button', { class: 'button danger', type: 'button', onclick: clearData }, 'Delete all data'),
+          h('button', { class: 'text-button', type: 'button', disabled: !state.snapshot, onclick: exportData }, 'Export data'),
+          h('button', { class: 'text-button danger-text', type: 'button', onclick: clearData }, 'Clear local data'),
         ),
         disclosure('benchmark-tools', 'Developer tools',
-          h('p', { class: 'meta', style: 'margin-top:12px' }, 'Save course and file text for local benchmarks. The capture excludes grades, your name, and email addresses. This can take a few minutes.'),
-          h('div', { class: 'button-row' }, h('button', { class: 'button secondary', type: 'button', disabled: !state.snapshot || state.busy.capture, onclick: saveBenchmarkData }, state.busy.capture ? 'Saving benchmark data…' : 'Save benchmark data')),
+          h('div', { class: 'button-row' }, h('button', { class: 'text-button', type: 'button', disabled: !state.snapshot || state.busy.capture, onclick: saveBenchmarkData }, state.busy.capture ? 'Saving…' : 'Export benchmark data')),
         ),
       ),
+      link('https://github.com/ltmerletti/BoilerSpace/blob/main/PRIVACY.md', 'Privacy', { class: 'privacy-link' }),
     ),
   ];
 }

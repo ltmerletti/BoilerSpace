@@ -218,6 +218,11 @@ try {
   await page.click('.tabs button[data-view="courses"]');
   check('syllabus status shows the saved check time', await page.locator('.syllabus-controls').innerText().then(text => /Syllabi last synced/.test(text)));
   await page.screenshot({ path: path.join(outDir, '2-courses.png') });
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.locator('.course-row').first().hover();
+  check('dark-mode course hover uses link emphasis without filling the row', await page.locator('.course-row').first().evaluate(element => getComputedStyle(element).backgroundColor === 'rgba(0, 0, 0, 0)' && getComputedStyle(element.querySelector('.course-label')).textDecorationLine.includes('underline')));
+  await page.screenshot({ path: path.join(outDir, '2b-course-hover-dark.png') });
+  await page.emulateMedia({ colorScheme: 'light' });
   for (const width of [320, 720, 400]) {
     await page.setViewportSize({ width, height: 900 });
     check(`course layout fits a ${width}px panel`, await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
@@ -225,7 +230,10 @@ try {
   await page.click('.course-row >> nth=0');
   await page.waitForSelector('.course-head');
   await page.screenshot({ path: path.join(outDir, '3-course-detail.png') });
-  check('course page shows the AI policy', await page.isVisible('text=AI tools are allowed with limits.'));
+  check('AI policy stays collapsed under the syllabus', !(await page.isVisible('text=AI tools are allowed with limits.')) && await page.locator('[data-disclosure^="ai-policy-"] > summary').isVisible());
+  await page.locator('[data-disclosure^="ai-policy-"] > summary').click();
+  check('the policy and source wording remain available on demand', await page.isVisible('text=AI tools are allowed with limits.'));
+  check('back navigation has a directional control', await page.getByRole('button', { name: 'All courses', exact: true }).locator('svg').count() === 1);
   await page.click('text=All courses');
   await page.click('.course-row >> nth=1');
   await page.getByText('Add a syllabus', { exact: true }).click();
@@ -294,6 +302,10 @@ try {
   check('Stop ends a pending response and restores the composer', await page.getByRole('button', { name: 'Stop', exact: true }).count() === 0 && await page.getByRole('button', { name: 'Continue', exact: true }).isVisible());
 
   await page.click('.tabs button[data-view="settings"]');
+  check('Settings keeps data tools in Advanced without the inline disclaimer panel', await page.getByText('Advanced', { exact: true }).isVisible() && await page.getByText('What is shared', { exact: true }).count() === 0);
+  await page.locator('[data-disclosure="advanced-settings"] > summary').click();
+  check('Advanced retains export and clear controls without putting them in the default view', await page.getByRole('button', { name: 'Export data', exact: true }).isVisible() && await page.getByRole('button', { name: 'Clear local data', exact: true }).isVisible());
+  await page.locator('[data-disclosure="advanced-settings"] > summary').click();
   await page.screenshot({ path: path.join(outDir, '6-settings.png') });
   for (const width of [320, 720, 400]) {
     await page.setViewportSize({ width, height: 900 });

@@ -119,6 +119,17 @@ export function normalizePiazzaThread(item, source) {
   };
 }
 
+export function recentDiscussionThreads(source, { now = Date.now(), days = 7, limit = 3 } = {}) {
+  const cutoff = now - days * 86_400_000;
+  return (source.threads ?? [])
+    .filter(thread => {
+      const posted = Date.parse(thread.createdAt);
+      return posted >= cutoff && posted <= now;
+    })
+    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
+    .slice(0, limit);
+}
+
 export function discussionDocuments(discussions = { sources: [] }) {
   return (discussions.sources ?? []).flatMap((source) => (source.threads ?? []).map((thread) => ({
     id: `discussion:${thread.key}`, discussion_key: thread.key, courseId: source.courseId ?? null,

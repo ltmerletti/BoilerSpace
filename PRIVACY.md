@@ -34,7 +34,7 @@ Discussion retrieval uses a bundled POTION token table and BM25 in a local brows
 
 The beta reads the full available history per connected course, with available replies. Imports run in batches and save progress locally so interrupted imports can resume. Later syncs check history pages and reopen new or changed posts. It omits posts and replies explicitly marked private or deleted. Instructor/student roles are retained so answers can distinguish staff guidance from student suggestions. Attachments and images are not read. Refreshing uses the same read endpoints as the sites, which may update their normal read/view tracking; BoilerSpace does not create posts, reply, vote, or enroll in courses.
 
-Discussion text stays in extension storage until used by Ask or exported. Questions about connected discussions can send matching excerpts and saved replies to Purdue GenAI Studio, with direct thread citations. Disconnecting a discussion source removes its cached posts and course link. Existing chats and exports may still contain quoted discussion content. **Delete all data** clears the discussion cache along with the rest of extension storage.
+Discussion text stays in extension storage until used by Ask or exported. Questions about connected discussions can send matching excerpts and saved replies to Purdue GenAI Studio, with direct thread citations. Disconnecting a discussion source removes its cached posts and course link. Existing chats and exports may still contain quoted discussion content. **Clear local data** clears the discussion cache along with the rest of extension storage.
 
 ## Sign-in and API keys
 
@@ -54,6 +54,6 @@ Browser test profiles and benchmark captures are ignored by Git. The README imag
 
 ## Delete local data
 
-Use **Settings → Data → Data and advanced options → Delete all data** to clear BoilerSpace's extension storage in the current browser profile. This also removes its saved GenAI Studio connection. Exported files, test profiles, and data already sent to Purdue services are not removed by that control. Clearing extension storage does not sign you out of Purdue websites.
+Use **Settings → Advanced → Clear local data** to clear BoilerSpace's extension storage in the current browser profile. This also removes its saved GenAI Studio connection. Exported files, test profiles, and data already sent to Purdue services are not removed by that control. Clearing extension storage does not sign you out of Purdue websites.
 
 For a suspected leak, credential exposure, or unauthorized cross-course access, follow [SECURITY.md](SECURITY.md). For general questions, open a [GitHub issue](https://github.com/ltmerletti/BoilerSpace/issues) with private information removed.

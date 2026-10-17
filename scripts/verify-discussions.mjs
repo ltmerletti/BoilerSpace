@@ -228,7 +228,15 @@ try {
   check('Ask searches an unlinked Piazza course by source_id and cites the instructor reply', (await piazzaAnswer.innerText()).includes('Monday') && (await piazzaAnswer.locator('.sources a').first().getAttribute('href')).startsWith('https://piazza.com/class/example123?cid='));
   await panel.locator('.tabs button[data-view="settings"]').click();
   await panel.locator('[data-disclosure="manage-ed"] > summary').click();
-  await panel.locator('[data-source-id="ed:20"]').getByRole('button', { name: 'Disconnect', exact: true }).click();
+  const edSource = panel.locator('[data-source-id="ed:20"]');
+  check('the class title opens the original site and disconnect is tucked under Options', await edSource.locator('.discussion-class-link').getAttribute('href') === 'https://edstem.org/us/courses/20/discussion' && !(await edSource.getByRole('button', { name: 'Disconnect class', exact: true }).isVisible()));
+  await edSource.locator('[data-disclosure^="source-options-"] > summary').click();
+  await edSource.getByLabel('Brightspace course', { exact: true }).selectOption('');
+  await poll(async () => (await read()).sources.find(source => source.id === 'ed:20').courseId === null, 'manual course unlink');
+  check('Options preserves explicit course-link overrides', (await read()).sources.find(source => source.id === 'ed:20').linkOrigin === 'manual');
+  await edSource.getByLabel('Brightspace course', { exact: true }).selectOption('1600001');
+  await poll(async () => (await read()).sources.find(source => source.id === 'ed:20').courseId === 1600001, 'manual course relink');
+  await edSource.getByRole('button', { name: 'Disconnect class', exact: true }).click();
   await poll(async () => (await read()).sources.length === 2, 'disconnect');
   check('disconnect removes one source and keeps the other connections', !(await read()).sources.some((s) => s.id === 'ed:20'));
   await panel.evaluate(() => chrome.runtime.sendMessage({ type: 'boilerspace-discussions', action: 'remove', sourceId: 'ed:21' }));

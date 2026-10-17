@@ -669,7 +669,12 @@ details > summary:hover {
 }
 
 .course-row:hover {
-  background: var(--sylvite);
+  background: transparent;
+}
+
+.course-row:hover .course-label {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .course-row .course-label {
@@ -705,28 +710,30 @@ details > summary:hover {
   padding: 16px var(--gutter) 0;
 }
 
-.policy {
-  margin: 16px var(--gutter) 0;
-  padding: 12px 14px;
+.back-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 29px;
+  margin-left: -4px;
+  padding: 0 4px;
   border: 0;
-  border-radius: var(--card-radius);
-  background: var(--surface);
-  box-shadow: var(--shadow);
+  background: none;
+  color: var(--tungsten);
+  font-size: 15px;
 }
 
-.policy.prohibited {
-  border-color: #f2b8ba;
-  background: var(--cinnabar-wash);
+.back-button svg {
+  transform: rotate(180deg);
+  width: 14px;
 }
 
-.policy.restricted {
-  border-color: #f6c58d;
-  background: var(--carnelian-wash);
+.back-button:hover {
+  color: var(--celestine);
 }
 
-.policy.allowed {
-  border-color: #a8d8b4;
-  background: var(--olivine-wash);
+.section > details[data-disclosure^='ai-policy-'] {
+  margin-top: 16px;
 }
 
 .policy-stance {
@@ -855,11 +862,6 @@ details > summary:hover {
 
 .messages > * {
   flex-shrink: 0;
-}
-
-.messages > .policy {
-  margin: 0;
-  font-size: 15px;
 }
 
 .empty-chat {
@@ -1279,6 +1281,11 @@ a.cite:hover {
   font-weight: 400;
 }
 
+.field select {
+  width: 100%;
+  min-width: 0;
+}
+
 .error-list {
   margin: 8px 0 0;
   padding-left: 18px;
@@ -1287,9 +1294,62 @@ a.cite:hover {
 }
 
 .discussion-source {
-  margin-top: 16px;
-  padding: 12px 0;
+  padding: 14px 0;
   border-bottom: 1px solid var(--gypsum);
+}
+
+.discussion-source:first-child {
+  padding-top: 0;
+}
+
+.discussion-class-link {
+  display: inline-flex;
+  gap: 7px;
+  align-items: baseline;
+}
+
+.external-mark {
+  flex: none;
+  font-size: 13px;
+  color: var(--tungsten);
+}
+
+.source-danger-action {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--gypsum);
+}
+
+.text-button.danger-text {
+  color: var(--cinnabar);
+}
+
+.platform-actions {
+  padding-top: 14px;
+}
+
+.discussion-preview > details {
+  margin-top: 10px;
+}
+
+.discussion-preview > details .list {
+  margin-top: 10px;
+}
+
+.advanced-settings > details > summary {
+  color: var(--tungsten);
+}
+
+.advanced-settings .button-row {
+  gap: 20px;
+  padding: 4px 0;
+}
+
+.privacy-link {
+  display: inline-block;
+  margin-top: 20px;
+  font-size: 13px;
+  color: var(--tungsten);
 }
 
 .discussion-source .button-row {

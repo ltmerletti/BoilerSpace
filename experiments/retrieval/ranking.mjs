@@ -18,16 +18,21 @@ export function vectorSearch(entries, vectors, query, { courseId = null, limit =
 }
 
 // Reciprocal rank fusion combines rankings without pretending BM25 and cosine share a scale.
-export function fuseRanks(rankings, { limit = 50, k = 60 } = {}) {
+export function fuseRanks(rankings, { limit = 50, k = 60, weights = rankings.map(() => 1) } = {}) {
+  if (weights.length !== rankings.length || weights.some((w) => !Number.isFinite(w) || w < 0)) {
+    throw new Error('Rank-fusion weights must be finite, nonnegative, and match the ranking count.');
+  }
+  if (!Number.isFinite(k) || k <= 0) throw new Error('Rank-fusion k must be positive.');
   const merged = new Map();
-  for (const ranking of rankings) {
+  for (const [source, ranking] of rankings.entries()) {
+    if (!weights[source]) continue;
     const seen = new Set();
     ranking.forEach((entry, rank) => {
       const key = passageKey(entry);
       if (seen.has(key)) return;
       seen.add(key);
       const hit = merged.get(key) ?? { ...entry, score: 0 };
-      hit.score += 1 / (k + rank + 1);
+      hit.score += weights[source] / (k + rank + 1);
       merged.set(key, hit);
     });
   }

@@ -1,5 +1,9 @@
 # Local retrieval experiments
 
+For Ed and Piazza search, use the [discussion-only experiments](../discussions/README.md). The course-corpus results below contain only two discussion probes and do not establish discussion retrieval accuracy.
+
+For the expanded 2025-2026 model runs, quantized results, and browser checks, see [Modern model results](MODERN_RESULTS.md). The original three-model comparison below remains a useful baseline, but its Granite recommendation predates those additional runs.
+
 This branch compares BoilerSpace's existing BM25 search with small embedding models and reciprocal rank fusion (RRF), which combines keyword and semantic rankings. These models find passages; Purdue GenAI Studio still generates answers. The experiment does not change the extension's default search or add a server.
 
 ## Run it

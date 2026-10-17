@@ -42,3 +42,13 @@ test('retrieval metrics count misses and ranks beyond the evaluation window', ()
   assert.deepEqual(rankingMetrics([{ rank: 1 }, { rank: 5 }, { rank: 0 }, { rank: 11 }]), { cases: 4, hitAt1: 0.25, hitAt5: 0.5, hitAt10: 0.5, mrrAt10: 0.3 });
   assert.equal(rankingMetrics([]).hitAt5, 0);
 });
+
+test('weighted rank fusion can prefer semantic evidence and disable a source', () => {
+  const lexical = [{ id: 'keyword', chunkIndex: 0 }, { id: 'answer', chunkIndex: 0 }];
+  const semantic = [...lexical].reverse();
+  assert.equal(fuseRanks([lexical, semantic], { k: 20, weights: [0.5, 1] })[0].id, 'answer');
+  assert.deepEqual(fuseRanks([lexical, semantic], { weights: [0, 1] }).map((e) => e.id), ['answer', 'keyword']);
+  assert.throws(() => fuseRanks([lexical, semantic], { weights: [-1, 1] }), /weights/);
+  assert.throws(() => fuseRanks([lexical, semantic], { weights: [1] }), /weights/);
+  assert.throws(() => fuseRanks([lexical], { k: 0 }), /positive/);
+});

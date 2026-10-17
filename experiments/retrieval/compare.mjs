@@ -75,6 +75,17 @@ const report = { at: new Date().toISOString(), node: process.version, platform: 
 console.log('BM25 production', JSON.stringify(report.bm25Production));
 console.log('BM25 wide', JSON.stringify(report.bm25Wide));
 
+// Export exactly the same passages, labels and lexical rankings for other local runtimes.
+// The export contains private course material and belongs under an ignored directory.
+if (option('--export-dataset', null)) {
+  const target = path.resolve(root, option('--export-dataset'));
+  mkdirSync(path.dirname(target), { recursive: true });
+  writeFileSync(target, JSON.stringify({ report, texts, entries,
+    queries: queries.map((q) => ({ ...q, relevant: [...q.relevant] })), baseline, production }), { mode: 0o600 });
+  console.log(`Local dataset: ${target}`);
+  process.exit(0);
+}
+
 for (const model of models) {
   env.allowRemoteModels = true;
   const rssBeforeLoad = process.memoryUsage().rss;

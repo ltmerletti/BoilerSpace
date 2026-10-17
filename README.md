@@ -1,106 +1,81 @@
-<div align="center">
+<p align="center">
+  <img src="extension/icons/logo.svg" width="80" height="80" alt="BoilerSpace">
+</p>
 
-<img src="extension/icons/icon128.png" width="72" height="72" alt="BoilerSpace">
+<h1 align="center">BoilerSpace</h1>
 
-# BoilerSpace
+<p align="center">Ask questions about your Purdue courses, right in Brightspace.</p>
 
-**Course answers, right beside Brightspace.**
+<p align="center">
+  <a href="#get-started">Get started</a> · <a href="docs/USER_GUIDE.md">User guide</a> · <a href="CHANGELOG.md">Changelog</a>
+</p>
 
-Understand a lecture. Plan your exam review. Find the clarification you missed.
+<p align="center">
+  <a href="https://github.com/ltmerletti/BoilerSpace/actions/workflows/ci.yml"><img src="https://github.com/ltmerletti/BoilerSpace/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-222222?style=flat-square" alt="GPLv3 license"></a>
+</p>
 
-BoilerSpace brings your Purdue course material, syllabi, deadlines, and Ed and Piazza discussions into one browser side panel. Ask a question, let it look through the material, and follow the citations back to the source.
+## Make sense of the slide in front of you
 
-[**Get started**](#get-started) · [See it in use](#see-it-in-use) · [Changelog](CHANGELOG.md) · [Privacy](PRIVACY.md)
+> I'm on slide 14 of Topic 1. Are solar, visible, and shortwave all the same thing? How does he define these labels, and what do we actually need to remember?
 
-[![CI](https://github.com/ltmerletti/BoilerSpace/actions/workflows/ci.yml/badge.svg)](https://github.com/ltmerletti/BoilerSpace/actions/workflows/ci.yml)
-[![License: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
+<a href="docs/images/slide-explanation.png"><img src="docs/images/slide-explanation.png" width="1000" alt="The actual radiation-labeling slide open in Brightspace beside BoilerSpace explaining its three naming conventions with citations"></a>
 
-<img src="docs/images/overview.png" width="1000" alt="BoilerSpace showing a real exam-review conversation beside the course's learning objectives">
+BoilerSpace opens the slide, checks the neighboring material, and reads the lecture's learning goals. Here, it separates the three labeling schemes and finds the instructor's own "Things to remember" slide.
 
-*For Purdue students. Works in Chrome, Firefox, and Zen. No separate BoilerSpace account.*
+You can ask a follow-up without leaving the lecture or starting a new conversation.
 
-</div>
-
-## See it in use
-
-### Turn an exam scope into a study plan
+## Go from exam scope to a review plan
 
 > What does the syllabus say about the midterm, what does it cover, and what should I review in the course materials?
 
-A syllabus can name a module without spelling out everything you need to study. BoilerSpace opens the relevant lecture files and brings their topics and learning objectives into one cited answer.
+<a href="docs/images/overview.png"><img src="docs/images/overview.png" width="1000" alt="A real exam-review answer beside the course's learning objectives, collecting topics from the syllabus and lecture files"></a>
 
-In this real conversation, it also found a detail worth checking. The syllabus named Module 1, while a later lecture summary included the first part of Topic 7. The answer called out that difference and linked both sources.
+One question can take BoilerSpace through the syllabus, lecture decks and learning objectives. In this conversation, it also caught an extra topic included in a later lecture summary and linked both sources.
 
 <details>
 <summary>See the lecture-by-lecture lookup</summary>
 
-<img src="docs/images/exam-research.png" width="640" alt="Expanded activity from the real midterm question, showing BoilerSpace opening the lecture material for learning objectives">
+<img src="docs/images/exam-research.png" width="640" alt="The expanded work log showing the lecture files opened for learning objectives">
 
 </details>
 
-### Find the answer buried in a discussion
+## Find the detail buried in Ed or Piazza
 
-A project handout may leave an edge case unclear. An instructor's reply several weeks ago may already answer it. Ask searches the saved discussion history, including available replies, and cites the original thread.
+**Ed.** Two project events finish on the same tick. Which gets processed first? BoilerSpace finds the instructor's tie-breaking rule and links the reply.
 
-- **Ed · Resolve a project edge case.** Two events finish on the same tick. Which gets processed first? BoilerSpace finds the instructor's tie-breaking rule and links the reply.
-- **Piazza · Catch a changed deadline.** A later announcement extends two projects again. BoilerSpace finds the newer date and distinguishes it from the earlier extension.
+**Piazza.** A later announcement extends two projects again. BoilerSpace finds the revised deadline and distinguishes it from the earlier extension.
 
 <p>
-  <img src="docs/images/ed-clarification.png" width="440" alt="Real Ed-backed answer explaining that simultaneous reviews are processed in increasing official ID order, with a link to the instructor's thread">
-  <img src="docs/images/piazza-update.png" width="440" alt="Real Piazza-backed answer identifying May 1 as the revised deadline and citing both the later announcement and the earlier extension">
+  <img src="docs/images/ed-clarification.png" width="440" alt="An Ed-backed answer explaining the instructor's ordering rule for simultaneous project events">
+  <img src="docs/images/piazza-update.png" width="440" alt="A Piazza-backed answer citing a later deadline extension and the announcement it superseded">
 </p>
 
-### Work through a lecture without losing your place
+Search covers the full saved public history, including older threads and available replies. Connect Ed or Piazza in Settings using your existing sign-ins; clear course matches link to Brightspace automatically.
 
-Keep the lecture open and name the slide, topic, or equation you want to unpack. Ask can read the course file, explain the material, and handle follow-up questions in the same conversation.
+## Your week, in one place
 
-> In the Sun–Earth connection lecture, why is Earth's emission temperature lower than its surface temperature? Walk me through the energy balance.
-
-This is an example of a question to try. The screenshots above use actual saved answers, not scripted demo responses. Course labels are renamed for privacy. [About the screenshots](docs/images/README.md)
-
-## Keep the rest of the course in view
-
-- **Week** brings upcoming assignments, quizzes, and exams together, including dates found in syllabi. Export them to your calendar when you need them elsewhere.
-- **Courses** keeps current classes, syllabi, and upcoming work close by. Syllabi are checked automatically, including Purdue Simple Syllabus pages.
-- **Ask** looks through course files, announcements, syllabi, and connected discussions. Expand its activity to see what it read, or open a citation to inspect the original.
-
-Ed and Piazza are optional. Connect them in Settings using your existing sign-ins. Courses are matched to Brightspace automatically when there is a clear match, and the full available public discussion history is imported, including older posts and replies.
+Assignments, quizzes, exams and syllabus dates come together in **Week**. **Courses** keeps your current classes and syllabi close by. Export upcoming work to your calendar when you need it elsewhere.
 
 ## Get started
 
-You need a Purdue account with access to Brightspace and [Purdue GenAI Studio](https://genai.rcac.purdue.edu). Installation currently uses the source folder. There is no build step, and you do not need Node.js.
+BoilerSpace works in **Chrome, Firefox and Zen**. You need your Purdue Brightspace and [GenAI Studio](https://genai.rcac.purdue.edu) accounts.
 
-**1. Download BoilerSpace.** [Download the source ZIP](https://github.com/ltmerletti/BoilerSpace/archive/refs/heads/main.zip) and extract it. Keep the extracted folder in place.
+1. **[Download the source ZIP](https://github.com/ltmerletti/BoilerSpace/archive/refs/heads/main.zip)** and extract it.
+2. **Load the `extension` folder** using your browser's instructions below.
+3. **Open Brightspace**, click **BoilerSpace**, and connect Purdue GenAI Studio in **Settings**. Approve the requested access. Ed and Piazza are optional connections in the same place.
 
-**2. Load the extension in your browser.**
-
-| Browser | Installation |
+| Browser | Load the extension |
 | --- | --- |
-| **Chrome** | Open `chrome://extensions`, enable **Developer mode**, select **Load unpacked**, and choose the `extension` folder. |
-| **Firefox / Zen** | Open `about:debugging#/runtime/this-firefox`, select **Load Temporary Add-on**, and choose `extension/manifest.json`. Temporary add-ons must be loaded again after quitting the browser. |
+| **Chrome** | Open `chrome://extensions`, enable **Developer mode**, then choose **Load unpacked** and select the `extension` folder. |
+| **Firefox / Zen** | Open `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on**, and select `extension/manifest.json`. Reload it after quitting the browser. |
 
-**3. Open Brightspace and connect.** Sign into [Purdue Brightspace](https://purdue.brightspace.com), open **BoilerSpace** from its navigation bar or your browser toolbar, and connect Purdue GenAI Studio in **Settings**. Approve the requested site access. Connect Ed or Piazza there if you use them.
+Keep the extracted folder in place. There is no build step or separate BoilerSpace account.
 
-Your courses load automatically. Once the material is ready, open **Ask** and start with a course question.
+[Setup, updates and troubleshooting →](docs/USER_GUIDE.md)
 
-[Setup, updates, and troubleshooting →](docs/USER_GUIDE.md)
+---
 
-## Your data
+[Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [Privacy](PRIVACY.md) · [Security](SECURITY.md) · [Screenshot notes](docs/images/README.md)
 
-Course data, conversations, settings, and your GenAI Studio connection are stored in this browser. Answering questions and reading syllabi sends relevant material to **Purdue GenAI Studio** through your account. Grade records and quiz scores are excluded from model inputs.
-
-BoilerSpace has no separate server, account system, or analytics. Ed and Piazza access is read-only. It does not post or reply on your behalf. [Read the privacy details →](PRIVACY.md)
-
-## A few boundaries
-
-BoilerSpace is built for Purdue's Brightspace setup. It reads PDFs, `.pptx`, `.docx`, and HTML when readable content is available. Scanned documents and discussion attachments or images are not currently supported. It stays off active quiz attempt pages.
-
-Answers depend on the available material and the selected GenAI Studio model. Citations make the evidence inspectable; they do not guarantee that every answer is correct. This is an independent project, not an official Purdue or D2L product.
-
-## Help improve BoilerSpace
-
-[Report a bug or suggest an improvement](https://github.com/ltmerletti/BoilerSpace/issues). For development and testing, see [Contributing](CONTRIBUTING.md). Search experiments and evaluation results live in the [technical notes](experiments/discussions/README.md).
-
-[Security](SECURITY.md) · [Code of conduct](CODE_OF_CONDUCT.md) · [Third-party notices](THIRD_PARTY_NOTICES.md)
-
-BoilerSpace's original code is licensed under [GPL-3.0-only](LICENSE). Copyright © 2026 Luke Merletti. Bundled libraries and fonts retain their own licenses.
+[GPL-3.0-only](LICENSE) · Copyright © 2026 Luke Merletti · [Third-party notices](THIRD_PARTY_NOTICES.md)

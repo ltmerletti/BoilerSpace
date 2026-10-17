@@ -6,7 +6,7 @@ What changed, what prompted it, and what it means when you use BoilerSpace. Each
 
 ## In progress
 
-**A clearer introduction to BoilerSpace.** The README now starts with real study workflows, including an exam review, an Ed clarification and a revised Piazza deadline. Detailed setup instructions have their own guide, and screenshots show actual saved answers. This documentation revision is still local (`a83eb1b`).
+**A clearer introduction to BoilerSpace.** The README now starts with a real question about a specific radiation slide, followed by an exam review, an Ed clarification and a revised Piazza deadline. Detailed setup instructions have their own guide, and screenshots show actual saved answers. This documentation revision is still local.
 
 ## October 17, 2026
 

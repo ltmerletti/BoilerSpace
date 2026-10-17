@@ -60,6 +60,7 @@ function seed() {
     genai: { key: 'sk-fake-for-screenshots', model: 'gpt-oss:120b', name: 'Boiler Maker', created: false, linkedAt: now.toISOString() },
     syllabi,
     reviews: {},
+    syllabusAccess: true,
   };
 }
 
@@ -145,17 +146,24 @@ try {
   const modelRequests = [];
   let holdNextResponse = false;
   let releaseHeldResponse;
+  let holdToolResponse = false;
+  let releaseToolResponse;
   await context.route('https://genai.rcac.purdue.edu/**', async (route) => {
     if (route.request().url().endsWith('/api/models')) {
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: [{ id: 'gpt-oss:120b' }, { id: 'qwen3.8:27b' }, { id: 'llama3.3:70b' }, { id: 'nomic-embed-text' }] }) });
     }
     const body = JSON.parse(route.request().postData() ?? '{}');
+    if (body.messages[0]?.content?.startsWith('Name this conversation')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'Weekly deadlines' } }] }) });
     modelRequests.push(body);
     if (holdNextResponse) {
       holdNextResponse = false;
       await new Promise(resolve => { releaseHeldResponse = resolve; });
       await route.abort().catch(() => {});
       return;
+    }
+    if (holdToolResponse && body.messages.at(-1)?.role === 'tool') {
+      holdToolResponse = false;
+      await new Promise(resolve => { releaseToolResponse = resolve; });
     }
     await route.fulfill(fakeModelResponse(body));
   });
@@ -187,6 +195,7 @@ try {
   const consoleErrors = [];
   page.on('pageerror', (err) => consoleErrors.push(err.message));
   page.on('console', (msg) => msg.type() === 'error' && consoleErrors.push(msg.text()));
+  await page.addInitScript(() => { window.syncLabels = []; new MutationObserver(() => { const text = document.querySelector('#sync-status')?.textContent; if (text) window.syncLabels.push(text); }).observe(document, { childList: true, characterData: true, subtree: true }); });
   await page.goto(`chrome-extension://${extensionId}/sidepanel.html`);
   await page.waitForSelector('.setup');
   await page.screenshot({ path: path.join(outDir, '0-first-run.png') });
@@ -206,6 +215,7 @@ try {
   await page.reload();
   await page.waitForSelector('.agenda');
   await page.screenshot({ path: path.join(outDir, '1-week.png') });
+  check('opening a recently synced panel keeps cached syllabi without starting another pass', await page.evaluate(() => !window.syncLabels.some(text => text.includes('Reading syllabi'))));
   check('week shows today with items', (await page.locator('.day.today .item').count()) >= 1);
   check('the selected design uses Brightspace typography and a flat agenda', await page.evaluate(async () => {
     await document.fonts.ready;
@@ -241,7 +251,28 @@ try {
 
   await page.click('.tabs button[data-view="ask"]');
   check('Ask navigation marks the correct view', await page.locator('.tabs [aria-current="page"]').getAttribute('data-view') === 'ask');
-  check('the course selector sits inside the composer and the reminder is removed', await page.locator('.composer .scope select').count() === 1 && !(await page.locator('body').innerText()).includes('Check important details in the cited sources.'));
+  check('the course selector sits inside the composer and the reminder is removed', await page.locator('.composer .scope-button').count() === 1 && !(await page.locator('body').innerText()).includes('Check important details in the cited sources.'));
+  const scopeButton = page.locator('.scope-button');
+  await scopeButton.focus();
+  await page.keyboard.press('ArrowDown');
+  check('the course picker opens with the current course focused', await page.getByRole('option', { selected: true }).evaluate(element => element === document.activeElement));
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  check('keyboard course selection updates the question scope and returns focus', await scopeButton.evaluate(element => element === document.activeElement && element.getAttribute('aria-expanded') === 'false') && !(await scopeButton.innerText()).includes('All my courses'));
+  await scopeButton.click();
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Enter');
+  await scopeButton.click();
+  await page.screenshot({ path: path.join(outDir, '4a-course-picker.png') });
+  check('course choices use compact rows without overflowing the panel', await page.locator('.scope-options').evaluate(element => {
+    const rect = element.getBoundingClientRect();
+    return rect.left >= 0 && rect.right <= innerWidth && rect.bottom <= innerHeight && [...element.children].every(option => option.getBoundingClientRect().height <= 40);
+  }));
+  await page.keyboard.press('Escape');
+  check('Escape closes only the picker and restores its trigger', await scopeButton.evaluate(element => element === document.activeElement && element.getAttribute('aria-expanded') === 'false'));
+  await scopeButton.click();
+  await page.getByRole('heading', { name: 'Ask about your courses' }).click();
+  check('clicking outside dismisses the course picker', await page.locator('.scope-options').evaluate(element => !element.matches(':popover-open')));
   await page.screenshot({ path: path.join(outDir, '4-ask-empty.png') });
   await page.getByLabel('Question', { exact: true }).fill('Keep this draft');
   await page.getByLabel('Question', { exact: true }).evaluate(element => element.setSelectionRange(5, 9));
@@ -249,23 +280,38 @@ try {
   await page.waitForTimeout(200);
   check('background updates preserve the question draft, focus and text selection', await page.getByLabel('Question', { exact: true }).evaluate(element => element.value === 'Keep this draft' && document.activeElement === element && element.selectionStart === 5 && element.selectionEnd === 9));
   await page.fill('.composer textarea', 'What do I have due this week?');
+  holdToolResponse = true;
   await page.click('.composer button[type="submit"]');
+  for (let attempt = 0; !releaseToolResponse && attempt < 100; attempt++) await sleep(50);
+  if (!releaseToolResponse) throw new Error('The fixture did not reach the tool-result review phase.');
+  check('live activity changes from thinking to reviewing tool results', await page.locator('.pending .trace-current').innerText() === 'Reviewing results');
+  await page.locator('.pending .trace > summary').click();
+  await page.locator('.pending .tool-call > summary').click();
+  await page.locator('.pending .trace-reasoning > summary').click();
+  await page.locator('.pending .tool-call > summary').focus();
+  const argumentSummary = await page.locator('.pending .tool-call > summary').elementHandle();
+  await sleep(1100);
+  check('elapsed-time updates preserve expanded details and keyboard focus', await argumentSummary.evaluate(element => element.isConnected && document.activeElement === element && element.parentElement.open) && await page.locator('.pending .trace-reasoning').evaluate(element => element.open));
+  await page.screenshot({ path: path.join(outDir, '4b-tool-results-live.png') });
+  releaseToolResponse();
   await showSources(page.locator('.message.assistant:not(.pending)').last());
   const citeCount = await page.locator('.message.assistant .sources a').count();
   check('ask streams through the tool loop and shows sources', modelRequests.length === 2 && modelRequests.every((r) => r.stream) && citeCount >= 1, `${modelRequests.length} model requests, ${citeCount} sources`);
-  const traceSummary = await page.locator('.message.assistant:not(.pending) .trace summary').textContent();
-  await page.click('.message.assistant:not(.pending) .trace summary');
+  const traceSummary = await page.locator('.message.assistant:not(.pending) .trace > summary').textContent();
+  await page.click('.message.assistant:not(.pending) .trace > summary');
   await page.screenshot({ path: path.join(outDir, '5-ask.png') });
-  const toolShown = await page.isVisible('.trace-steps >> text=list_upcoming(days: 7)');
-  const thoughts = await page.locator('.trace-steps .thought-text').allTextContents();
-  check('the work log shows the reasoning and each tool call', /Used 1 tool/.test(traceSummary) && toolShown && thoughts.some((t) => t.includes('I should call list_upcoming')), `${traceSummary}; ${thoughts.length} thoughts`);
+  check('the activity log clearly names the tool and its result without a reasoning wall', /Used 1 tool/.test(traceSummary) && await page.getByText('Check upcoming work', { exact: true }).isVisible() && await page.locator('.tool-step.complete .tool-result').isVisible() && !(await page.locator('.thought-text').isVisible()) && !(await page.locator('.tool-call > code').isVisible()));
+  await page.locator('.tool-call > summary').click();
+  await page.locator('.trace-reasoning > summary').click();
+  check('arguments and reasoning remain available on demand', await page.locator('.tool-call > code').innerText() === 'list_upcoming(days: 7)' && (await page.locator('.thought-text').innerText()).includes('I should call list_upcoming'));
   check('grades never reach the model', !JSON.stringify(modelRequests).includes('9 / 10'));
 
   await page.click('.ask-bar button[aria-label="New chat"]');
   check('new chat starts empty', await page.isVisible('.empty-chat'));
   await page.click('.ask-bar button[aria-label="Chats"]');
   await page.screenshot({ path: path.join(outDir, '5b-chats.png') });
-  check('the chat list keeps the earlier chat', (await page.locator('.chat-row').count()) === 1 && (await page.isVisible('.chat-name >> text=What do I have due this week?')));
+  await page.locator('.chat-name').filter({ hasText: 'Weekly deadlines' }).waitFor({ timeout: 15000 });
+  check('the chat list keeps the earlier chat', (await page.locator('.chat-row').count()) === 1 && (await page.isVisible('.chat-name >> text=Weekly deadlines')));
   await page.click('.chat-open');
   check('opening a chat brings its messages back', await page.isVisible('.message.user >> text=What do I have due this week?'));
 
@@ -293,7 +339,7 @@ try {
   holdNextResponse = true;
   await page.getByLabel('Question', { exact: true }).fill('What is due next?');
   await page.getByRole('button', { name: 'Send', exact: true }).click();
-  for (let attempt = 0; !releaseHeldResponse && attempt < 100; attempt++) await sleep(50);
+  for (let attempt = 0; !releaseHeldResponse && attempt < 240; attempt++) await sleep(50);
   if (!releaseHeldResponse) throw new Error('The pending response did not reach the fixture.');
   check('real model requests show a compact live work indicator', await page.locator('.pending .trace.live').count() === 1 && !(await page.locator('.pending .trace').evaluate(element => element.open)));
   await page.getByRole('button', { name: 'Stop', exact: true }).click();
@@ -394,7 +440,7 @@ try {
   await frame.locator('.composer textarea').fill('When is my CS 25200 midterm?');
   await frame.locator('.composer button[type="submit"]').click();
   await showSources(frame.locator('.message.assistant:not(.pending)').last());
-  await frame.locator('.message.assistant:not(.pending) .trace summary').last().click();
+  await frame.locator('.message.assistant:not(.pending) .trace > summary').last().click();
   await sleep(200);
   await bs.screenshot({ path: path.join(outDir, '10-brightspace-ask.png') });
   const answer = await frame.locator('.message.assistant:not(.pending)').last().textContent();
@@ -523,6 +569,15 @@ try {
   await legacy.locator('.boilerspace-nav-item button').waitFor();
   check('the older Brightspace header remains supported', await legacy.locator('.boilerspace-nav-item button').isVisible());
   await legacy.close();
+
+  const reloaded = await context.newPage();
+  const staleMarkup = '<style id="stale-layout">html.boilerspace-pushed { margin-right: 400px; }</style><div id="boilerspace-root" data-stale="true"></div><div class="boilerspace-nav-item" data-stale="true"></div>';
+  await reloaded.route('https://purdue.brightspace.com/d2l/reloaded-navbar', route => route.fulfill({ contentType: 'text/html', body: FAKE_HOME.replace('</body>', staleMarkup + '</body>') }));
+  await reloaded.goto('https://purdue.brightspace.com/d2l/reloaded-navbar');
+  await reloaded.locator('.boilerspace-nav-item button').waitFor();
+  check('reloading the extension replaces stale drawers, navbar controls and layout styles', await reloaded.locator('#boilerspace-root').count() === 1 && await reloaded.locator('.boilerspace-nav-item').count() === 1 && await reloaded.locator('[data-stale], #stale-layout').count() === 0);
+  check('the panel host has no box in the Brightspace content flow', await reloaded.locator('#boilerspace-root').evaluate(el => { const r = el.getBoundingClientRect(); return getComputedStyle(el).position === 'fixed' && r.width === 0 && r.height === 0; }));
+  await reloaded.close();
 
   check('no page errors', consoleErrors.length === 0, consoleErrors.join(' | '));
 } catch (error) {

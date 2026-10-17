@@ -37,6 +37,8 @@ let piazzaSignedIn = true;
 let edSignedIn = false;
 let revisedOldPost = false;
 let piazzaThrottled = false;
+let updateProgressDuringAsk = true;
+let updateEvidenceDuringPiazzaAsk = true;
 const operations = [];
 const errors = [];
 const siteDocuments = [];
@@ -94,16 +96,34 @@ try {
     return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ error: null, result }) });
   });
   await context.route('https://purdue.brightspace.com/**', (route) => route.fulfill({ status: 404, body: '{}' }));
-  await context.route('https://genai.rcac.purdue.edu/**', (route) => {
+  await context.route('https://genai.rcac.purdue.edu/**', async (route) => {
     if (route.request().method() === 'GET') {
       const pathname = new URL(route.request().url()).pathname;
       const data = pathname === '/api/v1/auths/' ? { name: 'Synthetic student' } : pathname === '/api/v1/auths/api_key' ? { api_key: 'fixture-model-key' } : { data: [{ id: 'qwen3.8:27b' }] };
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify(data) });
     }
     const body = route.request().postDataJSON();
+    if (body.messages[0]?.content?.startsWith('Name this conversation')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'Discussion deadline' } }] }) });
+    if (updateProgressDuringAsk) {
+      updateProgressDuringAsk = false;
+      await context.serviceWorkers()[0].evaluate(async () => {
+        const { discussions } = await chrome.storage.local.get('discussions');
+        discussions.sources[0].checkedCount = (discussions.sources[0].checkedCount ?? 0) + 1;
+        discussions.sources[0].lastAttemptAt = new Date().toISOString();
+        await chrome.storage.local.set({ discussions });
+      });
+    }
     const lastQuestion = body.messages.findLastIndex((message) => message.role === 'user');
     const toolResults = body.messages.slice(lastQuestion + 1).filter((m) => m.role === 'tool');
     const piazzaQuestion = body.messages[lastQuestion].content.includes('Piazza');
+    if (piazzaQuestion && !toolResults.length && updateEvidenceDuringPiazzaAsk) {
+      updateEvidenceDuringPiazzaAsk = false;
+      await context.serviceWorkers()[0].evaluate(async () => {
+        const { discussions } = await chrome.storage.local.get('discussions');
+        discussions.sources.find(source => source.platform === 'piazza').threads[0].text += '\nA newly saved clarification.';
+        await chrome.storage.local.set({ discussions });
+      });
+    }
     const call = (name, args) => ({ tool_calls: [{ index: 0, id: `call-${toolResults.length}`, type: 'function', function: { name, arguments: JSON.stringify(args) } }] });
     const result = toolResults.length ? JSON.parse(toolResults.at(-1).content) : null;
     let delta;
@@ -226,6 +246,7 @@ try {
   await piazzaAnswer.locator('[data-disclosure^="sources-"] > summary').click({ timeout: 90_000 });
   await piazzaAnswer.locator('.sources a').waitFor();
   check('Ask searches an unlinked Piazza course by source_id and cites the instructor reply', (await piazzaAnswer.innerText()).includes('Monday') && (await piazzaAnswer.locator('.sources a').first().getAttribute('href')).startsWith('https://piazza.com/class/example123?cid='));
+  check('a post update during Ask retries automatically without duplicating the question or treating invalidation as no matches', !updateEvidenceDuringPiazzaAsk && await panel.locator('.message.user').count() === 2 && await panel.locator('.message.assistant:not(.pending)').count() === 2);
   await panel.locator('.tabs button[data-view="settings"]').click();
   await panel.locator('[data-disclosure="manage-ed"] > summary').click();
   const edSource = panel.locator('[data-source-id="ed:20"]');

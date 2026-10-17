@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { snapshotFixture, SYLLABUS_PAGES } from './helpers.mjs';
 import { buildIndex, documentsFromSnapshot, search, tokenize } from '../extension/lib/search.js';
-import { ask, createTools, partialAnswer, resolveCitations, stripStaleCitations, summarizeResult, thinkingText, toolMessageContent } from '../extension/lib/agent.js';
+import { ask, createTools, partialAnswer, resolveCitations, stripStaleCitations, summarizeResult, thinkingText, toolMessageContent, toolPreview } from '../extension/lib/agent.js';
 import { readEventStream } from '../extension/lib/genai.js';
 import { locationUrl } from '../extension/lib/links.js';
 
@@ -150,7 +150,8 @@ test('the agent loop calls tools, passes results back and returns cited sources'
   const answer = await ask({ question: 'What is due this week?', snapshot: snapshotFixture(), syllabi: SYLLABI, reviews: {}, now: NOW, complete, onTrace: (trace) => traces.push(trace) });
 
   assert.deepEqual(traces[0], [{ type: 'tool', name: 'list_upcoming', args: { days: 7 }, label: 'Checking what is due', active: true, summary: null }], 'a running tool shows up before it finishes');
-  assert.deepEqual(answer.trace, [{ type: 'tool', name: 'list_upcoming', args: { days: 7 }, label: 'Checked what is due', active: false, summary: '2 items' }]);
+  assert.deepEqual(answer.trace.map(({ details, ...step }) => step), [{ type: 'tool', name: 'list_upcoming', args: { days: 7 }, label: 'Checked what is due', active: false, summary: '2 items' }]);
+  assert.ok(answer.trace[0].details.some(item => item.text.includes('Quiz 5')));
   assert.deepEqual(answer.steps, ['Checked what is due']);
   assert.equal(calls.length, 2);
   assert.match(calls[0].messages[0].content, /Today is Tuesday, October 13, 2026/);
@@ -479,6 +480,47 @@ test('search_course_material indexes readable course files and quiz metadata, ge
   const failed = await tools.run('read_course_file', { file_key: 'content:78', query: 'slide 12' });
   assert.match(failed.error, /25 MB/);
   assert.match(failed.note, /do not substitute another file/);
+});
+
+
+test('assistant commentary stays ordered before its tool calls and separate from the final answer', async () => {
+  let turn = 0;
+  const answer = await ask({ question: 'What is due?', snapshot: snapshotFixture(), syllabi: {}, now: NOW, requestParams: { reasoning_effort: 'low' }, complete: async body => {
+    assert.equal(body.reasoning_effort, 'low');
+    if (!turn++) return { role: 'assistant', content: 'I will check the upcoming assignments.', tool_calls: [{ id: 'due', type: 'function', function: { name: 'list_upcoming', arguments: '{"days":7}' } }] };
+    return { role: 'assistant', content: 'Quiz 5 is coming up.' };
+  } });
+  assert.equal(answer.trace[0].type, 'commentary');
+  assert.equal(answer.trace[0].text, 'I will check the upcoming assignments.');
+  assert.equal(answer.trace[1].name, 'list_upcoming');
+  assert.equal(answer.text, 'Quiz 5 is coming up.');
+});
+
+test('narration from a separate assistant turn survives the lookup follow-up and later tools', async () => {
+  const narration = 'I will check the posted deadlines first.';
+  let turn = 0;
+  const observed = [];
+  const answer = await ask({ question: 'What is due?', snapshot: snapshotFixture(), syllabi: {}, now: NOW,
+    onTrace: trace => observed.push(trace), onText() {},
+    complete: async (body, { onDelta }) => {
+      if (turn++ === 0) {
+        onDelta(narration, 'Check the course sources.');
+        return { role: 'assistant', content: narration };
+      }
+      if (turn === 2) return { role: 'assistant', content: null, tool_calls: [{ id: 'due', type: 'function', function: { name: 'list_upcoming', arguments: '{"days":7}' } }] };
+      return { role: 'assistant', content: 'Quiz 5 is coming up.' };
+    },
+  });
+  assert.deepEqual(answer.trace.filter(entry => entry.type !== 'thought').map(entry => entry.text ?? entry.name), [narration, 'list_upcoming']);
+  assert.ok(observed.some(trace => trace.some(entry => entry.text === narration)));
+  assert.equal(answer.text, 'Quiz 5 is coming up.');
+});
+
+test('activity previews show useful facts while bounding saved tool output', () => {
+  const preview = toolPreview({ course: 'CS 25200', ai_use: { summary: 'Only for study.' }, syllabus_dates: [{ title: 'Midterm', due_display: 'Thursday' }] });
+  assert.deepEqual(preview.map(item => item.text), ['CS 25200', 'Only for study.', 'Thursday']);
+  const large = toolPreview({ results: Array.from({ length: 40 }, () => ({ title: 'Post', text: 'x'.repeat(10000) })) });
+  assert.ok(large.length <= 6 && large.every(item => item.text.length <= 280));
 });
 
 test('past quizzes with more than forty questions page without gaps or scores', async () => {

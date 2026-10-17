@@ -55,10 +55,18 @@ export class DiscussionSearchClient {
 }
 
 const client = new DiscussionSearchClient();
+export function discussionSearchChanged(before, after) {
+  if (before?.generation !== after?.generation) return true;
+  return JSON.stringify(discussionPassages(before ?? { sources: [] })) !== JSON.stringify(discussionPassages(after ?? { sources: [] }));
+}
+
 // Storage changes include disconnects, edited posts, replies and course relinking.
 // Stop in-flight reads before they can return a removed source's cached evidence.
 globalThis.chrome?.storage?.onChanged?.addListener((changes, area) => {
-  if (area === 'local' && changes.discussions) { client.revision++; client.dispose(); }
+  if (area === 'local' && changes.discussions && discussionSearchChanged(changes.discussions.oldValue, changes.discussions.newValue)) {
+    client.revision++;
+    client.dispose();
+  }
 });
 globalThis.addEventListener?.('pagehide', () => client.dispose());
 
@@ -74,7 +82,11 @@ export function createDiscussionSearch(discussions, { searchClient = client } = 
         .then(buffer => [...new Uint8Array(buffer)].map(b => b.toString(16).padStart(2, '0')).join(''));
       return await searchClient.search(entries, await hashPromise, query, scope, revision);
     } catch {
-      if (revision !== searchClient.revision) return { results: [], method: 'bm25', note: 'Discussion data changed during this question. Ask again to search the updated posts.' };
+      if (revision !== searchClient.revision) {
+        const error = new Error('Discussion posts changed while answering. Please try again with the updated posts.');
+        error.code = 'discussion-data-changed';
+        throw error;
+      }
       return { results: discussionContext(index.rank(query, scope)), method: 'bm25',
         note: 'Semantic discussion search is unavailable; these discussion results use keyword search.' };
     }

@@ -1,6 +1,6 @@
 import { SYLLABUS_SITE, isSyllabusAccessError } from './lib/syllabus-access.js';
 import * as store from './lib/store.js';
-import { BRIGHTSPACE_ORIGIN, canReachBrightspace, connectParentPage, syncNow } from './lib/sync.js';
+import { AUTO_SYNC_INTERVAL_MS, BRIGHTSPACE_ORIGIN, canReachBrightspace, connectParentPage, syncNow } from './lib/sync.js';
 import { lockIsFresh } from './lib/sync-store.js';
 import { DEFAULT_MODEL, getConnection, linkAccount, refreshModels, setModel, unlink } from './lib/genai.js';
 import { choosableFiles, chooseSyllabus, pendingReviews, processCurrentSyllabi, readUploadedSyllabus, usableRecord, withSyllabusSources } from './lib/syllabus.js';
@@ -12,6 +12,8 @@ import { captureBenchmark } from './lib/capture.js';
 import { addDaysToKey, dayKey, daysBetweenKeys, formatDateTime, formatDayKey, formatTime, relativeDay } from './lib/dates.js';
 import { DISCUSSION_SITES, discussionName, discussionRequest, parseDiscussionUrl, recentDiscussionThreads } from './lib/discussions.js';
 import { deadlineIssue } from './lib/deadline-status.js';
+import { chatTitle, chatDate, generateChatTitle } from './lib/chat.js';
+import { thinkingLevels, thinkingLabel, thinkingParams } from './lib/thinking.js';
 
 const sheet = document.createElement('link');
 sheet.rel = 'stylesheet';
@@ -33,7 +35,6 @@ const CONNECT_PAGE = PARAMS.has('connect');
 const ACCESS_PAGE = PARAMS.has('syllabus-access');
 const DISCUSSION_ACCESS = DISCUSSION_SITES[PARAMS.get('discussions-access')] ? PARAMS.get('discussions-access') : null;
 const STOPPED_SYNC_NOTICE_MS = 10 * 60_000;
-const SYNC_ON_OPEN_AFTER_MS = 10 * 60_000;
 
 if (EMBEDDED) connectParentPage();
 
@@ -65,6 +66,7 @@ const state = {
   showChats: false,
   openTraces: new Set(),
   askScope: '',
+  thinkingByModel: {},
   draft: '',
   pending: null,
   abort: null,
@@ -159,11 +161,6 @@ const labelFor = (id) => {
   return course ? shortCourseLabel(course) : '';
 };
 
-const chatTitle = (text) => {
-  const clean = String(text).replace(/\s+/g, ' ').trim();
-  return clean.length > 60 ? `${clean.slice(0, 57)}…` : clean;
-};
-
 // Chats used to be one list under "chat"; keep it as the first session.
 async function loadChats(all) {
   if (all.chats || !all.chat?.length) return all.chats ?? [];
@@ -183,6 +180,7 @@ async function loadState({ includeChat = false } = {}) {
     if (VIEW_NAMES.includes(ui.view)) state.view = ui.view;
     state.courseId = ui.courseId ?? null;
     state.askScope = ui.askScope ?? '';
+    state.thinkingByModel = ui.thinkingByModel ?? {};
     state.activeChatId = state.chats.some((c) => c.id === ui.activeChatId) ? ui.activeChatId : null;
   }
   state.snapshot = withSyllabusSources(all.snapshot, all.syllabusSources);
@@ -251,7 +249,16 @@ async function runSync() {
 }
 
 async function refreshDiscussions(force = false) {
-  if (state.busy.discussions || !state.discussions.sources.length) return;
+  if (!state.discussions.sources.length) return;
+  if (state.pending) {
+    if (force) discussionRetryQueued = true;
+    return;
+  }
+  if (!force && !state.discussions.sources.some(source => source.status === 'syncing' || !source.lastAttemptAt || Date.now() - Date.parse(source.lastAttemptAt) >= 20 * 60_000)) return;
+  if (state.busy.discussions) {
+    if (force) discussionRetryQueued = true;
+    return;
+  }
   state.busy.discussions = true;
   state.discussionError = '';
   render();
@@ -260,11 +267,17 @@ async function refreshDiscussions(force = false) {
   finally {
     state.busy.discussions = false;
     await loadState(); render();
-    if (discussionRefreshQueued) { discussionRefreshQueued = false; refreshDiscussions(); }
+    if (discussionRefreshQueued || discussionRetryQueued) {
+      const retry = discussionRetryQueued;
+      discussionRefreshQueued = false;
+      discussionRetryQueued = false;
+      refreshDiscussions(retry);
+    }
   }
 }
 
 let discussionRefreshQueued = false;
+let discussionRetryQueued = false;
 
 async function syncDiscussionBatches({ force = false, sourceId } = {}) {
   let result;
@@ -273,7 +286,7 @@ async function syncDiscussionBatches({ force = false, sourceId } = {}) {
     force = false;
     await loadState();
     render();
-  } while (result.pending);
+  } while (result.pending && !state.pending);
 }
 
 async function openDiscussionAccess(platform, courseUrl = null) {
@@ -430,8 +443,8 @@ const activeChat = () => state.chats.find((c) => c.id === state.activeChatId) ??
 const chatMessages = () => activeChat()?.messages ?? [];
 
 function saveUi() {
-  const { view, courseId, askScope, activeChatId } = state;
-  store.set(store.KEYS.ui, { view, courseId, askScope, activeChatId }).catch(() => {});
+  const { view, courseId, askScope, activeChatId, thinkingByModel } = state;
+  store.set(store.KEYS.ui, { view, courseId, askScope, activeChatId, thinkingByModel }).catch(() => {});
 }
 
 async function saveChats() {
@@ -451,6 +464,8 @@ function openChat(id) {
   state.openTraces.clear();
   saveUi();
   render();
+  const chat = activeChat();
+  if (chat && !chat.titleGenerated && chat.messages.some(message => message.role === 'assistant' && !message.error)) nameChat(id);
 }
 
 async function deleteChat(id) {
@@ -498,15 +513,19 @@ async function sendQuestion(question, { reuse = false, resume = null } = {}) {
   }
   state.draft = '';
   state.showChats = false;
+  followAnswer = true;
   const keptTrace = (resume?.trace ?? []).map((entry) => ({ ...entry, active: false }));
   state.pending = { chatId, trace: keptTrace, text: '', startedAt: Date.now(), open: false };
   state.abort = new AbortController();
   if (!reuse && !resume) await addMessage(chatId, { id: crypto.randomUUID(), role: 'user', content: text });
   render({ bottom: true });
-  const ticker = setInterval(updatePending, 1000);
+  const ticker = setInterval(() => {
+    const clock = document.querySelector('#pending .trace-time');
+    if (clock && state.pending) clock.textContent = duration(Math.floor((Date.now() - state.pending.startedAt) / 1000));
+  }, 1000);
   let reply;
   try {
-    const answer = await ask({
+    const run = () => ask({
       question: text,
       history,
       snapshot: state.snapshot,
@@ -514,6 +533,7 @@ async function sendQuestion(question, { reuse = false, resume = null } = {}) {
       reviews: state.reviews,
       discussions: state.discussions,
       scopeCourseId,
+      requestParams: thinkingParams(state.genai?.model, state.thinkingByModel[state.genai?.model]),
       signal: state.abort.signal,
       onTrace: (trace) => {
         state.pending.trace = [...keptTrace, ...trace];
@@ -524,6 +544,16 @@ async function sendQuestion(question, { reuse = false, resume = null } = {}) {
         updatePending();
       },
     });
+    let answer;
+    try { answer = await run(); }
+    catch (error) {
+      if (error.code !== 'discussion-data-changed' || state.abort.signal.aborted) throw error;
+      await loadState();
+      state.pending.trace = keptTrace;
+      state.pending.text = '';
+      updatePending();
+      answer = await run();
+    }
     reply = { role: 'assistant', content: answer.text, citations: answer.citations, trace: [...keptTrace, ...storedTrace(answer.trace)] };
   } catch (err) {
     const stopped = err.name === 'AbortError' || state.abort?.signal.aborted;
@@ -538,6 +568,24 @@ async function sendQuestion(question, { reuse = false, resume = null } = {}) {
   state.abort = null;
   await addMessage(chatId, reply);
   render();
+  const retryDiscussions = discussionRetryQueued;
+  discussionRetryQueued = false;
+  refreshDiscussions(retryDiscussions);
+  if (!reply.error && !reply.stopped && !chat.titleGenerated) nameChat(chatId);
+}
+
+const namingChats = new Set();
+async function nameChat(id) {
+  const chat = state.chats.find(chat => chat.id === id);
+  if (!chat || namingChats.has(id)) return;
+  namingChats.add(id);
+  try {
+    const title = await generateChatTitle(chat.messages, { signal: AbortSignal.timeout(30_000) });
+    state.chats = state.chats.map(chat => chat.id === id ? { ...chat, title, titleGenerated: true } : chat);
+    await saveChats();
+    if (state.view === 'ask' && !state.pending) render();
+  } catch { /* The short local title remains available if naming fails. */ }
+  finally { namingChats.delete(id); }
 }
 
 async function retryMessage(index) {
@@ -915,7 +963,7 @@ function coursesList() {
   const items = agendaItems(state.snapshot, state.syllabi, state.reviews);
   const now = new Date().toISOString();
   return [
-    viewHeading('Courses', `${plural(list.length, 'current course')}`),
+    viewHeading('Courses'),
     state.genai && h('div', { class: 'syllabus-controls' },
       h('p', { class: 'meta', id: 'syllabus-sync-status' }, syllabusSyncLine()),
       h('button', { class: 'text-button', type: 'button', disabled: state.busy.syllabi, onclick: () => processSyllabi({ force: true }) }, 'Check again'),
@@ -1161,28 +1209,50 @@ const formatArgs = (args) =>
     .map(([key, value]) => `${key}: ${typeof value === 'string' ? `"${value}"` : JSON.stringify(value)}`)
     .join(', ');
 
-function traceStep(entry) {
-  if (entry.type === 'thought') {
-    return h('li', null, h('div', { class: 'trace-label' }, 'Thinking'), h('div', { class: 'thought-text' }, entry.text));
-  }
+const TOOL_TITLES = {
+  list_courses: 'Find courses',
+  list_upcoming: 'Check upcoming work',
+  list_items: 'Find quizzes and assignments',
+  get_item: 'Read assignment',
+  read_quiz: 'Read quiz',
+  search_course_material: 'Search course material',
+  get_syllabus_facts: 'Check syllabus',
+  list_announcements: 'Find announcements',
+  list_discussions: 'Find Ed and Piazza posts',
+  read_discussion: 'Read discussion and replies',
+  list_course_files: 'Find course files',
+  read_course_file: 'Read course file',
+};
+
+function traceStep(entry, key) {
+  const failed = entry.summary?.startsWith('Failed');
+  const stopped = entry.name && !entry.active && !entry.summary;
+  const status = entry.active ? 'running' : failed ? 'failed' : stopped ? 'stopped' : 'complete';
   return h(
     'li',
-    null,
-    h('div', { class: 'trace-label' }, entry.active && h('span', { class: 'spinner' }), entry.label),
-    entry.name && h('div', { class: 'tool-call' }, h('code', null, `${entry.name}(${formatArgs(entry.args)})`)),
-    entry.summary && h('div', { class: `tool-result${entry.summary.startsWith('Failed') ? ' failed' : ''}` }, entry.summary),
+    { class: `tool-step ${status}`, 'data-tool': entry.name, 'aria-busy': String(Boolean(entry.active)) },
+    h('span', { class: `tool-status${entry.active ? ' spinner' : ''}`, 'aria-label': entry.active ? 'Running' : failed ? 'Failed' : stopped ? 'Stopped' : 'Complete' }, entry.active ? null : failed ? '!' : stopped ? '–' : '✓'),
+    h('div', { class: 'tool-content' },
+      h('div', { class: 'trace-label' }, TOOL_TITLES[entry.name] ?? entry.name?.replaceAll('_', ' ') ?? entry.label),
+      entry.name && h('div', { class: 'tool-action' }, entry.label),
+      entry.args?.query && h('div', { class: 'tool-query' }, `“${entry.args.query}”`),
+      h('div', { class: 'tool-result' }, entry.active ? 'Running…' : stopped ? 'Stopped' : entry.summary),
+      entry.name && h('details', { class: 'tool-call', 'data-disclosure': `${key}-arguments` },
+        h('summary', { 'data-focus-key': `${key}-arguments` }, 'Details', icon('chevron')),
+        h('code', null, `${entry.name}(${formatArgs(entry.args)})`),
+        entry.details?.length > 0 && h('dl', { class: 'tool-preview' }, entry.details.map(item => [h('dt', null, item.label), h('dd', null, item.text)]))),
+    ),
   );
 }
 
-// The work log above an answer: the model's reasoning and each tool it called, collapsible.
-function traceView(trace, { live = false, seconds = 0, open = false, ontoggle, writing = false }) {
+function traceView(trace, { key, live = false, seconds = 0, open = false, ontoggle, writing = false }) {
   if (!trace.length && !live) return null;
   const tools = trace.filter((e) => e.type === 'tool');
   let summary;
   if (live) {
-    const last = trace.at(-1);
-    const doing = writing ? 'Writing the answer' : last?.type === 'tool' && last.active ? last.label : 'Thinking';
-    summary = [h('span', { class: 'spinner' }), seconds >= 1 ? `${doing}, ${duration(seconds)}` : doing];
+    const active = tools.findLast(entry => entry.active);
+    const doing = writing ? 'Writing the answer' : active ? (TOOL_TITLES[active.name] ?? active.label) : tools.length ? 'Reviewing results' : 'Thinking';
+    summary = [h('span', { class: 'spinner' }), h('span', { class: 'trace-current', role: 'status' }, doing), h('span', { class: 'trace-time' }, duration(seconds)), icon('chevron')];
   } else {
     const time = seconds ? ` in ${duration(seconds)}` : '';
     summary = [icon('chevron'), tools.length ? `Used ${plural(tools.length, 'tool')}${time}` : `Thought${seconds ? ` for ${duration(seconds)}` : ''}`];
@@ -1190,8 +1260,14 @@ function traceView(trace, { live = false, seconds = 0, open = false, ontoggle, w
   return h(
     'details',
     { class: `trace${live ? ' live' : ''}`, open, ontoggle },
-    h('summary', null, summary),
-    trace.length > 0 && h('ol', { class: 'trace-steps' }, trace.map(traceStep)),
+    h('summary', { 'data-focus-key': `${key}-toggle` }, summary),
+    trace.some(entry => entry.type !== 'thought') && h('ol', { class: 'trace-steps', 'aria-label': 'Tool activity' }, trace.map((entry, index) =>
+      entry.type === 'thought' ? null : entry.type === 'commentary'
+        ? h('li', { class: 'trace-commentary' }, answerBody(entry.text))
+        : traceStep(entry, `${key}-tool-${index}`))),
+    trace.some(entry => entry.type === 'thought' && entry.text) && h('details', { class: 'trace-reasoning', 'data-disclosure': `${key}-reasoning` },
+      h('summary', { 'data-focus-key': `${key}-reasoning` }, 'Reasoning'),
+      h('div', { class: 'thought-text' }, trace.filter(entry => entry.type === 'thought').map(entry => h('p', null, entry.text)))),
   );
 }
 
@@ -1202,6 +1278,7 @@ function messageView(message, index) {
   if (message.role === 'user') return h('div', { class: 'message user' }, message.content);
   const key = message.id ?? `i${index}`;
   const trace = traceView(messageTrace(message), {
+    key: `trace-${state.activeChatId}-${key}`,
     seconds: message.seconds ?? 0,
     open: state.openTraces.has(key),
     ontoggle: (e) => (e.target.open ? state.openTraces.add(key) : state.openTraces.delete(key)),
@@ -1256,8 +1333,9 @@ function pendingView() {
   const p = state.pending;
   return h(
     'div',
-    { class: 'message assistant pending', id: 'pending' },
+    { class: 'message assistant pending', id: 'pending', style: `--activity-delay:-${(Date.now() - p.startedAt) % 1200}ms` },
     traceView(p.trace, {
+      key: `trace-${p.chatId}-pending`,
       live: true,
       writing: Boolean(p.text),
       seconds: Math.floor((Date.now() - p.startedAt) / 1000),
@@ -1268,16 +1346,38 @@ function pendingView() {
   );
 }
 
+let pendingFrame = null;
+let followAnswer = true;
+
 function updatePending() {
+  if (pendingFrame !== null) return;
+  pendingFrame = requestAnimationFrame(() => {
+    pendingFrame = null;
+    paintPending();
+  });
+}
+
+function paintPending() {
   const el = document.getElementById('pending');
   if (!el || !state.pending) return;
   const main = document.querySelector('.messages');
   if (!main) return;
-  const atBottom = main.scrollHeight - main.scrollTop - main.clientHeight < 60;
+  const scroll = main.scrollTop;
+  const disclosures = [...el.querySelectorAll('details[data-disclosure]')].map(details => ({ key: details.dataset.disclosure, open: details.open, scroll: details.querySelector('.thought-text')?.scrollTop }));
+  const focusKey = el.contains(document.activeElement) && document.activeElement.dataset.focusKey;
   const next = pendingView();
+  for (const details of next.querySelectorAll('details[data-disclosure]')) {
+    const previous = disclosures.find(item => item.key === details.dataset.disclosure);
+    if (previous) details.open = previous.open;
+  }
   el.replaceWith(next);
-  for (const box of next.querySelectorAll('.thought-text')) box.scrollTop = box.scrollHeight;
-  if (atBottom) main.scrollTop = main.scrollHeight;
+  for (const details of next.querySelectorAll('details[data-disclosure]')) {
+    const previous = disclosures.find(item => item.key === details.dataset.disclosure);
+    const box = details.querySelector('.thought-text');
+    if (box && previous?.scroll !== undefined) box.scrollTop = previous.scroll;
+  }
+  if (focusKey) [...next.querySelectorAll('[data-focus-key]')].find(element => element.dataset.focusKey === focusKey)?.focus({ preventScroll: true });
+  main.scrollTop = followAnswer ? main.scrollHeight : scroll;
 }
 
 function chatList() {
@@ -1292,8 +1392,8 @@ function chatList() {
         h(
           'button',
           { class: 'chat-open', type: 'button', onclick: () => openChat(chat.id) },
-          h('span', { class: 'chat-name' }, chat.title),
-          h('span', { class: 'meta' }, `${relativeDay(chat.updatedAt)}, ${plural(chat.messages.filter((m) => m.role === 'user').length, 'question')}`),
+          h('span', { class: 'chat-name', title: chat.title }, chatTitle(chat.title)),
+          h('span', { class: 'meta' }, chatDate(chat.updatedAt)),
         ),
         h('button', { class: 'icon-button', type: 'button', title: 'Delete chat', 'aria-label': `Delete chat: ${chat.title}`, disabled: state.pending?.chatId === chat.id, onclick: () => deleteChat(chat.id) }, icon('delete')),
       ),
@@ -1306,7 +1406,7 @@ function askBar() {
   return h(
     'div',
     { class: 'ask-bar' },
-    h('span', { class: 'chat-title' }, state.showChats ? 'Chats' : chat?.title ?? 'New chat'),
+    h('span', { class: 'chat-title', title: chat?.title }, state.showChats ? 'Chats' : chat ? chatTitle(chat.title) : 'New chat'),
     h(
       'button',
       {
@@ -1321,6 +1421,88 @@ function askBar() {
     ),
     h('button', { class: 'icon-button', type: 'button', title: 'New chat', 'aria-label': 'New chat', disabled: Boolean(state.pending), onclick: () => openChat(null) }, icon('new')),
   );
+}
+
+function coursePicker() {
+  const choices = [{ id: '', label: 'All my courses' }, ...courses().map(course => ({ id: String(course.id), label: shortCourseLabel(course) }))];
+  const selected = choices.find(choice => choice.id === state.askScope) ?? choices[0];
+  const close = (restoreFocus = false) => {
+    menu.hidePopover();
+    button.setAttribute('aria-expanded', 'false');
+    if (restoreFocus) button.focus({ preventScroll: true });
+  };
+  const options = choices.map(choice => h('button', {
+    type: 'button', role: 'option', 'aria-selected': String(choice.id === selected.id), tabindex: '-1',
+    onclick: () => {
+      state.askScope = choice.id;
+      close();
+      saveUi();
+      render();
+      document.querySelector('[data-focus-key="ask-scope"]')?.focus({ preventScroll: true });
+    },
+  }, h('span', { class: 'scope-check', 'aria-hidden': 'true' }, choice.id === selected.id ? '✓' : ''), choice.label));
+  const menu = h('div', {
+    id: 'ask-course-options', class: 'scope-options', popover: 'auto', role: 'listbox', 'aria-label': 'Course',
+    ontoggle: event => button.setAttribute('aria-expanded', String(event.newState === 'open')),
+    onkeydown: event => {
+      const index = options.indexOf(document.activeElement);
+      const target = { ArrowDown: Math.min(index + 1, options.length - 1), ArrowUp: Math.max(index - 1, 0), Home: 0, End: options.length - 1 }[event.key];
+      if (target !== undefined) { event.preventDefault(); options[target].focus(); }
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(true); }
+      if (event.key === 'Tab') close();
+    },
+  }, options);
+  const open = () => {
+    menu.showPopover();
+    button.setAttribute('aria-expanded', 'true');
+    const rect = button.getBoundingClientRect();
+    menu.style.left = `${Math.max(8, Math.min(rect.left, innerWidth - menu.offsetWidth - 8))}px`;
+    menu.style.bottom = `${innerHeight - rect.top + 7}px`;
+    menu.style.maxHeight = `${Math.max(40, Math.min(280, rect.top - 15))}px`;
+    options[choices.indexOf(selected)].focus({ preventScroll: true });
+    options[choices.indexOf(selected)].scrollIntoView({ block: 'nearest' });
+  };
+  const button = h('button', {
+    class: 'scope-button', type: 'button', 'data-focus-key': 'ask-scope', 'aria-label': `Course: ${selected.label}`,
+    'aria-haspopup': 'listbox', 'aria-controls': menu.id, 'aria-expanded': 'false',
+    onclick: () => menu.matches(':popover-open') ? close() : open(),
+    onkeydown: event => {
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); open(); }
+      if (event.key === 'Escape' && menu.matches(':popover-open')) { event.preventDefault(); event.stopPropagation(); close(); }
+    },
+  }, h('span', null, selected.label), icon('chevron'));
+  return h('div', { class: 'scope' }, button, menu);
+}
+
+function thinkingPicker() {
+  const model = state.genai?.model;
+  const levels = thinkingLevels(model);
+  if (!levels.length) return null;
+  const level = levels.includes(state.thinkingByModel[model]) ? state.thinkingByModel[model] : 'default';
+  const value = h('span', null, thinkingLabel(level));
+  const label = h('output', null, thinkingLabel(level));
+  const slider = h('input', { type: 'range', min: 0, max: levels.length - 1, step: 1, value: levels.indexOf(level), disabled: Boolean(state.pending), 'aria-label': 'Thinking level', 'aria-valuetext': thinkingLabel(level),
+    oninput: event => {
+      const selected = levels[Number(event.target.value)];
+      value.textContent = label.textContent = thinkingLabel(selected);
+      event.target.setAttribute('aria-valuetext', thinkingLabel(selected));
+    },
+    onchange: event => { state.thinkingByModel[model] = levels[Number(event.target.value)]; saveUi(); },
+  });
+  const button = h('button', { type: 'button', class: 'thinking-trigger', title: 'Thinking level', 'aria-label': 'Thinking level', 'aria-haspopup': 'dialog', 'aria-expanded': 'false', disabled: Boolean(state.pending), 'data-focus-key': 'thinking-picker' }, icon('sliders'), value);
+  const menu = h('div', { class: 'thinking-options', popover: 'auto', role: 'dialog', 'aria-label': 'Thinking options',
+    ontoggle: event => button.setAttribute('aria-expanded', String(event.newState === 'open')),
+  }, h('label', null, 'Thinking', label), slider,
+    h('div', { class: 'thinking-stops', 'aria-hidden': 'true' }, levels.map(level => h('span', null, thinkingLabel(level)))));
+  button.addEventListener('click', () => {
+    if (menu.matches(':popover-open')) return menu.hidePopover();
+    menu.showPopover();
+    const rect = button.getBoundingClientRect();
+    menu.style.left = `${Math.max(12, Math.min(rect.right - menu.offsetWidth, innerWidth - menu.offsetWidth - 12))}px`;
+    menu.style.top = `${Math.max(8, rect.top - menu.offsetHeight - 10)}px`;
+    slider.focus({ preventScroll: true });
+  });
+  return h('div', { class: 'thinking-picker' }, button, menu);
 }
 
 function askView() {
@@ -1356,24 +1538,19 @@ function askView() {
   const messages = chatMessages();
   const pendingHere = state.pending?.chatId === state.activeChatId ? state.pending : null;
   const empty = messages.length === 0 && !pendingHere;
-  const scope = h(
-    'label',
-    { class: 'scope' },
-    h('span', { class: 'sr-only' }, 'Course'),
-    h(
-      'select',
-      { 'data-focus-key': 'ask-scope', onchange: (e) => ((state.askScope = e.target.value), saveUi(), render()) },
-      h('option', { value: '' }, 'All my courses'),
-      courses().map((c) => h('option', { value: String(c.id), selected: state.askScope === String(c.id) }, shortCourseLabel(c))),
-    ),
-  );
+  const scope = coursePicker();
   return h(
     'div',
     { class: 'ask' },
     askBar(),
     h(
       'div',
-      { class: 'messages', 'aria-label': 'Conversation' },
+      { class: 'messages', 'aria-label': 'Conversation',
+        onwheel: event => { if (event.deltaY < 0) followAnswer = false; },
+        ontouchmove: () => { followAnswer = false; },
+        onkeydown: event => { if (['ArrowUp', 'PageUp', 'Home'].includes(event.key)) followAnswer = false; },
+        onscroll: event => { const el = event.currentTarget; followAnswer = el.scrollHeight - el.scrollTop - el.clientHeight < 12; },
+      },
       empty &&
         h(
           'div',
@@ -1388,7 +1565,7 @@ function askView() {
     h(
       'div',
       { class: 'composer' },
-      h('form', { onsubmit: (e) => (e.preventDefault(), sendQuestion(state.draft)) }, textarea, h('div', { class: 'composer-tools' }, scope, send)),
+      h('form', { onsubmit: (e) => (e.preventDefault(), sendQuestion(state.draft)) }, textarea, h('div', { class: 'composer-tools' }, scope, thinkingPicker(), send)),
     ),
   );
 }
@@ -1625,7 +1802,7 @@ function render({ top = false, bottom = false } = {}) {
   const textarea = main.querySelector('.composer textarea');
   if (textarea?.value) { textarea.style.height = 'auto'; textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`; }
   const nextScroller = main.querySelector('.messages') ?? main;
-  if (state.view === 'ask' && (top || bottom || atBottom)) nextScroller.scrollTop = nextScroller.scrollHeight;
+  if (state.view === 'ask' && (top || bottom || (state.pending ? followAnswer : atBottom))) nextScroller.scrollTop = nextScroller.scrollHeight;
   else nextScroller.scrollTop = top ? 0 : scroll;
   for (const button of document.querySelectorAll('.tabs button')) {
     button.toggleAttribute('aria-current', false);
@@ -1696,6 +1873,10 @@ async function init() {
   await loadState({ includeChat: true });
   render();
 
+  window.addEventListener('online', () => {
+    if (state.discussions.sources.some(source => source.status === 'error' || source.sync)) refreshDiscussions(true);
+  });
+
   store.onChange(async (changes) => {
     const keys = Object.keys(changes);
     if (changes.chats && !state.pending) {
@@ -1749,8 +1930,8 @@ async function init() {
 
   // Sync on open if Brightspace is reachable; otherwise wait for the student to ask.
   const syncAge = state.syncMeta?.lastSuccessAt ? Date.now() - Date.parse(state.syncMeta.lastSuccessAt) : Infinity;
-  if (syncAge > SYNC_ON_OPEN_AFTER_MS && (await attempt(canReachBrightspace))) runSync();
-  else processSyllabi();
+  if (syncAge > AUTO_SYNC_INTERVAL_MS && (await attempt(canReachBrightspace))) runSync();
+  else if (courses().some(course => !state.syllabi[course.id])) processSyllabi();
   refreshDiscussions();
   setInterval(() => { if (document.visibilityState === 'visible') refreshDiscussions(); }, 20 * 60_000);
 }

@@ -4,12 +4,37 @@ import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { discussionEncoder } from '../extension/lib/discussion-embedding.js';
 import { discussionPassages, discussionIndex, discussionContext } from '../extension/lib/discussion-ranking.js';
-import { createDiscussionSearch, DiscussionSearchClient } from '../extension/lib/discussion-search.js';
+import { createDiscussionSearch, DiscussionSearchClient, discussionSearchChanged } from '../extension/lib/discussion-search.js';
 import { createTools } from '../extension/lib/agent.js';
 import { snapshotFixture } from './helpers.mjs';
 
 const capture = (text = 'The report deadline is Friday.', key = 'ed:1:10') => ({ sources: [{ id: 'ed:1', name: 'Course one', courseId: 1600001, threads: [{ key, title: 'Project deadline', text: 'When is the report due?', role: 'student', number: 10, url: 'https://edstem.org/us/courses/1/discussion/10', replies: [{ id: 'r1', role: 'instructor', endorsed: true, text }] }] },
   { id: 'piazza:old', name: 'Older course', courseId: null, threads: [{ key: 'piazza:old:9', number: 9, title: 'Other deadline', text: 'Friday report submission is cancelled.', role: 'student', url: 'https://piazza.com/class/old?cid=9', replies: [] }] }] });
+
+test('sync progress alone does not invalidate an active discussion question', () => {
+  const before = capture(), after = structuredClone(before);
+  Object.assign(after.sources[0], { status: 'syncing', sync: { offset: 30, seenIds: ['10'] }, lastAttemptAt: '2026-10-17', checkedCount: 30 });
+  assert.equal(discussionSearchChanged(before, after), false);
+  after.sources[0].status = 'done';
+  after.sources[0].lastSyncedAt = '2026-10-18';
+  assert.equal(discussionSearchChanged(before, after), false);
+});
+
+test('evidence changes, disconnects, relinking and clearing still invalidate discussion search', () => {
+  const before = capture();
+  for (const change of [
+    data => { data.sources[0].threads[0].replies[0].text = 'The deadline is now Monday.'; },
+    data => { data.sources[0].threads[0].replies[0].role = 'student'; },
+    data => { data.sources[0].courseId = null; },
+    data => { data.sources.shift(); },
+    data => { data.sources[0].threads = []; },
+    data => { data.generation = 'new-storage-generation'; },
+  ]) {
+    const after = structuredClone(before); change(after);
+    assert.equal(discussionSearchChanged(before, after), true);
+  }
+  assert.equal(discussionSearchChanged(before, undefined), true);
+});
 
 test('discussion chunking retains overlapping reply text and exact source scope', () => {
   const text = 'context '.repeat(250) + 'UNIQUEANSWER', entries = discussionPassages(capture(text));
@@ -84,11 +109,9 @@ test('unavailable semantic search returns scoped keyword evidence and an explici
   assert.ok(result.results[0].text.includes('instructor endorsed:'));
 });
 
-test('a source invalidated during search returns no old or disconnected evidence', async () => {
+test('a source invalidated during search requests a fresh question snapshot instead of returning a false search miss', async () => {
   const fake = { revision: 1, search: async () => { fake.revision++; throw new Error('Changed.'); } };
-  const result = await createDiscussionSearch(capture(), { searchClient: fake })('report', {});
-  assert.equal(result.results.length, 0);
-  assert.match(result.note, /changed/);
+  await assert.rejects(createDiscussionSearch(capture(), { searchClient: fake })('report', {}), error => error.code === 'discussion-data-changed');
 });
 
 test('the worker is reused, receives replaced corpora, releases memory when idle, and restarts', async () => {

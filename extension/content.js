@@ -18,6 +18,12 @@
   window.__boilerspaceLoaded = true;
   if (location.pathname.startsWith('/d2l/lms/quizzing/user/attempt/') || location.pathname.startsWith('/d2l/login')) return;
 
+  // Reloading an unpacked extension can leave its previous DOM behind in an open tab.
+  document.querySelectorAll('#boilerspace-root, .boilerspace-nav-item').forEach(node => node.remove());
+  document.querySelectorAll('style').forEach(style => {
+    if (style.textContent.trimStart().startsWith('html.boilerspace-pushed')) style.remove();
+  });
+
   const extensionUrl = (path) => chrome.runtime.getURL(path);
   const extensionOrigin = new URL(extensionUrl('')).origin;
   const loadLib = (name) => import(extensionUrl(`lib/${name}`));
@@ -99,7 +105,7 @@
   const shadow = root.attachShadow({ mode: 'open' });
   shadow.innerHTML = `
     <style>
-      :host { all: initial; }
+      :host { all: initial; position: fixed; top: 0; right: 0; width: 0; height: 0; z-index: 2147483000; }
       .drawer {
         position: fixed; top: 0; right: 0; z-index: 2147483000;
         width: var(--boilerspace-width, ${DEFAULT_WIDTH}px); max-width: 100vw; height: 100vh;

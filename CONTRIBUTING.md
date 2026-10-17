@@ -34,11 +34,15 @@ export BOILERSPACE_FIXTURES_DIR=.verify-tmp/Brightspace-Bar/session-capture/test
 node scripts/verify.mjs ./node_modules/playwright/index.mjs
 node scripts/verify-syllabi.mjs ./node_modules/playwright/index.mjs
 node scripts/verify-discussions.mjs ./node_modules/playwright/index.mjs
+node scripts/verify-discussion-recovery.mjs
+node scripts/verify-chat-streaming.mjs
 ```
 
 These scripts use throwaway Chromium profiles. The broader interface check runs headlessly by default; set `VERIFY_HEADED=1` to open a visible window. The syllabus check always opens a visible window. Brightspace and GenAI Studio requests are intercepted with fixtures. They do not use your real course session. `verify.mjs` checks the wider interface; `verify-syllabi.mjs` checks delayed syllabus rendering, missing sections, permissions, retries, fresh downloads, and concurrent readers.
 
 `verify-discussions.mjs` checks direct Ed/Piazza discovery, course matching, paginated history, incremental updates, full replies, expired-session recovery, disconnects, and Ask citations using synthetic sites. It also covers simulated permission denial and retry, automatic continuation after sign-in, an embedded permission handoff, saved form state during updates, and GenAI account linking. The temporary extension pre-grants discussion hosts so native permission prompts do not need a person in CI; the application still calls the real permission API for successful connections. No discussion credentials or course captures are needed.
+
+`verify-discussion-recovery.mjs` restarts a disposable browser between import batches, restores an interrupted offline import, and checks expired sessions, edited or removed posts, and temporary-tab cleanup. `verify-chat-streaming.mjs` feeds incremental SSE to the actual panel and checks manual scrolling, resumed scrolling at the bottom, narration across multiple assistant/tool rounds, saved activity after reopening, and tool previews. Both use synthetic data.
 
 `verify.mjs` checks 320, 400 and 720 pixel panel widths, dark mode, active navigation, keyboard text selection and drafts surviving background changes. Course checks cover dark hover and the collapsed AI policy. Discussion checks exercise the class Options controls and manual course-link overrides. Ask checks include the pinned composer, scrollable history, expandable sources, answer copying and cancellation of a pending model request. Screenshots use reduced motion so transient tab highlights do not enter captures.
 
@@ -46,7 +50,7 @@ Use `VERIFY_OUT=/tmp/boilerspace-verification` to choose a screenshot directory.
 
 ### Continuous integration
 
-[CI](https://github.com/ltmerletti/BoilerSpace/actions/workflows/ci.yml) runs on pushes and pull requests, and can also be started manually from GitHub Actions. It runs the unit suite on Node.js 22 and 24; the interface, syllabus and discussion Chromium suites; and the discussion-worker checks in Chromium and Firefox. The interface, discussion and worker suites run headlessly; the syllabus suite uses visible Chromium under `xvfb-run`. The broader interface suite saves a Playwright trace and page state if it throws.
+[CI](https://github.com/ltmerletti/BoilerSpace/actions/workflows/ci.yml) runs on pushes and pull requests, and can also be started manually from GitHub Actions. It runs the unit suite on Node.js 22 and 24; the interface, chat streaming, syllabus, discussion and recovery Chromium suites; and the discussion-worker checks in Chromium and Firefox. The interface, discussion and worker suites run headlessly; the syllabus suite uses visible Chromium under `xvfb-run`. The broader interface suite saves a Playwright trace and page state if it throws.
 
 CI installs from `package-lock.json` and checks out the public fixtures at the same pinned commit shown above. It needs no Purdue credentials, API keys, or repository secrets. Each browser job uploads any generated fixture-test screenshots for seven days, including on failure. New runs cancel older runs on the same branch or pull request.
 

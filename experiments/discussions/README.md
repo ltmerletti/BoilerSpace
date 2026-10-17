@@ -139,7 +139,21 @@ Native process RSS is not incremental browser RAM. The visible Jina q4 WebGPU qu
 
 ## Tests and merge readiness
 
-The feature passed **186 unit tests** locally. CI covers Node 22/24 units, Chromium UI, syllabus and discussion integration, and retrieval-worker checks in Chromium and Firefox. The full 330-case extension-tool replay passed in Chromium and Zen. Three real Qwen questions, one per connected Ed/Piazza class, each used semantic search, opened the expected thread and cited its original post without tool errors. These are smoke checks, not an answer-accuracy benchmark.
+The branch passed **200 unit tests**, **73 interface checks** and **17 chat streaming/control checks** locally on October 17, 2026. Streaming checks include multiple narration/tool rounds, narration from a separate assistant turn, and saved activity after reopening the panel. CI covers Node 22/24 units, Chromium UI, incremental chat streaming, syllabus and discussion integration, restart/offline recovery, and retrieval-worker checks in Chromium and Firefox. The full 330-case extension-tool replay passed in Chromium and Zen. Live-site verification is separate from the credential-free CI fixtures.
+
+A fresh signed-in Zen 1.23.3b profile completed both Ed histories (157 and 365 public posts) and the Piazza history (931 posts). A real Ask question for each source returned the expected original-site citation, and the model generated short chat titles. Native site prompts were approved by the account holder. Firefox now registers its waking listeners synchronously and returns a native message promise; short import batches preserve progress in throttled tabs. These checks use one account, not an independent multi-student sample.
+
+A frozen **40-question Qwen3.8:27b answer check** adds thirty primary questions, four follow-up or multi-thread challenges, and six clarification or abstention probes. It uses a later saved snapshot of 1,452 public threads, separate from the 1,448-thread retrieval corpus. Selection was deterministic and balanced across the three discussion sources before answer generation. The corpus and exact source quotes were checked locally. Private prompts, posts, answers and per-case review remain outside Git.
+
+| Answer check | Core answer correctness | Probe intent |
+| --- | ---: | ---: |
+| Initial full run | 32/34 | 6/6 |
+| Full rerun after fixes | 33/34 | 6/6 |
+| Targeted retest of the remaining failure | 1/1 | n/a |
+
+Live import progress was incorrectly invalidating searches, and a real post change could be mistaken for an empty search. Search now ignores bookkeeping-only changes; an evidence change triggers one fresh Ask attempt without duplicating the question. The remaining case passed a targeted retest. This is not a claim that all forty passed in one final run. One answer also incorrectly described a complete code template as truncated; a complete-message instruction corrected it on rerun.
+
+Manual review accepted source-supported equivalent evidence and recorded a gold-label polarity error without changing the frozen bank. The final probe intents were appropriate, but one answer made an unsupported universal claim about unavailable future exam questions, and two clarification answers were unnecessarily verbose. These exploratory retests are assistant-reviewed, not independently annotated, and do not establish perfect grounding or a statistically precise population accuracy.
 
 Regression checks cover asset hashes, evidence budgets, class isolation, edited/deleted posts, disconnects, worker reuse, idle release, timeouts, retry backoff, corrupted-model fallback, sync recovery and Ask citations. Long-thread checks cover more than 100 replies, deep nesting, text beyond 40,000 characters, direct search-to-reply pointers, continuation without gaps, and one-time refresh of older captures. The synthetic Ask flow exercises source selection, reply-list paging, long-reply continuation and original-post citations for Ed, plus an unlinked Piazza class. CI uses synthetic sites without Purdue credentials; live-site verification is separate.
 
@@ -154,6 +168,8 @@ export BOILERSPACE_FIXTURES_DIR=.verify-tmp/Brightspace-Bar/session-capture/test
 npm test
 npx playwright install chromium firefox
 node scripts/verify-discussions.mjs ./node_modules/playwright/index.mjs
+node scripts/verify-discussion-recovery.mjs
+node scripts/verify-chat-streaming.mjs
 node scripts/verify-discussion-search.mjs
 VERIFY_BROWSER=firefox node scripts/verify-discussion-search.mjs
 ```

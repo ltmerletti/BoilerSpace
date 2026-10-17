@@ -50,14 +50,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [ui, syllabi, discussions, discussion-search-chromium, discussion-search-firefox]
+        suite: [ui, chat-streaming, syllabi, discussions, discussion-recovery, discussion-search-chromium, discussion-search-firefox]
         include:
           - suite: ui
             script: scripts/verify.mjs
+          - suite: chat-streaming
+            script: scripts/verify-chat-streaming.mjs
           - suite: syllabi
             script: scripts/verify-syllabi.mjs
           - suite: discussions
             script: scripts/verify-discussions.mjs
+          - suite: discussion-recovery
+            script: scripts/verify-discussion-recovery.mjs
           - suite: discussion-search-chromium
             script: scripts/verify-discussion-search.mjs
             browser: chromium

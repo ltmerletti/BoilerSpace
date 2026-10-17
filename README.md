@@ -51,6 +51,10 @@ See [Discussion search and benchmark results](experiments/discussions/README.md)
 
 Ask can search your course material, open relevant files, read syllabus pages and lecture slides, and bring the findings into one answer. The expandable work log shows its actual lookups, and citations let you check each finding against the source.
 
+Chats receive short model-generated titles. Interim commentary stays in the work log, and you can scroll back while an answer streams. Completed quiz reviews can be read when Brightspace makes their questions visible, including reviews whose student API access is restricted.
+
+The composer offers a thinking control for recognized models. **Default** sends no reasoning override. Qwen3.8 supports Quick (thinking off), Low, Medium and XHigh; its [published default is XHigh](https://huggingface.co/Qwen/Qwen3.8-27B#api-usage). Purdue's configured model remains in charge when Default is selected.
+
 The example above comes from a real midterm question. BoilerSpace opened the syllabus and the relevant lecture material before answering. The expanded lookup below shows that run, with the course renamed **Course C**.
 
 <details>

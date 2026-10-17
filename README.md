@@ -21,17 +21,17 @@ BoilerSpace is a browser extension for Chrome, Firefox, and Zen. It reads your c
 - **Week:** upcoming assignments, quizzes, and exams, plus syllabus dates verified against their source wording. Clear dates appear and export automatically. If sources disagree, the agenda uses Brightspace and keeps the discrepancy available to inspect.
 - **Courses:** current enrollments, upcoming work, syllabus text, and cited policy summaries. Syllabi are checked automatically, including Purdue Simple Syllabus pages.
 - **Ask:** questions about your course material, with citations to the source page or item. Conversations can be revisited and answers retried.
-- **Settings:** connect Brightspace, GenAI Studio, Ed, and Piazza. Account details and course-link overrides are under **Manage**. Export a calendar or manage local data below the connections.
+- **Settings:** connect Brightspace, GenAI Studio, Ed, and Piazza. Expand a connection row for account details and course-link overrides. Export a calendar or manage local data below the connections.
 
 Course sync and syllabus reading run separately. Assignments and announcements can finish syncing while a slow syllabus page is still loading. Some courses have no syllabus; a confirmed missing syllabus is shown separately from a failed check.
 
 ## Ed and Piazza beta
 
-In **Settings**, choose **Connect** on the Ed or Piazza card and approve site access. Ed discovers your active US courses. Piazza finds visible class links and the open class in your signed-in Piazza page, so pasting a URL is usually unnecessary. **Add a class by link** remains available when needed.
+In **Settings**, choose **Connect** on the Ed or Piazza row and approve site access. Ed discovers your active US courses. Piazza finds visible class links and the open class in your signed-in Piazza page, so pasting a URL is usually unnecessary. **Add a class by link** remains available inside the Piazza row when needed.
 
 Connections use your existing sign-ins. If a sign-in is needed, it opens in a site tab and connecting resumes automatically afterward. The browser sidebar connects directly; the panel embedded in Brightspace uses a short extension-tab handoff for the permission request. History imports continue in the open panel after that handoff closes.
 
-Ed and Piazza courses match current Brightspace courses using course codes first, then distinctive titles with minor spelling differences. Explicitly older terms and ambiguous matches stay separate. **Manage → Change course** provides an optional override, which later syncs preserve. Courses connected before Brightspace is loaded are matched when their metadata becomes available.
+Ed and Piazza courses match current Brightspace courses using course codes first, then distinctive titles with minor spelling differences. Explicitly older terms and ambiguous matches stay separate. **Connection row → Change course** provides an optional override, which later syncs preserve. Courses connected before Brightspace is loaded are matched when their metadata becomes available.
 
 The beta imports **the full available discussion history**, including available replies, in batches. It saves progress after each batch and resumes interrupted imports on the next sync. Later syncs check every history page and only reopen new or changed posts. Settings shows the saved post count and whether the history check is complete. Ask can search those saved posts, open a saved thread, distinguish staff replies from student suggestions, and cite the original Ed/Piazza link. Linked courses also show recent post links on their course page. Discussion sync has its own status and **Sync discussions now** control; it refreshes independently at most every 20 minutes while BoilerSpace is open.
 
@@ -105,7 +105,7 @@ After course sync, BoilerSpace checks syllabi for every current course. It can r
 
 If you see **Allow Simple Syllabus access**, click it to open the extension's permission page, then approve access there. Granting permission starts a retry automatically. A site-permission problem cannot be fixed by repeatedly checking individual courses.
 
-Temporary network or loading failures get one retry after the other courses finish. A completed search that finds no syllabus is remembered for a day. Use **Check all syllabi** for a fresh pass, or the course's **Check again** / **Read again** control to retry one course. If the automatic choice is wrong, select another course file or upload the syllabus.
+Temporary network or loading failures get one retry after the other courses finish. A completed search that finds no syllabus is remembered for a day. Use **Courses → Check again** for a fresh pass, or the course's **Check again** / **Read again** control to retry one course. If the automatic choice is wrong, select another course file or upload the syllabus.
 
 Answers cite the material they used. Overview PDFs open in BoilerSpace's document reader at the cited page, and **Show original PDF** opens the source through your signed-in session. Check important dates and policies against the cited material.
 

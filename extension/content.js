@@ -103,11 +103,11 @@
       .drawer {
         position: fixed; top: 0; right: 0; z-index: 2147483000;
         width: var(--boilerspace-width, ${DEFAULT_WIDTH}px); max-width: 100vw; height: 100vh;
-        background: #f5f5f7;
+        background: #fff;
         transform: translateX(100%);
         transition: transform 180ms ease;
       }
-      .drawer.open { transform: none; border-left: 1px solid #e2e2e7; }
+      .drawer.open { transform: none; border-left: 1px solid #d3d9e3; }
       .drawer:not(.open) { pointer-events: none; border-left: 0; }
       .drawer:not(.open) .collapse { pointer-events: auto; }
       .drawer.overlay { box-shadow: -12px 0 32px rgba(0, 0, 0, 0.16); }
@@ -122,8 +122,8 @@
         position: absolute; top: 14px; left: -32px; z-index: 2;
         width: 32px; height: 36px; padding: 0; cursor: pointer;
         display: grid; place-items: center;
-        border: 1px solid #e2e2e7; border-right: 0; border-radius: 10px 0 0 10px;
-        background: #f5f5f7; color: #1d1d1f;
+        border: 1px solid #d3d9e3; border-right: 0; border-radius: 6px 0 0 6px;
+        background: #fff; color: #202122;
         box-shadow: -4px 0 12px rgba(32, 33, 34, 0.08);
       }
       .collapse svg { transform: rotate(180deg); }

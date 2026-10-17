@@ -217,12 +217,14 @@ try {
   await panel.getByLabel('Question', { exact: true }).fill('What did the instructor clarify about the report deadline on Ed?');
   await panel.getByRole('button', { name: 'Send', exact: true }).click();
   const answer = panel.locator('.message.assistant:not(.pending)');
-  await answer.locator('.sources a').waitFor({ timeout: 90_000 });
+  await answer.locator('[data-disclosure^="sources-"] > summary').click({ timeout: 90_000 });
+  await answer.locator('.sources a').waitFor();
   check('Ask selects the Ed source, searches, pages replies, continues a long staff answer and cites its original post', (await answer.innerText()).includes('Friday at 5 PM') && (await answer.locator('.sources a').first().getAttribute('href')).includes('https://edstem.org/us/courses/20/discussion/2000'));
   await panel.getByLabel('Question', { exact: true }).fill('What did the instructor say about the deadline on Piazza?');
   await panel.getByRole('button', { name: 'Send', exact: true }).click();
   const piazzaAnswer = panel.locator('.message.assistant:not(.pending)').nth(1);
-  await piazzaAnswer.locator('.sources a').waitFor({ timeout: 90_000 });
+  await piazzaAnswer.locator('[data-disclosure^="sources-"] > summary').click({ timeout: 90_000 });
+  await piazzaAnswer.locator('.sources a').waitFor();
   check('Ask searches an unlinked Piazza course by source_id and cites the instructor reply', (await piazzaAnswer.innerText()).includes('Monday') && (await piazzaAnswer.locator('.sources a').first().getAttribute('href')).startsWith('https://piazza.com/class/example123?cid='));
   await panel.locator('.tabs button[data-view="settings"]').click();
   await panel.locator('[data-disclosure="manage-ed"] > summary').click();

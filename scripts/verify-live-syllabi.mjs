@@ -63,7 +63,7 @@ export async function verifyLiveSyllabi(context, { fresh = false, outDir = '/tmp
   await panel.locator('.tabs button[data-view="courses"]').click();
   await mkdir(outDir, { recursive: true });
   await panel.screenshot({ path: path.join(outDir, 'automatic-courses.png') });
-  await panel.getByRole('button', { name: 'Check all syllabi', exact: true }).click();
+  await panel.getByRole('button', { name: 'Check again', exact: true }).click();
   const manual = await until(async () => {
     const records = await finished();
     return records && courses.every((c) => records[c.id].source === 'upload' || records[c.id].checkedAt !== automatic[c.id].checkedAt) ? records : false;
@@ -81,6 +81,9 @@ export async function verifyLiveSyllabi(context, { fresh = false, outDir = '/tmp
     await panel.locator('.composer button[type="submit"]').click();
     await until(async () => (await panel.locator('.message.assistant:not(.pending)').count()) > before, 'CS 251 syllabus answer');
     const answer = panel.locator('.message.assistant:not(.pending)').last();
+    const sources = answer.locator('[data-disclosure^="sources-"]');
+    await sources.waitFor({ state: 'attached' });
+    if (!(await sources.evaluate(element => element.open))) await sources.locator('summary').click();
     const citations = await answer.locator('.sources a').evaluateAll((links) => links.map((a) => a.href));
     check('the CS 251 answer cites its actual syllabus', citations.some((href) => new URL(href).searchParams.get('ou') === String(cs251.id) || href.includes(`/home/${cs251.id}`)));
     await panel.screenshot({ path: path.join(outDir, 'cs251-ai-answer.png') });
@@ -91,7 +94,7 @@ export async function verifyLiveSyllabi(context, { fresh = false, outDir = '/tmp
 export async function verifyReloadAndReadAgain(panel, courses, records) {
   const sources = await panel.evaluate(async () => (await chrome.storage.local.get('syllabusSources')).syllabusSources ?? {});
   await panel.reload();
-  await panel.getByRole('button', { name: 'Check all syllabi', exact: true }).waitFor();
+  await panel.getByRole('button', { name: 'Check again', exact: true }).waitFor();
   await pause(1500);
   await until(() => panel.locator('#status').isHidden(), 'cached automatic pass after reload');
   const reloaded = await panel.evaluate(() => chrome.storage.local.get(['syllabi', 'syllabusSources']));

@@ -11,6 +11,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { fakeBrightspace, MODEL_OUTPUT, pdfWithPages, snapshotFixture, SYLLABUS_PAGES } from '../tests/helpers.mjs';
 import { validateExtraction } from '../extension/lib/syllabus.js';
 
+async function showSources(answer) {
+  const details = answer.locator('[data-disclosure^="sources-"]');
+  await details.waitFor({ state: 'attached', timeout: 20_000 });
+  if (!(await details.evaluate(element => element.open))) await details.locator('summary').click();
+}
+
 const root = fileURLToPath(new URL('..', import.meta.url));
 const playwrightPath = process.argv[2] ?? path.join(root, '../course-companion/node_modules/playwright/index.mjs');
 const { chromium } = await import(pathToFileURL(playwrightPath).href);
@@ -137,12 +143,20 @@ try {
   check('service worker starts', Boolean(extensionId), extensionId);
 
   const modelRequests = [];
+  let holdNextResponse = false;
+  let releaseHeldResponse;
   await context.route('https://genai.rcac.purdue.edu/**', async (route) => {
     if (route.request().url().endsWith('/api/models')) {
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: [{ id: 'gpt-oss:120b' }, { id: 'qwen3.8:27b' }, { id: 'llama3.3:70b' }, { id: 'nomic-embed-text' }] }) });
     }
     const body = JSON.parse(route.request().postData() ?? '{}');
     modelRequests.push(body);
+    if (holdNextResponse) {
+      holdNextResponse = false;
+      await new Promise(resolve => { releaseHeldResponse = resolve; });
+      await route.abort().catch(() => {});
+      return;
+    }
     await route.fulfill(fakeModelResponse(body));
   });
   let serveBrightspace = false;
@@ -193,11 +207,16 @@ try {
   await page.waitForSelector('.agenda');
   await page.screenshot({ path: path.join(outDir, '1-week.png') });
   check('week shows today with items', (await page.locator('.day.today .item').count()) >= 1);
+  check('the selected design uses Brightspace typography and a flat agenda', await page.evaluate(async () => {
+    await document.fonts.ready;
+    return getComputedStyle(document.body).fontFamily.startsWith('Lato') && getComputedStyle(document.body).fontSize === '19px' && getComputedStyle(document.querySelector('.agenda')).boxShadow === 'none';
+  }));
   check('date conflicts are a quiet disclosure and routine confirmation buttons are absent', await page.isVisible('text=Syllabus date differences') && (await page.getByRole('button', { name: 'Looks right', exact: true }).count()) === 0);
   const migrated = (await page.evaluate(() => chrome.storage.local.get('genai'))).genai.model;
   check('older connections move to the Qwen default', migrated === 'qwen3.8:27b', migrated);
 
   await page.click('.tabs button[data-view="courses"]');
+  check('syllabus status shows the saved check time', await page.locator('.syllabus-controls').innerText().then(text => /Syllabi last synced/.test(text)));
   await page.screenshot({ path: path.join(outDir, '2-courses.png') });
   for (const width of [320, 720, 400]) {
     await page.setViewportSize({ width, height: 900 });
@@ -214,6 +233,7 @@ try {
 
   await page.click('.tabs button[data-view="ask"]');
   check('Ask navigation marks the correct view', await page.locator('.tabs [aria-current="page"]').getAttribute('data-view') === 'ask');
+  check('the course selector sits inside the composer and the reminder is removed', await page.locator('.composer .scope select').count() === 1 && !(await page.locator('body').innerText()).includes('Check important details in the cited sources.'));
   await page.screenshot({ path: path.join(outDir, '4-ask-empty.png') });
   await page.getByLabel('Question', { exact: true }).fill('Keep this draft');
   await page.getByLabel('Question', { exact: true }).evaluate(element => element.setSelectionRange(5, 9));
@@ -222,7 +242,7 @@ try {
   check('background updates preserve the question draft, focus and text selection', await page.getByLabel('Question', { exact: true }).evaluate(element => element.value === 'Keep this draft' && document.activeElement === element && element.selectionStart === 5 && element.selectionEnd === 9));
   await page.fill('.composer textarea', 'What do I have due this week?');
   await page.click('.composer button[type="submit"]');
-  await page.waitForSelector('.message.assistant:not(.pending) .sources', { timeout: 20_000 });
+  await showSources(page.locator('.message.assistant:not(.pending)').last());
   const citeCount = await page.locator('.message.assistant .sources a').count();
   check('ask streams through the tool loop and shows sources', modelRequests.length === 2 && modelRequests.every((r) => r.stream) && citeCount >= 1, `${modelRequests.length} model requests, ${citeCount} sources`);
   const traceSummary = await page.locator('.message.assistant:not(.pending) .trace summary').textContent();
@@ -242,9 +262,36 @@ try {
   check('opening a chat brings its messages back', await page.isVisible('.message.user >> text=What do I have due this week?'));
 
   await page.locator('.message.assistant .message-actions button', { hasText: 'Retry' }).click();
-  await page.waitForSelector('.message.assistant:not(.pending) .sources', { timeout: 20_000 });
+  await showSources(page.locator('.message.assistant:not(.pending)').last());
   check('a completed answer can be retried without duplicating the question',
     modelRequests.length === 4 && (await page.locator('.message.user').count()) === 1 && (await page.locator('.message.assistant:not(.pending)').count()) === 1);
+  await page.locator('.message.assistant [data-disclosure^="sources-"] > summary').click();
+  await page.setViewportSize({ width: 400, height: 820 });
+  await page.screenshot({ path: path.join(outDir, '5c-ask-compact.png') });
+
+  await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async text => { window.copiedAnswer = text; } } }));
+  await page.getByRole('button', { name: 'Copy answer', exact: true }).click();
+  check('copy uses the current answer text', await page.evaluate(() => window.copiedAnswer.includes('Here is what is due')));
+  for (const width of [320, 400]) {
+    await page.setViewportSize({ width, height: 600 });
+    const layout = await page.evaluate(() => {
+      const composer = document.querySelector('.composer').getBoundingClientRect(), messages = document.querySelector('.messages');
+      return { fits: composer.bottom <= innerHeight + 1 && composer.top > 0 && document.documentElement.scrollWidth <= innerWidth, scrolls: messages.scrollHeight > messages.clientHeight };
+    });
+    check(`long conversations scroll while the composer stays visible at ${width}px`, layout.fits && layout.scrolls);
+  }
+  await page.setViewportSize({ width: 400, height: 900 });
+  await page.getByRole('button', { name: 'New chat', exact: true }).click();
+  holdNextResponse = true;
+  await page.getByLabel('Question', { exact: true }).fill('What is due next?');
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  for (let attempt = 0; !releaseHeldResponse && attempt < 100; attempt++) await sleep(50);
+  if (!releaseHeldResponse) throw new Error('The pending response did not reach the fixture.');
+  check('real model requests show a compact live work indicator', await page.locator('.pending .trace.live').count() === 1 && !(await page.locator('.pending .trace').evaluate(element => element.open)));
+  await page.getByRole('button', { name: 'Stop', exact: true }).click();
+  await page.locator('.message.stopped').waitFor();
+  releaseHeldResponse();
+  check('Stop ends a pending response and restores the composer', await page.getByRole('button', { name: 'Stop', exact: true }).count() === 0 && await page.getByRole('button', { name: 'Continue', exact: true }).isVisible());
 
   await page.click('.tabs button[data-view="settings"]');
   await page.screenshot({ path: path.join(outDir, '6-settings.png') });
@@ -334,7 +381,7 @@ try {
   await frame.locator('.tabs button[data-view="ask"]').click();
   await frame.locator('.composer textarea').fill('When is my CS 25200 midterm?');
   await frame.locator('.composer button[type="submit"]').click();
-  await frame.locator('.message.assistant:not(.pending) .sources').waitFor({ timeout: 20_000 });
+  await showSources(frame.locator('.message.assistant:not(.pending)').last());
   await frame.locator('.message.assistant:not(.pending) .trace summary').last().click();
   await sleep(200);
   await bs.screenshot({ path: path.join(outDir, '10-brightspace-ask.png') });
@@ -433,6 +480,7 @@ try {
     return href;
   }, { pages: overviewPages });
   await reopened.locator('.tabs button[data-view="ask"]').click();
+  await showSources(reopened.locator('.message.assistant:not(.pending)').last());
   const viewerOpened = context.waitForEvent('page');
   await reopened.locator(`.sources a[href="${viewerHref}"]`).click();
   const viewer = await viewerOpened;

@@ -11,6 +11,7 @@ import { ask, SUGGESTED_QUESTIONS } from './lib/agent.js';
 import { captureBenchmark } from './lib/capture.js';
 import { addDaysToKey, dayKey, daysBetweenKeys, formatDateTime, formatDayKey, formatTime, relativeDay } from './lib/dates.js';
 import { DISCUSSION_SITES, discussionName, discussionRequest, parseDiscussionUrl } from './lib/discussions.js';
+import { deadlineIssue } from './lib/deadline-status.js';
 
 const sheet = document.createElement('link');
 sheet.rel = 'stylesheet';
@@ -57,11 +58,14 @@ const state = {
   syncMeta: null,
   changes: [],
   genai: null,
+  genaiError: '',
   syllabi: {},
   reviews: {},
   discussions: { sources: [] },
   discussionError: '',
   discussionAccessDone: false,
+  discussionPlatform: null,
+  discussionConnecting: '',
   piazzaUrl: '',
   chats: [],
   activeChatId: null,
@@ -79,7 +83,7 @@ const state = {
   progress: null,
   runningSync: false,
   status: '',
-  busy: { sync: false, syllabi: false, link: false, capture: false, discussions: false },
+  busy: { sync: false, syllabi: false, link: false, capture: false, discussions: false, discussionConnect: false },
   linkStatus: '',
   linkError: '',
   syncError: '',
@@ -138,6 +142,14 @@ const link = (href, text, props = {}) =>
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 const icon = (name) => document.getElementById(`icon-${name}`).content.cloneNode(true);
+
+function disclosure(key, title, ...children) {
+  return h('details', { 'data-disclosure': key }, h('summary', { 'data-focus-key': `disclosure-${key}` }, title), ...children);
+}
+
+function viewHeading(title, description) {
+  return h('header', { class: 'view-heading' }, h('h2', null, title), description && h('p', { class: 'view-description' }, description));
+}
 
 // ---------- State ----------
 
@@ -246,14 +258,20 @@ async function runSync() {
 }
 
 async function refreshDiscussions(force = false) {
-  if (state.busy.discussions || !state.discussions.sources.length || DISCUSSION_ACCESS) return;
+  if (state.busy.discussions || !state.discussions.sources.length) return;
   state.busy.discussions = true;
   state.discussionError = '';
   render();
   try { await syncDiscussionBatches({ force }); }
   catch (error) { state.discussionError = error.message; }
-  finally { state.busy.discussions = false; await loadState(); render(); }
+  finally {
+    state.busy.discussions = false;
+    await loadState(); render();
+    if (discussionRefreshQueued) { discussionRefreshQueued = false; refreshDiscussions(); }
+  }
 }
+
+let discussionRefreshQueued = false;
 
 async function syncDiscussionBatches({ force = false, sourceId } = {}) {
   let result;
@@ -265,29 +283,64 @@ async function syncDiscussionBatches({ force = false, sourceId } = {}) {
   } while (result.pending);
 }
 
-async function openDiscussionAccess(platform) {
+async function openDiscussionAccess(platform, courseUrl = null) {
+  state.discussionPlatform = platform;
   state.discussionError = '';
   try {
-    const url = platform === 'piazza' ? parseDiscussionUrl(state.piazzaUrl).url : undefined;
-    await discussionRequest('open-access', { platform, url });
+    const value = courseUrl ?? state.piazzaUrl;
+    const url = platform === 'piazza' && value.trim() ? parseDiscussionUrl(value).url : undefined;
+    if (EMBEDDED) return await discussionRequest('open-access', { platform, url });
+    // Firefox requires the permission request directly inside the button gesture.
+    const permission = chrome.permissions.request({ origins: DISCUSSION_SITES[platform] });
+    await connectDiscussions(platform, url, permission);
   } catch (error) { state.discussionError = error.message; render(); }
 }
 
-async function connectDiscussions() {
+async function connectDiscussions(platform = DISCUSSION_ACCESS, url = PARAMS.get('course'), permission = null) {
+  if (state.busy.discussionConnect) return;
+  const allowed = permission ?? chrome.permissions.request({ origins: DISCUSSION_SITES[platform] });
   state.discussionError = '';
+  state.discussionAccessDone = false;
+  state.discussionPlatform = platform;
+  state.busy.discussionConnect = true;
+  let signInTab;
   try {
-    const granted = await chrome.permissions.request({ origins: DISCUSSION_SITES[DISCUSSION_ACCESS] });
+    const granted = await allowed;
     if (!granted) throw new Error('Site access was not allowed. Allow access to connect this discussion source.');
-    state.busy.discussions = true;
+    state.discussionConnecting = `Finding your ${discussionName(platform)} courses…`;
     render();
-    const connected = await discussionRequest('connect', { platform: DISCUSSION_ACCESS, url: PARAMS.get('course') });
-    await syncDiscussionBatches({ force: true, sourceId: connected.connectedIds });
+    const deadline = Date.now() + 5 * 60_000;
+    while (true) {
+      try { await discussionRequest('connect', { platform, url }); break; }
+      catch (error) {
+        if (!/sign in|sign into|open a piazza class/i.test(error.message) || Date.now() >= deadline) throw error;
+        if (!signInTab) {
+          signInTab = await chrome.tabs.create({ url: 'about:blank', active: true });
+          await chrome.tabs.update(signInTab.id, { url: platform === 'ed' ? 'https://edstem.org/us/' : url || 'https://piazza.com/' });
+        }
+        else if (!(await chrome.tabs.get(signInTab.id).catch(() => null))) throw new Error('Sign-in was closed. You can connect again whenever you are ready.');
+        state.discussionConnecting = `Finish signing in to ${discussionName(platform)}${platform === 'piazza' ? ' and open your class' : ''}. Connection continues automatically.`;
+        render();
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+    }
     state.discussionAccessDone = true;
+    if (platform === 'piazza') state.piazzaUrl = '';
   } catch (error) { state.discussionError = error.message; }
-  finally { state.busy.discussions = false; await loadState(); render(); }
+  finally {
+    if (signInTab) await chrome.tabs.remove(signInTab.id).catch(() => {});
+    state.busy.discussionConnect = false;
+    state.discussionConnecting = '';
+    await loadState(); render();
+  }
+  if (state.discussionAccessDone) {
+    if (state.busy.discussions) discussionRefreshQueued = true;
+    else refreshDiscussions(state.discussions.sources.some(source => source.platform === platform && source.status === 'error'));
+  }
 }
 
 async function updateDiscussion(action, sourceId, courseId = null) {
+  state.discussionPlatform = state.discussions.sources.find(source => source.id === sourceId)?.platform;
   state.discussionError = '';
   try { await discussionRequest(action, { sourceId, courseId }); }
   catch (error) { state.discussionError = error.message; }
@@ -365,6 +418,8 @@ async function linkHere() {
       },
     });
     state.genai = await getConnection();
+    state.genaiError = '';
+    state.modelsLoaded = Boolean(state.genai?.models?.length);
   } catch (err) {
     state.linkError = err.message;
   } finally {
@@ -374,10 +429,6 @@ async function linkHere() {
   }
   if (state.genai && !CONNECT_PAGE) processSyllabi();
   return Boolean(state.genai);
-}
-
-async function setReview(id, value) {
-  await store.update(store.KEYS.reviews, (all) => ({ ...(all ?? {}), [id]: value }), {});
 }
 
 // ---------- Chats ----------
@@ -608,7 +659,7 @@ function agendaItem(item, options) {
     'li',
     { class: classes },
     h('div', null, link(item.url, item.title, { class: 'item-title' })),
-    h('div', { class: 'meta' }, itemMeta(item, options), item.source === 'syllabus' && !item.confirmed ? [' ', h('span', { class: 'tag gold' }, 'from syllabus')] : null),
+    h('div', { class: 'meta' }, itemMeta(item, options), item.source === 'syllabus' ? [' · ', 'Syllabus'] : null),
   );
 }
 
@@ -663,8 +714,8 @@ function setupView() {
     h(
       'div',
       null,
-      h('div', { class: 'step-title' }, synced ? 'Courses loaded' : 'Load your courses'),
-      !synced && h('p', null, 'Reads your current courses from Brightspace while you are signed in. BoilerSpace never changes anything there.'),
+      h('div', { class: 'step-title' }, synced ? 'Brightspace connected' : 'Brightspace'),
+      !synced && h('p', null, 'Load courses from your signed-in account.'),
       !synced && !state.busy.sync && syncFailure() && h('p', { class: 'error-text small', style: 'margin-top:6px' }, syncFailure()),
       !synced && h('div', { class: 'button-row' }, h('button', { class: 'button', type: 'button', disabled: state.busy.sync, onclick: runSync }, state.busy.sync ? 'Loading…' : syncFailure() ? 'Try again' : 'Load my courses')),
     ),
@@ -676,8 +727,8 @@ function setupView() {
     h(
       'div',
       null,
-      h('div', { class: 'step-title' }, connected ? 'GenAI Studio connected' : 'Connect Purdue GenAI Studio'),
-      !connected && h('p', null, 'Free with your Purdue login. It reads your syllabi and answers questions about your courses.'),
+      h('div', { class: 'step-title' }, connected ? 'GenAI Studio connected' : 'Purdue GenAI Studio'),
+      !connected && h('p', null, 'Read syllabi and ask questions using your Purdue account.'),
       state.linkStatus && h('p', { class: 'small', style: 'margin-top:6px' }, state.linkStatus),
       state.linkError && h('p', { class: 'small error-text', style: 'margin-top:6px' }, state.linkError),
       !connected && h('div', { class: 'button-row' }, h('button', { class: synced ? 'button' : 'button secondary', type: 'button', disabled: state.busy.link, onclick: connectGenAI }, state.busy.link ? 'Connecting…' : 'Connect')),
@@ -686,9 +737,9 @@ function setupView() {
   return h(
     'section',
     { class: 'setup' },
-    h('h2', { class: 'setup-intro' }, 'Your week at Purdue, in one place.'),
-    h('p', null, 'Two steps and BoilerSpace keeps itself up to date while you use Brightspace.'),
+    h('h2', { class: 'setup-intro' }, 'Set up BoilerSpace'),
     h('ol', { class: 'steps' }, brightspaceStep, genaiStep),
+    synced && h('div', { class: 'setup-discussions' }, h('h3', { class: 'heading' }, 'Discussions'), discussionConnection('ed'), discussionConnection('piazza')),
   );
 }
 
@@ -696,9 +747,9 @@ function connectReminder() {
   if (state.genai) return null;
   return h(
     'section',
-    { class: 'section' },
-    h('div', { class: 'section-head' }, h('h2', { class: 'heading' }, 'Read your syllabi')),
-    h('p', { class: 'muted small' }, 'Connect Purdue GenAI Studio, free with your Purdue login, to pull exam dates and policies out of each syllabus and to ask questions.'),
+    { class: 'settings-group' },
+    h('div', { class: 'section-head' }, h('h2', { class: 'heading' }, 'Connect Purdue GenAI Studio')),
+    h('p', { class: 'muted small' }, 'Read syllabus dates and policies, and ask questions about your courses.'),
     state.linkStatus && h('p', { class: 'small', style: 'margin-top:6px' }, state.linkStatus),
     state.linkError && h('p', { class: 'small error-text', style: 'margin-top:6px' }, state.linkError),
     h('div', { class: 'button-row' }, h('button', { class: 'button', type: 'button', disabled: state.busy.link, onclick: connectGenAI }, state.busy.link ? 'Connecting…' : 'Connect GenAI Studio')),
@@ -763,21 +814,16 @@ function changesSection() {
 function reviewCard(d) {
   const notes = [];
   if (d.matchedItem && d.dateDiffers) notes.push(`Brightspace has "${d.matchedItem.title}" on ${formatDateTime(d.matchedItem.dueAt)}.`);
-  if (d.weekdayMismatch) notes.push('The syllabus names a different weekday for this date. One of them is wrong.');
+  if (!d.matchedItem) notes.push('This date is left out of your agenda until the source is clear.');
   const when = d.dueAt ? formatDateTime(d.dueAt, { year: true }) : `${formatDayKey(d.date, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}, no time given`;
   return h(
     'div',
     { class: 'review' },
     h('div', { class: 'row-title' }, d.title),
     h('div', { class: 'meta' }, h('span', { class: 'item-course' }, labelFor(d.courseId)), ` ${d.kind}, ${when}`),
+    h('p', { class: 'small muted' }, deadlineIssue(d)),
     h('p', { class: 'quote' }, `"${d.quote}" (`, pageRef(d.courseId, d.page), ')'),
     notes.map((n) => h('p', { class: 'note' }, n)),
-    h(
-      'div',
-      { class: 'button-row' },
-      h('button', { class: 'button secondary', type: 'button', onclick: () => setReview(d.id, 'confirmed') }, 'Looks right'),
-      h('button', { class: 'button secondary', type: 'button', onclick: () => setReview(d.id, 'dismissed') }, 'Ignore'),
-    ),
   );
 }
 
@@ -787,10 +833,11 @@ function reviewSection(limit = 3) {
   return h(
     'section',
     { class: 'section' },
-    h('div', { class: 'section-head' }, h('h2', { class: 'heading' }, 'Check these syllabus dates'), h('span', { class: 'meta' }, `${pending.length} to check`)),
-    h('p', { class: 'meta', style: 'margin-bottom:6px' }, 'They are in a syllabus but not in Brightspace. Confirmed dates go into your calendar export.'),
+    disclosure('date-differences', h('span', null, 'Syllabus date differences', h('span', { class: 'count' }, pending.length)),
+    h('p', { class: 'meta', style: 'margin-top:10px' }, 'Clear syllabus dates appear automatically. These sources disagree, so your agenda keeps the Brightspace date when one is available.'),
     pending.slice(0, limit).map(reviewCard),
     pending.length > limit && h('p', { class: 'meta', style: 'padding-top:6px' }, `${pending.length - limit} more on each course page.`),
+    ),
   );
 }
 
@@ -847,16 +894,16 @@ function announcementsSection() {
 
 function weekView() {
   if (!state.snapshot) return [setupView()];
-  const first = state.snapshot.user?.firstName;
-  const date = formatDayKey(dayKey(new Date()), { weekday: 'long', month: 'long', day: 'numeric' });
+  const today = dayKey(new Date());
+  const date = formatDayKey(today, { weekday: 'long', month: 'long', day: 'numeric' });
   return [
     syncErrorNotice(),
-    h('p', { class: 'lede' }, first ? [`Hi ${first}. It's `, h('strong', null, date), '.'] : [`It's `, h('strong', null, date), '.']),
-    changesSection(),
+    viewHeading('Week', date),
+    connectReminder(),
     agendaSection(),
+    changesSection(),
     reviewSection(),
     announcementsSection(),
-    connectReminder(),
   ];
 }
 
@@ -876,25 +923,35 @@ function coursesList() {
   const items = agendaItems(state.snapshot, state.syllabi, state.reviews);
   const now = new Date().toISOString();
   return [
-    h('p', { class: 'lede', style: 'padding-bottom:8px' }, `${plural(list.length, 'current course')} this term.`),
+    viewHeading('Courses', `${plural(list.length, 'current course')}`),
     state.genai && h('div', { class: 'syllabus-controls' },
-      h('p', { class: 'meta' }, state.busy.syllabi ? 'Checking syllabi for your courses…' : 'Syllabi are checked automatically after course sync.'),
-      h('div', { class: 'button-row' }, h('button', { class: 'button secondary', type: 'button', disabled: state.busy.syllabi, onclick: () => processSyllabi({ force: true }) }, 'Check all syllabi')),
+      h('p', { class: 'meta' }, state.busy.syllabi ? 'Reading your syllabi…' : 'Syllabi stay up to date automatically.'),
+      h('button', { class: 'text-button', type: 'button', disabled: state.busy.syllabi, onclick: () => processSyllabi({ force: true }) }, 'Check again'),
     ),
     list.map((course) => {
       const next = items.find((i) => i.courseId === course.id && i.dueAt >= now);
       const record = usableRecord(state.syllabi[course.id]);
+      const title = courseSubtitle(course);
       return h(
         'button',
         { class: 'course-row', type: 'button', onclick: () => ((state.courseId = course.id), saveUi(), render({ top: true })) },
         h('span', { class: 'course-label' }, shortCourseLabel(course)),
         stanceTag(record?.policies.aiUse.stance, Boolean(record), state.syllabi[course.id]?.status),
-        h('div', { class: 'meta' }, courseTitle(course)),
+        title && h('div', { class: 'meta' }, title),
+        h('div', { class: 'course-connections' }, state.discussions.sources.filter(source => source.courseId === course.id).map(source => h('span', { class: 'source-chip' }, h('span', { class: 'status-dot' }), discussionName(source.platform)))),
         h('div', { class: 'small', style: 'margin-top:2px' }, next ? `Next: ${next.title}, ${formatDateTime(next.dueAt, { allDay: next.allDay })}` : h('span', { class: 'muted' }, 'Nothing upcoming')),
       );
     }),
     excludedNote(),
   ];
+}
+
+function courseSubtitle(course) {
+  const title = courseTitle(course).replace(/^[\s-]+/, '');
+  if (title === shortCourseLabel(course) || /^[A-Z]{2,5}\s?\d{5}(?:[-\s]+(?:LE\d+|\d{1,4}|LEC|LAB|REC))*$/i.test(title)) {
+    return /^(Fall|Spring|Summer|Winter)\s+\d{4}/i.exec(course.name)?.[0] ?? '';
+  }
+  return title;
 }
 
 function excludedNote() {
@@ -912,8 +969,10 @@ function policyBlock(record, raw) {
   if (!record) {
     const text = !state.genai
       ? 'Connect GenAI Studio to read the syllabus and find the AI policy.'
-      : raw?.status === 'none' || raw?.status === 'external'
-        ? 'Unknown until BoilerSpace has a syllabus to read. Pick or upload it below.'
+      : raw?.status === 'none'
+        ? 'No syllabus is posted for this course.'
+        : raw?.status === 'external'
+          ? 'The syllabus is hosted outside Brightspace.'
         : 'The syllabus has not been read yet.';
     return h('section', { class: 'policy' }, h('div', { class: 'policy-stance' }, 'AI policy unknown'), h('p', { class: 'small muted' }, text));
   }
@@ -984,7 +1043,8 @@ function syllabusPicker(course, raw, data) {
       raw?.source !== 'upload' && h('button', { class: 'button secondary', type: 'button', disabled: state.busy.syllabi, onclick: () => processSyllabi({ force: true, courseId: course.id }) }, raw?.topicId ? 'Read again' : raw ? 'Check again' : 'Check for syllabus'),
     ),
   );
-  return missing ? controls : h('details', { style: 'margin-top:10px' }, h('summary', null, 'Wrong file?'), controls);
+  if (raw?.status === 'none') return disclosure(`syllabus-file-${course.id}`, 'Add a syllabus', controls);
+  return missing ? controls : disclosure(`syllabus-file-${course.id}`, 'Choose a different syllabus', controls);
 }
 
 function courseDetail(course) {
@@ -1027,7 +1087,7 @@ function courseDetail(course) {
         h('table', { class: 'weights' }, h('tbody', null, grading.map((g) => h('tr', null, h('td', null, g.component), h('td', null, `${g.weight}%`))))),
         !record.policies.gradingAddsUp && h('p', { class: 'meta', style: 'margin-top:4px' }, `These add up to ${Math.round(gradingTotal * 10) / 10}%, so the syllabus may describe weights differently. Check the original.`),
       ),
-    pending.length > 0 && h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', { class: 'heading' }, 'Syllabus dates to check')), pending.map(reviewCard)),
+    pending.length > 0 && h('section', { class: 'section' }, disclosure(`course-dates-${course.id}`, 'Where syllabus dates differ', pending.map(reviewCard))),
     state.discussions.sources.some((s) => s.courseId === course.id) && h('section', { class: 'section' },
       h('h2', { class: 'heading' }, 'Discussions (beta)'),
       state.discussions.sources.filter((s) => s.courseId === course.id).map((source) => h('div', { class: 'discussion-preview' },
@@ -1292,10 +1352,7 @@ function askView() {
   const send = state.pending
     ? h('button', { class: 'send', type: 'button', 'aria-label': 'Stop', title: 'Stop', onclick: () => state.abort?.abort() }, icon('stop'))
     : h('button', { class: 'send', type: 'submit', 'aria-label': 'Send', title: 'Send', disabled: !state.draft.trim() }, icon('send'));
-  queueMicrotask(() => {
-    textarea.focus();
-    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
-  });
+  textarea.dataset.focusKey = 'question';
 
   const messages = chatMessages();
   const pendingHere = state.pending?.chatId === state.activeChatId ? state.pending : null;
@@ -1310,7 +1367,7 @@ function askView() {
       'About',
       h(
         'select',
-        { onchange: (e) => ((state.askScope = e.target.value), saveUi(), render()) },
+        { 'data-focus-key': 'ask-scope', onchange: (e) => ((state.askScope = e.target.value), saveUi(), render()) },
         h('option', { value: '' }, 'All my courses'),
         courses().map((c) => h('option', { value: String(c.id), selected: state.askScope === String(c.id) }, shortCourseLabel(c))),
       ),
@@ -1323,8 +1380,8 @@ function askView() {
         h(
           'div',
           { class: 'empty-chat' },
-          h('h2', { class: 'heading' }, 'Ask about your courses'),
-          h('p', { class: 'muted small', style: 'margin-top:4px' }, `BoilerSpace looks through your Brightspace data, syllabi, slides and other course files${state.discussions.sources.length ? ', plus connected Ed and Piazza posts' : ''}, and links to where it found each answer.`),
+          h('h2', null, 'Ask about your courses'),
+          h('p', { class: 'muted small', style: 'margin-top:8px' }, `Search your syllabi, course files${state.discussions.sources.length ? ', and connected discussions' : ''}. Answers include source links.`),
           h('ul', { class: 'suggestions' }, SUGGESTED_QUESTIONS.map((q) => h('li', null, h('button', { type: 'button', onclick: () => sendQuestion(q) }, q)))),
         ),
       messages.map(messageView),
@@ -1334,7 +1391,7 @@ function askView() {
       'div',
       { class: 'composer' },
       h('form', { onsubmit: (e) => (e.preventDefault(), sendQuestion(state.draft)) }, textarea, send),
-      h('div', { class: 'footnote' }, `Answers from ${state.genai.model} on Purdue GenAI Studio. Check important details in the cited sources.`),
+      h('div', { class: 'footnote' }, 'Check important details in the cited sources.'),
     ),
   );
 }
@@ -1352,41 +1409,71 @@ function discussionProgress(source) {
 function discussionSourceCard(source) {
   return h('div', { class: 'discussion-source', 'data-source-id': source.id },
     h('h3', { class: 'small' }, `${discussionName(source.platform)} · ${source.name}`),
+    h('p', { class: 'connection-match' }, source.courseId ? [h('span', { class: 'status-dot' }), ` ${labelFor(source.courseId)}${source.linkOrigin === 'manual' ? '' : ' · Matched automatically'}`] : 'Available in Ask as a separate course'),
     h('p', { class: 'meta' }, discussionProgress(source)),
     source.error && h('p', { class: 'small error-text' }, source.error),
     source.warning && h('p', { class: 'small' }, source.warning),
-    h('label', { class: 'field' }, 'Brightspace course', h('select', { onchange: (event) => updateDiscussion('link', source.id, event.target.value ? Number(event.target.value) : null) },
+    disclosure(`match-${source.id}`, 'Change course', h('label', { class: 'field' }, 'Brightspace course', h('select', { 'data-focus-key': `course-${source.id}`, onchange: (event) => updateDiscussion('link', source.id, event.target.value ? Number(event.target.value) : null) },
       h('option', { value: '', selected: !source.courseId }, 'Keep as a separate discussion course'),
       courses().map((course) => h('option', { value: course.id, selected: source.courseId === course.id }, shortCourseLabel(course))),
-    )),
+    ))),
     h('div', { class: 'button-row' }, link(source.url, `Open ${discussionName(source.platform)}`, { class: 'small' }), h('button', { type: 'button', class: 'text-button', disabled: state.busy.discussions, onclick: () => updateDiscussion('remove', source.id) }, 'Disconnect')),
     source.threads?.length > 0 && h('details', null, h('summary', { class: 'small' }, 'Recent saved posts'), h('ul', { class: 'list' }, source.threads.slice(0, 10).map((thread) => h('li', null, link(thread.url, thread.title))))),
   );
 }
 
+function connectionHeader(service, name, status, connected, action) {
+  return h('div', { class: 'connection-header' },
+    h('span', { class: `service-icon service-${service}`, 'aria-hidden': 'true' }, { ed: 'ed', piazza: 'P', genai: 'AI', brightspace: 'B' }[service]),
+    h('div', { class: 'connection-info' }, h('h3', null, name), h('p', { class: `connection-status${connected ? ' connected' : ''}` }, connected && h('span', { class: 'status-dot' }), status)),
+    action,
+  );
+}
+
+function discussionConnection(platform) {
+  const name = discussionName(platform);
+  const sources = state.discussions.sources.filter(source => source.platform === platform);
+  const connected = sources.length > 0;
+  const connecting = state.busy.discussionConnect && state.discussionPlatform === platform;
+  const reading = sources.some(source => source.status === 'syncing');
+  const problem = sources.some(source => source.error);
+  const posts = sources.reduce((total, source) => total + (source.threads?.length ?? 0), 0);
+  const status = connecting ? 'Connecting…' : connected ? `${plural(sources.length, 'course')} · ${reading ? 'Reading posts…' : problem ? 'Needs attention' : plural(posts, 'post')}` : platform === 'ed' ? 'Use your signed-in Ed account' : 'Connect your open Piazza classes';
+  const button = (!connected || problem) && h('button', { class: 'button secondary', type: 'button', disabled: state.busy.discussionConnect, onclick: () => openDiscussionAccess(platform, problem && platform === 'piazza' ? sources.find(source => source.error).url : null), 'aria-label': `${problem ? 'Reconnect' : 'Connect'} ${name}` }, connecting ? 'Connecting…' : problem ? 'Reconnect' : 'Connect');
+  return h('article', { class: 'settings-group connection-card', 'data-platform': platform },
+    connectionHeader(platform, name, status, connected && !problem, button),
+    state.discussionPlatform === platform && state.discussionError && h('p', { class: 'connection-error error-text', role: 'alert' }, state.discussionError),
+    connecting && h('p', { class: 'connection-progress', role: 'status' }, state.discussionConnecting),
+    connected && disclosure(`manage-${platform}`, 'Manage',
+      sources.map(discussionSourceCard),
+      h('div', { class: 'button-row' }, h('button', { class: 'text-button', type: 'button', disabled: state.busy.discussionConnect, onclick: () => openDiscussionAccess(platform) }, 'Find courses')),
+    ),
+    platform === 'piazza' && disclosure('piazza-link', 'Add a class by link',
+      h('form', { class: 'class-link-form', onsubmit: event => { event.preventDefault(); openDiscussionAccess('piazza'); } },
+        h('label', { class: 'field' }, 'Piazza class URL', h('input', { type: 'url', required: true, 'data-focus-key': 'piazza-url', value: state.piazzaUrl, placeholder: 'https://piazza.com/class/…', oninput: event => { state.piazzaUrl = event.target.value; } })),
+        h('button', { class: 'button secondary', type: 'submit', disabled: state.busy.discussionConnect }, 'Add class'),
+      ),
+    ),
+  );
+}
+
 function discussionsSettings() {
-  return h('section', { class: 'settings-group', id: 'discussions-beta' },
-    h('h2', { class: 'heading' }, 'Discussions (beta)'),
-    h('p', { class: 'muted small' }, 'Bring Ed and Piazza posts into Ask. Uses your signed-in sessions to read course posts and replies; it does not post, reply, or vote.'),
-    h('p', { class: 'meta', style: 'margin-top:8px' }, 'The full available history is imported in batches. Progress is saved after each batch, and interrupted imports resume on the next sync. Relevant post text may be sent to Purdue GenAI Studio when you ask a question. Attachments are not read. No discussion passwords or session tokens are saved by BoilerSpace.'),
-    state.discussionError && h('p', { class: 'small error-text' }, state.discussionError),
-    h('div', { class: 'button-row' }, h('button', { type: 'button', class: 'button secondary', disabled: state.busy.discussions, onclick: () => openDiscussionAccess('ed') }, 'Connect Ed courses')),
-    h('label', { class: 'field' }, 'Piazza class URL', h('input', { type: 'url', value: state.piazzaUrl, placeholder: 'https://piazza.com/class/…', oninput: (event) => { state.piazzaUrl = event.target.value; } })),
-    h('div', { class: 'button-row' }, h('button', { type: 'button', class: 'button secondary', disabled: state.busy.discussions, onclick: () => openDiscussionAccess('piazza') }, 'Connect Piazza class')),
-    state.discussions.sources.map(discussionSourceCard),
-    state.discussions.sources.length > 0 && h('div', { class: 'button-row' }, h('button', { type: 'button', class: 'button secondary', disabled: state.busy.discussions, onclick: () => refreshDiscussions(true) }, state.busy.discussions ? 'Syncing discussions…' : 'Sync discussions now')),
-    h('p', { class: 'meta', style: 'margin-top:8px' }, 'Connected discussions refresh separately from course and syllabus sync, at most every 20 minutes while BoilerSpace is open. Older or unlinked courses stay separate unless you choose a Brightspace course above.'),
+  return h('section', { class: 'connection-section', id: 'discussions-beta' },
+    discussionConnection('ed'), discussionConnection('piazza'),
+    state.discussions.sources.length > 0 && h('div', { class: 'connection-actions' }, h('button', { type: 'button', class: 'text-button', disabled: state.busy.discussions, onclick: () => refreshDiscussions(true) }, state.busy.discussions ? 'Syncing discussions…' : 'Sync discussions now')),
   );
 }
 
 function discussionAccessView() {
   const name = discussionName(DISCUSSION_ACCESS);
   return [h('section', { class: 'setup' },
-    h('h2', { class: 'setup-intro' }, `Connect ${name} (beta)`),
-    h('p', null, state.discussionAccessDone ? `${name} is connected. You can close this tab and return to BoilerSpace Settings to see the course results.` : `Allow ${name} site access, then BoilerSpace will import discussion history in batches using your signed-in session. ${DISCUSSION_ACCESS === 'ed' ? 'Active Ed courses are discovered automatically.' : 'Only the Piazza class you entered is connected.'}`),
-    h('p', { class: 'meta', style: 'margin-top:8px' }, 'Relevant discussion text can be sent to Purdue GenAI Studio when you ask. BoilerSpace does not post or reply.'),
+    h('h2', { class: 'setup-intro' }, state.discussionAccessDone ? `${name} connected` : `Connect ${name}`),
+    h('p', null, state.discussionAccessDone ? 'Your posts are being added in the background. You can return to BoilerSpace.' : 'Allow access and sign in if needed. Your courses are found and matched automatically.'),
+    h('p', { class: 'meta', style: 'margin-top:12px' }, 'Relevant post text goes to Purdue GenAI Studio when you ask. BoilerSpace reads public text and replies; it does not post or reply.'),
     state.discussionError && h('p', { class: 'error-text' }, state.discussionError),
-    !state.discussionAccessDone && h('div', { class: 'button-row' }, h('button', { type: 'button', class: 'button', disabled: state.busy.discussions, onclick: connectDiscussions }, state.busy.discussions ? 'Reading discussion courses…' : `Allow ${name} and connect`)),
+    state.discussionConnecting && h('p', { class: 'connection-progress', role: 'status' }, state.discussionConnecting),
+    !state.discussionAccessDone && h('div', { class: 'button-row' }, h('button', { type: 'button', class: 'button', disabled: state.busy.discussionConnect, onclick: () => connectDiscussions() }, state.busy.discussionConnect ? 'Connecting…' : `Allow ${name} and connect`)),
+    state.discussionAccessDone && h('div', { class: 'button-row' }, h('button', { class: 'button', type: 'button', onclick: () => window.close() }, 'Return to BoilerSpace')),
     (state.busy.discussions || state.discussionAccessDone) && state.discussions.sources.filter((s) => s.platform === DISCUSSION_ACCESS).map((s) => h('p', { class: s.error ? 'small error-text' : 'small', style: 'margin-top:12px' }, `${s.name}: ${s.error || discussionProgress(s)}`)),
   )];
 }
@@ -1398,7 +1485,10 @@ function modelField() {
     refreshModels()
       .then(() => loadState())
       .then(() => state.view === 'settings' && render())
-      .catch(() => {});
+      .catch(error => {
+        state.genaiError = error.message;
+        if (state.view === 'settings') render();
+      });
   }
   return h(
     'label',
@@ -1407,6 +1497,7 @@ function modelField() {
     h(
       'select',
       {
+        'data-focus-key': 'model',
         onchange: async (e) => {
           await setModel(e.target.value);
           await loadState();
@@ -1422,67 +1513,58 @@ function modelField() {
 function settingsView() {
   const meta = state.syncMeta;
   const errors = meta?.errors ?? [];
+  const connected = Boolean(state.genai);
   return [
+    viewHeading('Connections'),
     hostAccessNotice(),
-    discussionsSettings(),
-    h(
-      'section',
-      { class: 'settings-group' },
-      h('h2', { class: 'heading' }, 'Purdue GenAI Studio'),
-      state.genai
-        ? [
-            h('p', null, `Connected as ${state.genai.name}.`),
-            modelField(),
-            h('p', { class: 'meta', style: 'margin-top:12px' }, `Linked ${formatDateTime(state.genai.linkedAt)}. ${state.genai.created ? 'BoilerSpace created your API key.' : 'BoilerSpace is using your existing API key.'}`),
-            h('div', { class: 'button-row' }, h('button', { class: 'button secondary', type: 'button', onclick: async () => (await unlink(), await loadState(), render()) }, 'Disconnect')),
-            h('p', { class: 'meta', style: 'margin-top:8px' }, 'Disconnecting removes the key from this browser. To revoke the key itself, delete it in GenAI Studio under Settings, Account.'),
-          ]
-        : [
-            h('p', { class: 'muted' }, 'Not connected.'),
-            state.linkStatus && h('p', { class: 'small', style: 'margin-top:6px' }, state.linkStatus),
-            state.linkError && h('p', { class: 'small error-text', style: 'margin-top:6px' }, state.linkError),
-            h('div', { class: 'button-row' }, h('button', { class: 'button', type: 'button', disabled: state.busy.link, onclick: connectGenAI }, state.busy.link ? 'Connecting…' : 'Connect')),
-          ],
-    ),
-    h(
-      'section',
-      { class: 'settings-group' },
-      h('h2', { class: 'heading' }, 'Brightspace'),
-      meta
-        ? [
-            h('p', null, meta.ok ? `Last synced ${formatDateTime(meta.at)}.` : `Last sync failed ${formatDateTime(meta.at)}: ${meta.error}`),
-            meta.lastSuccessAt &&
-              h('p', { class: 'meta' }, `${plural(courses().length, 'current course')}, ${plural(meta.requestCount ?? 0, 'request')} in ${Math.round((meta.durationMs ?? 0) / 100) / 10} s, signed in by ${meta.authMode === 'token' ? 'token' : 'cookie'}.`),
-            errors.length > 0 &&
-              h(
-                'details',
-                { style: 'margin-top:6px' },
-                h('summary', null, `${plural(errors.length, 'part')} of your courses could not be loaded`),
-                h('ul', { class: 'error-list' }, errors.map((e) => h('li', null, `${e.courseId ? `${labelFor(e.courseId) || e.courseId} ` : ''}${e.section}: ${e.message}`))),
-              ),
-          ]
-        : h('p', { class: 'muted' }, 'Not synced yet.'),
-      h('div', { class: 'button-row' }, h('button', { class: 'button secondary', type: 'button', disabled: state.busy.sync, onclick: runSync }, state.busy.sync ? 'Syncing…' : 'Sync now')),
-      h('p', { class: 'meta', style: 'margin-top:8px' }, 'BoilerSpace syncs on its own while you use Brightspace, at most every 20 minutes.'),
-    ),
-    h(
-      'section',
-      { class: 'settings-group' },
-      h('h2', { class: 'heading' }, 'Your data'),
-      h('p', { class: 'muted' }, 'Course data stays in this browser. Syllabus text and your questions go to Purdue GenAI Studio. Grades never do.'),
-      h(
-        'div',
-        { class: 'button-row' },
-        h('button', { class: 'button secondary', type: 'button', disabled: !state.snapshot, onclick: exportCalendar }, 'Export calendar (.ics)'),
-        h('button', { class: 'button secondary', type: 'button', disabled: !state.snapshot, onclick: exportData }, 'Download data (JSON)'),
-        h('button', { class: 'button secondary', type: 'button', disabled: !state.snapshot || state.busy.capture, onclick: saveBenchmarkData }, state.busy.capture ? 'Saving benchmark data…' : 'Save benchmark data'),
-        h('button', { class: 'button danger', type: 'button', onclick: clearData }, 'Delete all data'),
+    h('section', { class: 'settings-group connection-card' },
+      connectionHeader('brightspace', 'Brightspace', state.snapshot ? `${plural(courses().length, 'course')} · Updates automatically` : 'Your courses and deadlines', Boolean(state.snapshot),
+        !state.snapshot && h('button', { class: 'button secondary', type: 'button', disabled: state.busy.sync, onclick: runSync }, state.busy.sync ? 'Loading…' : 'Connect')),
+      syncFailure() && h('p', { class: 'small error-text' }, syncFailure()),
+      disclosure('brightspace-details', 'Sync details',
+        h('p', { class: 'meta', style: 'margin-top:10px' }, meta?.lastSuccessAt ? `Last updated ${formatDateTime(meta.lastSuccessAt)}. Refreshes while you use Brightspace.` : 'Sign in to Brightspace in this browser to load your courses.'),
+        errors.length > 0 && h('ul', { class: 'error-list' }, errors.map(error => h('li', null, `${error.courseId ? labelFor(error.courseId) : ''} ${error.section}: ${error.message}`))),
+        h('div', { class: 'button-row' }, h('button', { class: 'button secondary', type: 'button', disabled: state.busy.sync, onclick: runSync }, state.busy.sync ? 'Syncing…' : 'Sync now')),
       ),
-      h('p', { class: 'meta', style: 'margin-top:8px' }, 'The calendar file has Brightspace due dates and the syllabus dates you confirmed. Import it into Google Calendar or Outlook.'),
-      h('p', { class: 'meta', style: 'margin-top:8px' }, 'Benchmark data is for testing BoilerSpace: your courses and the text of their files, without grades, your name or email addresses. Reading every file takes a few minutes.'),
+    ),
+    h('section', { class: 'settings-group connection-card' },
+      connectionHeader('genai', 'Purdue GenAI Studio', state.genaiError ? 'Connection needs attention' : connected ? 'Connected · Ready for your questions' : 'Course answers, with your Purdue account', connected && !state.genaiError,
+        (!connected || state.genaiError) && h('button', { class: 'button secondary', type: 'button', 'aria-label': `${state.genaiError ? 'Reconnect' : 'Connect'} Purdue GenAI Studio`, disabled: state.busy.link, onclick: connectGenAI }, state.busy.link ? 'Connecting…' : state.genaiError ? 'Reconnect' : 'Connect')),
+      state.linkStatus && h('p', { class: 'connection-progress', role: 'status' }, state.linkStatus),
+      state.linkError && h('p', { class: 'small error-text', role: 'alert' }, state.linkError),
+      connected && disclosure('genai-details', 'Manage',
+        state.genaiError && h('p', { class: 'small error-text' }, state.genaiError),
+        h('p', { class: 'meta', style: 'margin-top:10px' }, `Connected as ${state.genai.name}.`),
+        modelField(),
+        h('div', { class: 'button-row' }, h('button', { class: 'text-button', type: 'button', onclick: async () => { await unlink(); await loadState(); render(); } }, 'Disconnect GenAI Studio')),
+        h('p', { class: 'meta', style: 'margin-top:8px' }, 'Disconnect removes the saved key from this browser. You can revoke it in GenAI Studio under Settings, Account.'),
+      ),
+    ),
+    discussionsSettings(),
+    h('p', { class: 'connections-note' }, 'Ed and Piazza are in beta. Discussions update every 20 minutes while BoilerSpace is open.'),
+    h('section', { class: 'settings-group' },
+      h('h2', { class: 'heading' }, 'Calendar'),
+      h('p', { class: 'meta' }, 'Bring Brightspace deadlines and verified syllabus dates into Apple Calendar, Google Calendar, or Outlook.'),
+      h('div', { class: 'button-row' }, h('button', { class: 'button secondary', type: 'button', disabled: !state.snapshot, onclick: exportCalendar }, 'Export calendar (.ics)')),
+    ),
+    h('section', { class: 'settings-group' },
+      h('h2', { class: 'heading' }, 'Data'),
+      h('p', { class: 'meta' }, 'Course data and search stay in this browser. Questions and relevant source text go to Purdue GenAI Studio. Grades never do.'),
+      disclosure('privacy-details', 'What is shared', h('p', { class: 'meta', style: 'margin-top:10px' }, 'Syllabus text is sent to read dates and policies. Ask sends the relevant course material and discussion excerpts it reads. Ed and Piazza connections read public text and available replies using your existing sign-in. Attachments and images stay on the original site. BoilerSpace does not post, reply, or vote, and does not save discussion passwords or session tokens.')),
+      disclosure('data-options', 'Data and advanced options',
+        h('div', { class: 'button-row' },
+          h('button', { class: 'button secondary', type: 'button', disabled: !state.snapshot, onclick: exportData }, 'Download data (JSON)'),
+          h('button', { class: 'button danger', type: 'button', onclick: clearData }, 'Delete all data'),
+        ),
+        disclosure('benchmark-tools', 'Developer tools',
+          h('p', { class: 'meta', style: 'margin-top:12px' }, 'Save course and file text for local benchmarks. The capture excludes grades, your name, and email addresses. This can take a few minutes.'),
+          h('div', { class: 'button-row' }, h('button', { class: 'button secondary', type: 'button', disabled: !state.snapshot || state.busy.capture, onclick: saveBenchmarkData }, state.busy.capture ? 'Saving benchmark data…' : 'Save benchmark data')),
+        ),
+      ),
     ),
   ];
 }
+
 
 // ---------- Connect page (opened from the panel inside Brightspace) ----------
 
@@ -1510,17 +1592,29 @@ function syncLine() {
   if (!meta?.lastSuccessAt) return '';
   const minutes = Math.round((Date.now() - Date.parse(meta.lastSuccessAt)) / 60_000);
   const age = minutes < 1 ? 'just now' : minutes < 60 ? `${minutes} min ago` : formatDateTime(meta.lastSuccessAt);
-  return state.busy.syllabi ? 'Checking syllabi…' : `Courses synced ${age}`;
+  return state.busy.syllabi ? 'Reading syllabi…' : `Updated ${age}`;
 }
 
 const VIEWS = { week: weekView, courses: coursesView, ask: askView, settings: settingsView };
+const expandedSections = new Map();
 
 function render({ top = false } = {}) {
   const main = document.getElementById('view');
   const scroll = main.scrollTop;
+  const atBottom = main.scrollHeight - scroll - main.clientHeight < 80;
+  const active = document.activeElement;
+  const focusKey = active?.dataset.focusKey;
+  const selection = typeof active?.selectionStart === 'number' ? [active.selectionStart, active.selectionEnd] : null;
+  for (const details of main.querySelectorAll('details[data-disclosure]')) expandedSections.set(details.dataset.disclosure, details.open);
   const content = DISCUSSION_ACCESS ? discussionAccessView() : ACCESS_PAGE ? syllabusAccessPage() : CONNECT_PAGE ? connectPageView() : [syllabusAccessNotice(), state.view === 'settings' ? null : hostAccessNotice(), VIEWS[state.view]()];
   main.replaceChildren(h('div', { class: state.view === 'ask' && !CONNECT_PAGE ? 'view ask-view' : 'view' }, content));
-  if (state.view === 'ask') main.scrollTop = main.scrollHeight;
+  for (const details of main.querySelectorAll('details[data-disclosure]')) details.open = expandedSections.get(details.dataset.disclosure) ?? false;
+  const focused = focusKey && [...main.querySelectorAll('[data-focus-key]')].find(element => element.dataset.focusKey === focusKey);
+  if (focused) {
+    focused.focus({ preventScroll: true });
+    if (selection) focused.setSelectionRange(...selection);
+  } else if (top && state.view === 'ask') main.querySelector('textarea')?.focus({ preventScroll: true });
+  if (state.view === 'ask' && (top || atBottom)) main.scrollTop = main.scrollHeight;
   else main.scrollTop = top ? 0 : scroll;
   for (const button of document.querySelectorAll('.tabs button')) {
     button.toggleAttribute('aria-current', false);
@@ -1535,7 +1629,7 @@ function renderHeader() {
   const syncButton = document.getElementById('sync-button');
   syncButton.disabled = state.busy.sync;
   syncButton.classList.toggle('spinning', state.busy.sync);
-  syncButton.hidden = !state.snapshot || CONNECT_PAGE || ACCESS_PAGE;
+  syncButton.hidden = !state.snapshot || CONNECT_PAGE || ACCESS_PAGE || DISCUSSION_ACCESS;
 }
 
 // Progress updates arrive several times a second during a sync, so they skip the full re-render.
@@ -1589,8 +1683,6 @@ async function init() {
   await loadState({ includeChat: true });
   render();
 
-  if (DISCUSSION_ACCESS) return;
-
   store.onChange(async (changes) => {
     const keys = Object.keys(changes);
     if (changes.chats && !state.pending) {
@@ -1611,11 +1703,14 @@ async function init() {
     const accessGranted = changes.syllabusAccess?.newValue === true && changes.syllabusAccess.oldValue !== true;
     const snapshotChanged = keys.includes('snapshot');
     const linked = keys.includes('genai') && !changes.genai.oldValue && changes.genai.newValue;
+    const newDiscussion = changes.discussions?.newValue?.sources?.some(source => !changes.discussions.oldValue?.sources?.some(previous => previous.id === source.id));
     await loadState();
     if (!state.pending) render();
     if (CONNECT_PAGE && linked) setTimeout(() => window.close(), 1500);
-    if (!ACCESS_PAGE && !CONNECT_PAGE && (snapshotChanged || linked || accessGranted)) processSyllabi();
+    if (!ACCESS_PAGE && !CONNECT_PAGE && !DISCUSSION_ACCESS && (snapshotChanged || linked || accessGranted)) processSyllabi();
+    if (!DISCUSSION_ACCESS && (snapshotChanged || (newDiscussion && !state.busy.discussionConnect))) refreshDiscussions();
   });
+  if (DISCUSSION_ACCESS) return;
   setInterval(onSyncActivity, 3000);
 
   const access = await attempt(() => chrome.runtime.sendMessage({ type: 'boilerspace-syllabus-access' }));

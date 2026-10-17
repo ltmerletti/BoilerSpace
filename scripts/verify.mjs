@@ -125,6 +125,7 @@ const context = await chromium.launchPersistentContext(profile, {
   // does not leave Chromium's emulated pointer coordinates at a different width.
   viewport: { width: 1280, height: 860 },
   deviceScaleFactor: process.env.CI ? 1 : 2,
+  reducedMotion: 'reduce',
   args: [`--disable-extensions-except=${extensionPath}`, `--load-extension=${extensionPath}`],
 });
 if (process.env.CI) await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
@@ -192,22 +193,33 @@ try {
   await page.waitForSelector('.agenda');
   await page.screenshot({ path: path.join(outDir, '1-week.png') });
   check('week shows today with items', (await page.locator('.day.today .item').count()) >= 1);
-  check('syllabus dates wait for review', await page.isVisible('text=Check these syllabus dates'));
+  check('date conflicts are a quiet disclosure and routine confirmation buttons are absent', await page.isVisible('text=Syllabus date differences') && (await page.getByRole('button', { name: 'Looks right', exact: true }).count()) === 0);
   const migrated = (await page.evaluate(() => chrome.storage.local.get('genai'))).genai.model;
   check('older connections move to the Qwen default', migrated === 'qwen3.8:27b', migrated);
 
   await page.click('.tabs button[data-view="courses"]');
   await page.screenshot({ path: path.join(outDir, '2-courses.png') });
+  for (const width of [320, 720, 400]) {
+    await page.setViewportSize({ width, height: 900 });
+    check(`course layout fits a ${width}px panel`, await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  }
   await page.click('.course-row >> nth=0');
   await page.waitForSelector('.course-head');
   await page.screenshot({ path: path.join(outDir, '3-course-detail.png') });
   check('course page shows the AI policy', await page.isVisible('text=AI tools are allowed with limits.'));
   await page.click('text=All courses');
   await page.click('.course-row >> nth=1');
+  await page.getByText('Add a syllabus', { exact: true }).click();
   check('a course without a syllabus offers upload', await page.isVisible('text=Upload the syllabus'));
 
   await page.click('.tabs button[data-view="ask"]');
+  check('Ask navigation marks the correct view', await page.locator('.tabs [aria-current="page"]').getAttribute('data-view') === 'ask');
   await page.screenshot({ path: path.join(outDir, '4-ask-empty.png') });
+  await page.getByLabel('Question', { exact: true }).fill('Keep this draft');
+  await page.getByLabel('Question', { exact: true }).evaluate(element => element.setSelectionRange(5, 9));
+  await page.evaluate(() => chrome.storage.local.set({ changes: [] }));
+  await page.waitForTimeout(200);
+  check('background updates preserve the question draft, focus and text selection', await page.getByLabel('Question', { exact: true }).evaluate(element => element.value === 'Keep this draft' && document.activeElement === element && element.selectionStart === 5 && element.selectionEnd === 9));
   await page.fill('.composer textarea', 'What do I have due this week?');
   await page.click('.composer button[type="submit"]');
   await page.waitForSelector('.message.assistant:not(.pending) .sources', { timeout: 20_000 });
@@ -235,8 +247,17 @@ try {
     modelRequests.length === 4 && (await page.locator('.message.user').count()) === 1 && (await page.locator('.message.assistant:not(.pending)').count()) === 1);
 
   await page.click('.tabs button[data-view="settings"]');
-  await page.waitForSelector('.field select option >> nth=2', { state: 'attached', timeout: 5000 });
   await page.screenshot({ path: path.join(outDir, '6-settings.png') });
+  for (const width of [320, 720, 400]) {
+    await page.setViewportSize({ width, height: 900 });
+    check(`connection controls fit a ${width}px panel`, await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  }
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.screenshot({ path: path.join(outDir, '6-settings-dark.png') });
+  check('dark mode uses the dark surface and remains within the panel', await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme === 'dark' && document.documentElement.scrollWidth <= innerWidth));
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.locator('[data-disclosure="genai-details"] > summary').click();
+  await page.waitForSelector('.field select option >> nth=2', { state: 'attached', timeout: 5000 });
   const options = await page.locator('.field select option').allTextContents();
   check('model picker lists GenAI Studio chat models', options.includes('qwen3.8:27b (recommended)') && options.includes('llama3.3:70b') && !options.some((o) => o.includes('embed')), options.join(', '));
   await page.selectOption('.field select', 'llama3.3:70b');

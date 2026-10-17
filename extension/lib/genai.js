@@ -88,7 +88,8 @@ async function readSessionToken(tabId) {
 }
 
 async function signInViaTab(onStatus) {
-  const tab = await chrome.tabs.create({ url: `${GENAI_BASE}/auth` });
+  const tab = await chrome.tabs.create({ url: 'about:blank', active: true });
+  await chrome.tabs.update(tab.id, { url: `${GENAI_BASE}/auth` });
   onStatus('Sign in to GenAI Studio with your Purdue account in the new tab. BoilerSpace continues on its own.');
   const deadline = Date.now() + SIGN_IN_TIMEOUT_MS;
   while (Date.now() < deadline) {
@@ -127,7 +128,7 @@ export async function linkAccount({ onStatus = () => {} } = {}) {
     const user = (await whoami()) ?? (await signInViaTab(onStatus));
     if (!user) throw new GenAIError('GenAI Studio sign-in was not completed.');
 
-    onStatus(`Signed in as ${user.name}. Getting your API key…`);
+    onStatus('Connecting to Purdue GenAI Studio…');
     const { key, created } = await getOrCreateKey();
 
     const ids = await fetchModelIds(key).catch((err) => {

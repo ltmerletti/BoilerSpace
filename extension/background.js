@@ -98,7 +98,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (message.action !== 'open-access') return handleDiscussionRequest(message);
       if (!DISCUSSION_SITES[message.platform]) throw new Error('Unknown discussion site.');
       const params = new URLSearchParams({ 'discussions-access': message.platform });
-      if (message.platform === 'piazza') params.set('course', parseDiscussionUrl(message.url).url);
+      if (message.platform === 'piazza' && message.url) params.set('course', parseDiscussionUrl(message.url).url);
       await chrome.tabs.create({ url: chrome.runtime.getURL(`sidepanel.html?${params}`), active: true });
       return null;
     };

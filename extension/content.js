@@ -90,6 +90,7 @@
   pushStyle.textContent = `
     html.boilerspace-pushed { margin-right: var(--boilerspace-width, ${DEFAULT_WIDTH}px) !important; }
     html.boilerspace-animating { transition: margin-right 180ms ease !important; }
+    @media (prefers-reduced-motion: reduce) { html.boilerspace-animating { transition: none !important; } }
   `;
   (document.head ?? document.documentElement).append(pushStyle);
 
@@ -102,11 +103,11 @@
       .drawer {
         position: fixed; top: 0; right: 0; z-index: 2147483000;
         width: var(--boilerspace-width, ${DEFAULT_WIDTH}px); max-width: 100vw; height: 100vh;
-        background: #fff;
+        background: #f5f5f7;
         transform: translateX(100%);
         transition: transform 180ms ease;
       }
-      .drawer.open { transform: none; border-left: 1px solid #d3d9e3; }
+      .drawer.open { transform: none; border-left: 1px solid #e2e2e7; }
       .drawer:not(.open) { pointer-events: none; border-left: 0; }
       .drawer:not(.open) .collapse { pointer-events: auto; }
       .drawer.overlay { box-shadow: -12px 0 32px rgba(0, 0, 0, 0.16); }
@@ -121,13 +122,18 @@
         position: absolute; top: 14px; left: -32px; z-index: 2;
         width: 32px; height: 36px; padding: 0; cursor: pointer;
         display: grid; place-items: center;
-        border: 1px solid #d3d9e3; border-right: 0; border-radius: 8px 0 0 8px;
-        background: #fff; color: #202122;
+        border: 1px solid #e2e2e7; border-right: 0; border-radius: 10px 0 0 10px;
+        background: #f5f5f7; color: #1d1d1f;
         box-shadow: -4px 0 12px rgba(32, 33, 34, 0.08);
       }
       .collapse svg { transform: rotate(180deg); }
       .drawer.open .collapse svg { transform: none; }
       .collapse:hover { color: #006fbf; }
+      @media (prefers-color-scheme: dark) {
+        .drawer, .collapse { background: #141417; color: #f2f2f5; }
+        .drawer.open, .collapse { border-color: #37373f; }
+        .collapse:hover { color: #75b5ff; }
+      }
       @media (prefers-reduced-motion: reduce) { .drawer, .drawer.open { transition: none; } }
     </style>
     <div class="drawer" role="complementary" aria-label="BoilerSpace">

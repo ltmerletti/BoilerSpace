@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseDiscussionUrl, matchDiscussionCourse, normalizeEdThread, normalizePiazzaThread, discussionDocuments } from '../extension/lib/discussions.js';
+import { parseDiscussionUrl, matchDiscussionCourse, reconcileDiscussionCourse, normalizeEdThread, normalizePiazzaThread, discussionDocuments } from '../extension/lib/discussions.js';
 import { createTools } from '../extension/lib/agent.js';
 import { snapshotFixture } from './helpers.mjs';
 
@@ -36,6 +36,25 @@ test('Ed normalization retains staff replies but omits author identities and pri
   assert.ok(!/Private|example.test|user_id|Deleted reply/.test(JSON.stringify(thread)));
   assert.equal(normalizeEdThread({ ...edPayload(), thread: { ...edPayload().thread, course_id: 999 } }, source), null);
   assert.equal(normalizeEdThread({ ...edPayload(), thread: { ...edPayload().thread, is_private: true } }, source), null);
+});
+
+test('course matching recognizes compact codes and unique fuzzy titles while refusing old terms and ambiguous sections', () => {
+  const courses = [
+    { id: 1, current: true, code: 'wl.202620.CS.25000.LE1', name: 'Fall 2026 CS 25000 Computer Architecture' },
+    { id: 2, current: true, code: 'wl.202620.CS.25100.LE1', name: 'Fall 2026 CS 25100 Data Structures' },
+  ];
+  for (const name of ['CS250', 'CS_25000', 'CS-250', 'Computer architecture', 'Computer architectre']) assert.equal(matchDiscussionCourse({ name }, courses), 1, name);
+  assert.equal(matchDiscussionCourse({ name: 'CS251 discussion' }, courses), 2);
+  for (const name of ['Fall 2025 CS250', 'CS250 2025', 'Spring 2026 CS250', 'Computer', 'CS259', 'CS250 / CS251']) assert.equal(matchDiscussionCourse({ name }, courses), null, name);
+  assert.equal(matchDiscussionCourse({ name: 'Computer architecture' }, [...courses, { ...courses[0], id: 3 }]), null);
+  const manual = { name: 'CS250', courseId: null, linkOrigin: 'manual' };
+  reconcileDiscussionCourse(manual, courses);
+  assert.equal(manual.courseId, null, 'explicitly separate courses stay separate');
+  const automatic = { name: 'Piazza course', courseId: null, linkOrigin: 'automatic' };
+  reconcileDiscussionCourse(automatic, courses);
+  automatic.name = 'CS250';
+  reconcileDiscussionCourse(automatic, courses);
+  assert.equal(automatic.courseId, 1, 'newly discovered metadata repairs an earlier unmatched connection');
 });
 
 test('Piazza normalization separates instructor and student answers and preserves source links', () => {

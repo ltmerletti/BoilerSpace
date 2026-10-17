@@ -23,6 +23,19 @@ const text = (value) => htmlToText(String(value ?? '')).trim();
 const staff = (role) => /^(staff|admin|instructor|teacher|tutor|ta)$/i.test(role ?? '');
 const date = (value) => value && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : null;
 
+function similarWord(left, right) {
+  if (left === right) return true;
+  if (Math.min(left.length, right.length) < 5 || Math.abs(left.length - right.length) > 1 || left.slice(0, 3) !== right.slice(0, 3)) return false;
+  let i = 0, j = 0, edits = 0;
+  while (i < left.length && j < right.length) {
+    if (left[i] === right[j]) { i++; j++; continue; }
+    if (++edits > 1) return false;
+    if (left.length >= right.length) i++;
+    if (right.length >= left.length) j++;
+  }
+  return edits + (i < left.length || j < right.length ? 1 : 0) <= 1;
+}
+
 // Iterative preorder preserves reply order without dropping deeply nested comments.
 function* publicReplies(nodes, children, privateNode) {
   const stack = [...(nodes ?? [])].reverse();
@@ -36,13 +49,34 @@ function* publicReplies(nodes, children, privateNode) {
 }
 
 export function matchDiscussionCourse(source, courses) {
-  const raw = `${source.code ?? ''} ${source.name ?? ''}`.toUpperCase();
-  const tokens = [...raw.matchAll(/\b([A-Z]{2,5})[.\s-]+(\d{3}(?:\d{2})?)\b/g)].map((m) => `${m[1]}${m[2].padEnd(5, '0')}`);
-  const matches = courses.filter((course) => course.current && tokens.some((token) => {
-    const label = `${course.code ?? ''} ${course.name ?? ''}`.toUpperCase();
-    return [...label.matchAll(/\b([A-Z]{2,5})[.\s-]+(\d{3}(?:\d{2})?)\b/g)].some((m) => `${m[1]}${m[2].padEnd(5, '0')}` === token);
-  }));
-  return matches.length === 1 ? matches[0].id : null;
+  const label = (item) => `${item.code ?? ''} ${item.name ?? ''}`.toUpperCase();
+  const codes = (value) => [...value.matchAll(/\b([A-Z]{2,5})[.\s_-]*(\d{3}(?:\d{2})?)\b/g)].map((match) => `${match[1]}${match[2].padEnd(5, '0')}`);
+  const term = (value) => /\b(FALL|SPRING|SUMMER|WINTER)[\s._-]+(20\d{2})\b/.exec(value)?.slice(1).join(' ');
+  const raw = label(source), identifiers = codes(raw), sourceTerm = term(raw);
+  const years = (value) => value.match(/\b20\d{2}\b/g) ?? [];
+  const sourceYears = years(raw);
+  const candidates = courses.filter(course => course.current && (!sourceTerm || !term(label(course)) || sourceTerm === term(label(course))) &&
+    (!sourceYears.length || !years(label(course)).length || sourceYears.some(year => years(label(course)).includes(year))));
+  if (identifiers.length) {
+    const matches = candidates.filter(course => codes(label(course)).some(code => identifiers.includes(code)));
+    // Never fuzzy-match course numbers or guess between sections of the same course.
+    return matches.length === 1 ? matches[0].id : null;
+  }
+  const words = (value) => new Set(value.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .split(/[^a-z]+/).filter(word => word.length > 2 && !/^(fall|spring|summer|winter|course|discussion|lecture|lec|merge|section|purdue|university|the|and|for|with)$/.test(word)));
+  const sourceWords = words(raw);
+  if (sourceWords.size < 2) return null;
+  const ranked = candidates.map(course => {
+    const courseWords = words(label(course)), common = [...sourceWords].filter(word => [...courseWords].some(candidate => similarWord(word, candidate))).length;
+    return { course, score: common / Math.max(sourceWords.size, courseWords.size), common };
+  }).sort((a, b) => b.score - a.score);
+  return ranked[0]?.common >= 2 && ranked[0].score >= 0.8 && ranked[0].score - (ranked[1]?.score ?? 0) >= 0.2 ? ranked[0].course.id : null;
+}
+
+export function reconcileDiscussionCourse(source, courses) {
+  if (source.linkOrigin === 'manual' || (source.courseId && !source.linkOrigin)) return;
+  source.courseId = matchDiscussionCourse(source, courses);
+  source.linkOrigin = 'automatic';
 }
 
 export function normalizeEdThread(payload, source) {

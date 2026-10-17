@@ -95,3 +95,17 @@ test('an empty Ed history page ends pagination without issuing detail requests',
     assert.equal(fixture.calls.length, 2);
   } finally { fixture.restore(); }
 });
+
+test('Piazza discovers visible class links and the current class without fetching private account data', async () => {
+  const fixture = site('piazza', () => { throw new Error('Discovery should not issue an API call.'); });
+  document.querySelectorAll = () => [
+    { href: 'https://piazza.com/class/course250', textContent: 'CS250' },
+    { href: 'https://piazza.com/class/course251', textContent: 'CS251' },
+    { href: 'https://piazza.com.evil.test/class/other', textContent: 'Wrong origin' },
+  ];
+  try {
+    const result = await readDiscussionSite({ platform: 'piazza', discover: true });
+    assert.deepEqual(result.courses.map(course => course.remoteId), ['course250', 'course251', 'example']);
+    assert.equal(fixture.calls.length, 0);
+  } finally { fixture.restore(); }
+});

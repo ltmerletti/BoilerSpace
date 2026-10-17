@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="extension/icons/logo.svg" width="80" height="80" alt="BoilerSpace">
+  <img src="docs/images/hero.svg" width="1000" alt="BoilerSpace wordmark and orbit emblem alongside two matching lecture pages, drawn as a vector illustration">
 </p>
 
 <h1 align="center">BoilerSpace</h1>
@@ -15,7 +15,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-222222?style=flat-square" alt="GPLv3 license"></a>
 </p>
 
-## Make sense of the slide in front of you
+## Understanding lecture material
 
 > I'm on slide 14 of Topic 1. Are solar, visible, and shortwave all the same thing? How does he define these labels, and what do we actually need to remember?
 
@@ -25,35 +25,25 @@ BoilerSpace opens the slide, checks the neighboring material, and reads the lect
 
 You can ask a follow-up without leaving the lecture or starting a new conversation.
 
-## Go from exam scope to a review plan
+## Reviewing for an exam
 
-> What does the syllabus say about the midterm, what does it cover, and what should I review in the course materials?
+> I'm starting to review for the midterm. Can you go through all the lecture slides it covers and make an organized list of the topics I need to know? Include what the learning objectives say we're expected to be able to do.
 
-<a href="docs/images/overview.png"><img src="docs/images/overview.png" width="1000" alt="A real exam-review answer beside the course's learning objectives, collecting topics from the syllabus and lecture files"></a>
+<a href="docs/images/exam-topics.png"><img src="docs/images/exam-topics.png" width="1000" alt="A real exam-review answer that builds a topic list from lecture slides and learning objectives, beside the course material in Brightspace"></a>
 
-One question can take BoilerSpace through the syllabus, lecture decks and learning objectives. In this conversation, it also caught an extra topic included in a later lecture summary and linked both sources.
+BoilerSpace checks the syllabus for scope, then works through lecture slides, notes and learning objectives to collect the topics and what students are expected to do with them.
 
-<details>
-<summary>See the lecture-by-lecture lookup</summary>
+## Ed and Piazza discussions
 
-<img src="docs/images/exam-research.png" width="640" alt="The expanded work log showing the lecture files opened for learning objectives">
+> How does the instructor recommend studying for this course? Can you bring together the guidance from Ed and link the posts you use?
 
-</details>
+BoilerSpace searches the saved discussions and reads the relevant replies, with links back to the posts behind its answer.
 
-## Find the detail buried in Ed or Piazza
+<a href="docs/images/ed-exam-guidance.png"><img src="docs/images/ed-exam-guidance.png" width="760" alt="A real answer collecting the instructor's study guidance across Ed discussions"></a>
 
-**Ed.** Two project events finish on the same tick. Which gets processed first? BoilerSpace finds the instructor's tie-breaking rule and links the reply.
+The same search works with Piazza. It covers the full saved public history, including older threads and available replies. Connect Ed or Piazza in Settings using your existing sign-ins; clear course matches link to Brightspace automatically.
 
-**Piazza.** A later announcement extends two projects again. BoilerSpace finds the revised deadline and distinguishes it from the earlier extension.
-
-<p>
-  <img src="docs/images/ed-clarification.png" width="440" alt="An Ed-backed answer explaining the instructor's ordering rule for simultaneous project events">
-  <img src="docs/images/piazza-update.png" width="440" alt="A Piazza-backed answer citing a later deadline extension and the announcement it superseded">
-</p>
-
-Search covers the full saved public history, including older threads and available replies. Connect Ed or Piazza in Settings using your existing sign-ins; clear course matches link to Brightspace automatically.
-
-## Your week, in one place
+## Assignments and upcoming dates
 
 Assignments, quizzes, exams and syllabus dates come together in **Week**. **Courses** keeps your current classes and syllabi close by. Export upcoming work to your calendar when you need it elsewhere.
 

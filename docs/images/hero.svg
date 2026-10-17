@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="400" viewBox="0 0 1200 400" role="img" aria-labelledby="title description">
+  <title id="title">BoilerSpace</title>
+  <desc id="description">Two matching lecture pages orbit the BoilerSpace emblem, bringing course sources together.</desc>
+  <defs>
+    <clipPath id="panel"><rect x="1" y="1" width="1198" height="398" rx="30"/></clipPath>
+    <clipPath id="orbit-back"><rect x="-150" y="-100" width="300" height="100"/></clipPath>
+    <clipPath id="orbit-front"><rect x="-150" width="300" height="100"/></clipPath>
+  </defs>
+
+  <rect x="1" y="1" width="1198" height="398" rx="30" fill="#17191c" stroke="#37393c"/>
+  <g clip-path="url(#panel)">
+    <path d="M660-80C480 60 490 338 722 477M729-105C549 36 563 325 799 454" fill="none" stroke="#ffffff" stroke-opacity=".035" stroke-width="1.5"/>
+
+    <g transform="translate(70 88)">
+      <g transform="translate(4 0) scale(.43)">
+        <g transform="rotate(-20 64 64)">
+          <ellipse cx="64" cy="64" rx="48" ry="14" fill="none" stroke="#f4f2ed" stroke-width="6" clip-path="url(#small-back)"/>
+          <circle cx="64" cy="64" r="27" fill="#cfb991"/>
+          <ellipse cx="64" cy="64" rx="48" ry="14" fill="none" stroke="#f4f2ed" stroke-width="6" clip-path="url(#small-front)"/>
+        </g>
+      </g>
+      <text x="0" y="130" fill="#f4f2ed" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="64" font-weight="600" letter-spacing="-2.5">BoilerSpace</text>
+      <path d="M2 170H44" stroke="#cfb991" stroke-width="2"/>
+      <text x="0" y="209" fill="#b5b4b1" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="21" letter-spacing=".2">Brightspace <tspan fill="#686a6c">/</tspan> Ed <tspan fill="#686a6c">/</tspan> Piazza</text>
+    </g>
+
+    <g transform="translate(782 202) rotate(-20)">
+      <ellipse rx="266" ry="104" fill="none" stroke="#cfb991" stroke-opacity=".2"/>
+      <circle cx="-249" cy="-36" r="3" fill="#cfb991"/>
+      <circle cx="205" cy="66" r="3" fill="#cfb991"/>
+    </g>
+
+    <!-- Lecture page: title, wavelength figure and notes. -->
+    <g transform="translate(686 35) rotate(10 87 99)">
+      <rect x="6" y="8" width="174" height="198" rx="10" fill="#0d0e10" fill-opacity=".5"/>
+      <rect width="174" height="198" rx="10" fill="#eeebe4"/>
+      <path d="M23 30H99" stroke="#3a3b3a" stroke-width="5" stroke-linecap="round"/>
+      <path d="M23 47H67" stroke="#a09c93" stroke-width="3" stroke-linecap="round"/>
+      <path d="M23 105H151" stroke="#ccc7bd"/>
+      <path d="M24 105C34 105 35 77 45 77S56 133 66 133 77 77 87 77 98 133 108 133 119 77 129 77 140 105 150 105" fill="none" stroke="#85704a" stroke-width="2.5"/>
+      <path d="M23 159H147M23 173H122" stroke="#bbb5a9" stroke-width="3" stroke-linecap="round"/>
+    </g>
+
+    <!-- Companion lecture page, using the same layout in charcoal. -->
+    <g transform="translate(931 143) rotate(-8 87 99)">
+      <rect x="6" y="8" width="174" height="198" rx="10" fill="#0d0e10" fill-opacity=".5"/>
+      <rect width="174" height="198" rx="10" fill="#292c30" stroke="#4b4e51"/>
+      <path d="M23 30H99" stroke="#eeebe4" stroke-width="5" stroke-linecap="round"/>
+      <path d="M23 47H67" stroke="#a5a4a0" stroke-width="3" stroke-linecap="round"/>
+      <path d="M23 76H147M23 90H147M23 104H116" stroke="#858683" stroke-width="3" stroke-linecap="round"/>
+      <path d="M23 132H79" stroke="#cfb991" stroke-width="3" stroke-linecap="round"/>
+      <path d="M23 159H147M23 173H122" stroke="#858683" stroke-width="3" stroke-linecap="round"/>
+    </g>
+
+    <!-- The existing orbit mark, enlarged without its app-icon background. -->
+    <g transform="translate(826 236) rotate(-20)">
+      <ellipse rx="133" ry="39" fill="none" stroke="#f4f2ed" stroke-width="8" clip-path="url(#orbit-back)"/>
+      <circle r="75" fill="#cfb991"/>
+      <ellipse rx="133" ry="39" fill="none" stroke="#f4f2ed" stroke-width="8" clip-path="url(#orbit-front)"/>
+    </g>
+  </g>
+  <defs>
+    <clipPath id="small-back"><rect y="-100" width="128" height="164"/></clipPath>
+    <clipPath id="small-front"><rect y="64" width="128" height="100"/></clipPath>
+  </defs>
+</svg>

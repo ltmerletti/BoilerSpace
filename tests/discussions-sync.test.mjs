@@ -12,7 +12,7 @@ function setup(reader, granted = true) {
       set: async (values) => Object.assign(data, structuredClone(values)),
     } },
     permissions: { contains: async () => granted },
-    tabs: { query: async () => [{ id: 1, url: 'https://edstem.org/us/', status: 'complete' }], get: async () => ({ status: 'complete' }) },
+    tabs: { query: async () => [{ id: 1, url: 'https://edstem.org/us/', status: 'complete' }], get: async () => ({ status: 'complete', url: (await chrome.tabs.query({}))[0]?.url }) },
     scripting: { executeScript: async ({ args }) => { calls.push(args[0]); return [{ result: await reader(args[0], data) }]; } },
   };
   return { data, calls };
@@ -36,6 +36,30 @@ async function connect() {
   await handleDiscussionRequest({ action: 'connect', platform: 'ed' });
   return sync(true);
 }
+
+test('a newly opened Firefox reader waits for the site URL after about:blank reports complete', async () => {
+  setup(async () => ({ courses: [{ remoteId: '1', name: 'CS 25200' }] }));
+  let polls = 0, removed = false;
+  chrome.tabs.query = async () => [];
+  chrome.tabs.create = async options => { assert.equal(options.active, false, 'automatic readers never request focus'); return { id: 99 }; };
+  chrome.tabs.update = async () => ({ id: 99, url: 'about:blank', status: 'complete' });
+  chrome.tabs.get = async () => ({ status: 'complete', url: ++polls === 1 ? 'about:blank' : 'https://edstem.org/us/' });
+  chrome.tabs.remove = async id => { assert.equal(id, 99); removed = true; };
+  const execute = chrome.scripting.executeScript;
+  chrome.scripting.executeScript = async args => { assert.ok(polls >= 2, 'the site has committed before injection'); return execute(args); };
+  await handleDiscussionRequest({ action: 'connect', platform: 'ed' });
+  assert.equal(polls, 2);
+  assert.equal(removed, true);
+});
+
+test('Piazza reuses an existing class tab with a trailing slash and leaves it open', async () => {
+  setup(async () => ({ courses: [{ remoteId: 'example123', name: 'CS 25200' }] }));
+  chrome.tabs.query = async () => [{ id: 8, url: 'https://piazza.com/class/example123/?cid=12#discussion', active: false, status: 'complete' }];
+  chrome.tabs.create = async () => assert.fail('The existing class tab should be reused');
+  chrome.tabs.remove = async () => assert.fail('A user-owned class tab must stay open');
+  const result = await handleDiscussionRequest({ action: 'connect', platform: 'piazza', url: 'https://piazza.com/class/example123' });
+  assert.equal(result.sources[0].id, 'piazza:example123');
+});
 
 test('Ed connect discovers all active courses and refreshes them independently', async () => {
   const { data } = setup(async ({ discover, remoteId, offset }) => discover ? { courses: [{ remoteId: '1', code: 'CS 25200', name: 'CS 25200' }, { remoteId: '2', code: 'MA 26500', name: 'MA 26500' }] } : remoteId === '2' ? Promise.reject(new Error('Temporary site error')) : feed(remoteId, offset));
@@ -79,6 +103,8 @@ test('linking and disconnecting one source leaves other course connections intac
   await connect();
   await handleDiscussionRequest({ action: 'link', sourceId: 'ed:1', courseId: null });
   assert.equal(data.discussions.sources[0].courseId, null);
+  await sync(true);
+  assert.equal(data.discussions.sources[0].courseId, null, 'a manual separate-course choice survives automatic matching');
   await assert.rejects(handleDiscussionRequest({ action: 'link', sourceId: 'ed:1', courseId: 999 }), /current Brightspace/);
   await handleDiscussionRequest({ action: 'remove', sourceId: 'ed:1' });
   assert.deepEqual(data.discussions.sources.map((s) => s.id), ['ed:2']);
@@ -138,6 +164,45 @@ test('older truncated captures are reread once even when the remote post version
   const after = calls.length;
   await sync(true);
   assert.equal(calls[after].knownVersions['101'], 'v1');
+});
+
+test('courses connected before Brightspace is loaded are matched later without another history import', async () => {
+  const { data, calls } = setup(async ({ discover, remoteId, offset }) => discover ? { courses: [{ remoteId: '1', name: 'CS252' }] } : feed(remoteId, offset));
+  data.snapshot = { courses: [], data: [] };
+  await connect();
+  assert.equal(data.discussions.sources[0].courseId, null);
+  data.snapshot = snapshotFixture();
+  const before = calls.length;
+  await handleDiscussionRequest({ action: 'sync' });
+  assert.equal(data.discussions.sources[0].courseId, 1600001);
+  assert.equal(calls.length, before);
+});
+
+test('Piazza discovers courses without a pasted link and matches metadata returned during import', async () => {
+  const { data } = setup(async ({ discover, offset }) => discover ? { courses: [{ remoteId: 'example', name: 'Piazza course' }] } : {
+    name: 'CS252', errors: [], threads: [], seenIds: [], pageIds: [], versions: {}, nextOffset: offset, hasMore: false,
+  });
+  chrome.tabs.query = async () => [{ id: 1, url: 'https://piazza.com/class/example', status: 'complete' }];
+  await handleDiscussionRequest({ action: 'connect', platform: 'piazza' });
+  assert.equal(data.discussions.sources[0].courseId, null);
+  await sync(true);
+  assert.equal(data.discussions.sources[0].courseId, 1600001);
+});
+
+test('a pasted Piazza link verifies signed-in class access before saving the connection', async () => {
+  const { data, calls } = setup(async ({ remoteId, discover }) => {
+    assert.equal(remoteId, 'example');
+    assert.equal(discover, true);
+    return { courses: [{ remoteId: 'example', name: 'CS252' }] };
+  });
+  chrome.tabs.query = async () => [{ id: 1, url: 'https://piazza.com/class/example', status: 'complete' }];
+  await handleDiscussionRequest({ action: 'connect', platform: 'piazza', url: 'https://piazza.com/class/example' });
+  assert.equal(data.discussions.sources[0].courseId, 1600001);
+  assert.equal(calls.length, 1);
+  chrome.scripting.executeScript = async () => [{ result: { courses: [] } }];
+  chrome.tabs.query = async () => [{ id: 1, url: 'https://piazza.com/class/unavailable', status: 'complete' }];
+  await assert.rejects(handleDiscussionRequest({ action: 'connect', platform: 'piazza', url: 'https://piazza.com/class/unavailable' }), /Sign into Piazza/);
+  assert.equal(data.discussions.sources.length, 1, 'unverified classes are not silently connected');
 });
 
 test('a server repeating the same history page stops with a recoverable error', async () => {

@@ -100,7 +100,7 @@ test('quotes must appear in the file, allowing dash, quote and ellipsis differen
   assert.equal(locateQuote('Quizzes 5% ... Projects 50%', SYLLABUS_PAGES), null, 'pieces must be in order');
 });
 
-test('validation drops invented items and flags dates that need a person to check', () => {
+test('validation drops invented items and surfaces conflicting dates without requesting routine confirmations', () => {
   const snapshot = snapshotFixture();
   const facts = validateExtraction(MODEL_OUTPUT, SYLLABUS_PAGES, { courseId: 1600001, brightspaceItems: snapshot.data[0].assignments });
 
@@ -126,7 +126,7 @@ test('validation drops invented items and flags dates that need a person to chec
 
   const record = { 1600001: { status: 'done', ...facts } };
   const pending = pendingReviews(record, {}, new Date('2026-10-13T16:00:00Z'));
-  assert.deepEqual(pending.map((d) => d.title), ['Midterm exam', 'Final project demo']);
+  assert.deepEqual(pending.map((d) => d.title), ['Final project demo']);
   assert.deepEqual(pendingReviews(record, {}, new Date('2026-11-01T16:00:00Z')).map((d) => d.title), ['Final project demo'], 'dates that already passed are not asked about');
 });
 
@@ -186,7 +186,7 @@ test('full pipeline: download in the Brightspace tab, read the DOCX, extract, ve
   assert.deepEqual(pendingReviews(syllabi, {}).map((d) => d.title), ['Final project demo']);
 
   const agenda = agendaItems(snapshot, syllabi, {});
-  assert.ok(agenda.some((i) => i.source === 'syllabus' && i.title === 'Final project demo' && i.allDay));
+  assert.ok(!agenda.some((i) => i.title === 'Final project demo'), 'a contradictory date stays out of the agenda automatically');
   assert.ok(!agenda.some((i) => i.source === 'syllabus' && ['Project 1', 'Midterm exam'].includes(i.title)), 'dates Brightspace already has are not doubled');
   assert.ok(!calendarEvents(snapshot, syllabi, {}).some((e) => e.title.includes('Final project demo')), 'unconfirmed syllabus dates stay out of the calendar');
 

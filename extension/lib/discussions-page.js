@@ -14,11 +14,11 @@ export async function readDiscussionSite({ platform, remoteId, discover = false,
     };
     if (!Number.isInteger(offset) || offset < 0) throw new Error('Invalid discussion cursor.');
     const started = Date.now();
-    // Finish each message promptly, saving its cursor before the next batch.
+    // Short checkpoints also keep progress visible when hidden tabs throttle timers.
     const threads = [], errors = [], seenIds = [], pageIds = [], versions = {};
     const readBatch = async (items, idOf, versionOf, isPublic, read) => {
       for (const item of items) {
-        if (Date.now() - started > 60_000) break;
+        if (Date.now() - started > 10_000) break;
         const id = String(idOf(item));
         if (isPublic(item)) {
           const version = versionOf(item);
@@ -56,13 +56,31 @@ export async function readDiscussionSite({ platform, remoteId, discover = false,
         nextOffset: offset + pageIds.length, hasMore: items.length > 0 };
 
     }
-    if (platform !== 'piazza' || location.hostname !== 'piazza.com' || !/^[a-z0-9]+$/i.test(remoteId)) throw new Error('Open the Piazza class in this browser first.');
+    if (platform !== 'piazza' || location.hostname !== 'piazza.com') throw new Error('Open Piazza in this browser first.');
     let csrf;
     for (let i = 0; i < 40 && !csrf; i++) {
       csrf = document.querySelector('meta[name="csrf_token"]')?.content || window.CSRF_TOKEN;
       if (!csrf) await sleep(250);
     }
     if (!csrf) throw new Error('Sign into Piazza in this browser, then retry.');
+    if (discover) {
+      const courses = new Map();
+      for (let attempt = 0; attempt < 40; attempt++) {
+        for (const anchor of document.querySelectorAll('a[href*="/class/"]')) {
+          const target = new URL(anchor.href, location.href);
+          const match = target.hostname === 'piazza.com' && /^\/class\/([a-z0-9]+)(?:\/|$)/i.exec(target.pathname);
+          const name = anchor.textContent?.trim();
+          if (match && name) courses.set(match[1], { remoteId: match[1], name });
+        }
+        const current = /^\/class\/([a-z0-9]+)(?:\/|$)/i.exec(location.pathname);
+        const name = document.getElementById('topbar_current_class_number')?.textContent?.trim();
+        if (current && name) courses.set(current[1], { remoteId: current[1], name });
+        if (courses.size) break;
+        await sleep(250);
+      }
+      return { courses: [...courses.values()] };
+    }
+    if (!/^[a-z0-9]+$/i.test(remoteId)) throw new Error('Open a Piazza class in this browser first.');
     const call = async (method, params) => {
       let data;
       for (let attempt = 0; attempt < 4; attempt++) {

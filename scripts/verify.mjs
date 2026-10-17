@@ -11,6 +11,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { fakeBrightspace, MODEL_OUTPUT, pdfWithPages, snapshotFixture, SYLLABUS_PAGES } from '../tests/helpers.mjs';
 import { validateExtraction } from '../extension/lib/syllabus.js';
 
+async function showSources(answer) {
+  const details = answer.locator('[data-disclosure^="sources-"]');
+  await details.waitFor({ state: 'attached', timeout: 20_000 });
+  if (!(await details.evaluate(element => element.open))) await details.locator('summary').click();
+}
+
 const root = fileURLToPath(new URL('..', import.meta.url));
 const playwrightPath = process.argv[2] ?? path.join(root, '../course-companion/node_modules/playwright/index.mjs');
 const { chromium } = await import(pathToFileURL(playwrightPath).href);
@@ -54,6 +60,7 @@ function seed() {
     genai: { key: 'sk-fake-for-screenshots', model: 'gpt-oss:120b', name: 'Boiler Maker', created: false, linkedAt: now.toISOString() },
     syllabi,
     reviews: {},
+    syllabusAccess: true,
   };
 }
 
@@ -95,17 +102,17 @@ const FAKE_HOME = `<!doctype html><html><head><meta charset="utf-8"><title>Homep
 <style>
   body { margin: 0; font-family: Lato, Arial, sans-serif; background: #f1f2f3; color: #202122; }
   d2l-navigation { display: block; background: #fff; border-bottom: 1px solid #d3d9e3; }
-  d2l-navigation-main-header { display: flex; justify-content: space-between; align-items: center; height: 64px; padding: 0 24px; }
-  .d2l-navigation-s-header-right { display: flex; align-items: center; gap: 18px; height: 100%; }
+  d2l-labs-navigation-main-header { display: flex; justify-content: space-between; align-items: center; height: 64px; padding: 0 24px; }
+  .d2l-labs-navigation-header-right { display: flex; align-items: center; gap: 18px; height: 100%; }
   .icon { width: 24px; height: 24px; border-radius: 50%; background: #cdd5dc; }
   .links { background: #000; color: #fff; padding: 10px 24px; font-size: 14px; display: flex; gap: 28px; }
   main { padding: 28px 24px; } .card { background: #fff; border-radius: 8px; padding: 18px; max-width: 760px; margin-bottom: 16px; }
 </style>
 <script>localStorage.setItem('XSRF.Token', 'xsrf-123');</script></head>
-<body><d2l-navigation><d2l-navigation-main-header>
+<body><d2l-navigation><d2l-labs-navigation-main-header>
   <div slot="left"><strong>PURDUE</strong> Brightspace</div>
-  <div slot="right" class="d2l-navigation-s-header-right"><span class="icon"></span><span class="icon"></span><span class="icon"></span><span>Boiler Maker</span></div>
-</d2l-navigation-main-header><div class="links"><span>My Courses</span><span>Calendar</span><span>Resources</span></div></d2l-navigation>
+  <div slot="right" class="d2l-labs-navigation-header-right"><span class="icon"></span><span class="icon"></span><span class="icon"></span><span>Boiler Maker</span></div>
+</d2l-labs-navigation-main-header><div class="links"><span>My Courses</span><span>Calendar</span><span>Resources</span></div></d2l-navigation>
 <main><div class="card"><h2>My Courses</h2><p>CS 25200, Civics Knowledge Test, Scholarly Project Milestones</p></div><div class="card"><h2>Announcements</h2><p>Nothing new.</p></div></main>
 </body></html>`;
 
@@ -125,6 +132,7 @@ const context = await chromium.launchPersistentContext(profile, {
   // does not leave Chromium's emulated pointer coordinates at a different width.
   viewport: { width: 1280, height: 860 },
   deviceScaleFactor: process.env.CI ? 1 : 2,
+  reducedMotion: 'reduce',
   args: [`--disable-extensions-except=${extensionPath}`, `--load-extension=${extensionPath}`],
 });
 if (process.env.CI) await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
@@ -136,12 +144,27 @@ try {
   check('service worker starts', Boolean(extensionId), extensionId);
 
   const modelRequests = [];
+  let holdNextResponse = false;
+  let releaseHeldResponse;
+  let holdToolResponse = false;
+  let releaseToolResponse;
   await context.route('https://genai.rcac.purdue.edu/**', async (route) => {
     if (route.request().url().endsWith('/api/models')) {
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: [{ id: 'gpt-oss:120b' }, { id: 'qwen3.8:27b' }, { id: 'llama3.3:70b' }, { id: 'nomic-embed-text' }] }) });
     }
     const body = JSON.parse(route.request().postData() ?? '{}');
+    if (body.messages[0]?.content?.startsWith('Name this conversation')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'Weekly deadlines' } }] }) });
     modelRequests.push(body);
+    if (holdNextResponse) {
+      holdNextResponse = false;
+      await new Promise(resolve => { releaseHeldResponse = resolve; });
+      await route.abort().catch(() => {});
+      return;
+    }
+    if (holdToolResponse && body.messages.at(-1)?.role === 'tool') {
+      holdToolResponse = false;
+      await new Promise(resolve => { releaseToolResponse = resolve; });
+    }
     await route.fulfill(fakeModelResponse(body));
   });
   let serveBrightspace = false;
@@ -172,6 +195,7 @@ try {
   const consoleErrors = [];
   page.on('pageerror', (err) => consoleErrors.push(err.message));
   page.on('console', (msg) => msg.type() === 'error' && consoleErrors.push(msg.text()));
+  await page.addInitScript(() => { window.syncLabels = []; new MutationObserver(() => { const text = document.querySelector('#sync-status')?.textContent; if (text) window.syncLabels.push(text); }).observe(document, { childList: true, characterData: true, subtree: true }); });
   await page.goto(`chrome-extension://${extensionId}/sidepanel.html`);
   await page.waitForSelector('.setup');
   await page.screenshot({ path: path.join(outDir, '0-first-run.png') });
@@ -191,52 +215,160 @@ try {
   await page.reload();
   await page.waitForSelector('.agenda');
   await page.screenshot({ path: path.join(outDir, '1-week.png') });
+  check('opening a recently synced panel keeps cached syllabi without starting another pass', await page.evaluate(() => !window.syncLabels.some(text => text.includes('Reading syllabi'))));
+  const cachedAgenda = await page.locator('.agenda').elementHandle();
+  await page.evaluate(() => chrome.storage.local.set({ syncLock: { owner: 'synthetic-background', heartbeat: Date.now() }, syncProgress: { message: 'Reading courses', at: Date.now(), finished: false, done: 1, total: 5 } }));
+  await page.waitForFunction(() => document.getElementById('sync-button').disabled);
+  check('routine background refresh keeps cached content and hides progress animation', await cachedAgenda.evaluate(el => el.isConnected) && await page.locator('#status').isHidden() && !(await page.locator('#sync-button').getAttribute('class')).includes('spinning') && (await page.locator('#sync-status').innerText()).startsWith('Synced'));
+  await page.evaluate(() => chrome.storage.local.remove(['syncLock', 'syncProgress']));
+  check('the panel becomes visible only after its saved state is rendered', await page.evaluate(() => !document.documentElement.hasAttribute('data-panel-loading')));
   check('week shows today with items', (await page.locator('.day.today .item').count()) >= 1);
-  check('syllabus dates wait for review', await page.isVisible('text=Check these syllabus dates'));
+  check('the selected design uses Brightspace typography and a flat agenda', await page.evaluate(async () => {
+    await document.fonts.ready;
+    return getComputedStyle(document.body).fontFamily.startsWith('Lato') && getComputedStyle(document.body).fontSize === '19px' && getComputedStyle(document.querySelector('.agenda')).boxShadow === 'none';
+  }));
+  check('date conflicts are a quiet disclosure and routine confirmation buttons are absent', await page.isVisible('text=Syllabus date differences') && (await page.getByRole('button', { name: 'Looks right', exact: true }).count()) === 0);
   const migrated = (await page.evaluate(() => chrome.storage.local.get('genai'))).genai.model;
   check('older connections move to the Qwen default', migrated === 'qwen3.8:27b', migrated);
 
   await page.click('.tabs button[data-view="courses"]');
+  check('syllabus status shows the saved check time', await page.locator('.syllabus-controls').innerText().then(text => /Syllabi last synced/.test(text)));
   await page.screenshot({ path: path.join(outDir, '2-courses.png') });
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.locator('.course-row').first().hover();
+  check('dark-mode course hover uses link emphasis without filling the row', await page.locator('.course-row').first().evaluate(element => getComputedStyle(element).backgroundColor === 'rgba(0, 0, 0, 0)' && getComputedStyle(element.querySelector('.course-label')).textDecorationLine.includes('underline')));
+  await page.screenshot({ path: path.join(outDir, '2b-course-hover-dark.png') });
+  await page.emulateMedia({ colorScheme: 'light' });
+  for (const width of [320, 720, 400]) {
+    await page.setViewportSize({ width, height: 900 });
+    check(`course layout fits a ${width}px panel`, await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  }
   await page.click('.course-row >> nth=0');
   await page.waitForSelector('.course-head');
   await page.screenshot({ path: path.join(outDir, '3-course-detail.png') });
-  check('course page shows the AI policy', await page.isVisible('text=AI tools are allowed with limits.'));
+  check('AI policy stays collapsed under the syllabus', !(await page.isVisible('text=AI tools are allowed with limits.')) && await page.locator('[data-disclosure^="ai-policy-"] > summary').isVisible());
+  await page.locator('[data-disclosure^="ai-policy-"] > summary').click();
+  check('the policy and source wording remain available on demand', await page.isVisible('text=AI tools are allowed with limits.'));
+  check('back navigation has a directional control', await page.getByRole('button', { name: 'All courses', exact: true }).locator('svg').count() === 1);
   await page.click('text=All courses');
   await page.click('.course-row >> nth=1');
+  await page.getByText('Add a syllabus', { exact: true }).click();
   check('a course without a syllabus offers upload', await page.isVisible('text=Upload the syllabus'));
 
   await page.click('.tabs button[data-view="ask"]');
+  check('Ask navigation marks the correct view', await page.locator('.tabs [aria-current="page"]').getAttribute('data-view') === 'ask');
+  check('the course selector sits inside the composer and the reminder is removed', await page.locator('.composer .scope-button').count() === 1 && !(await page.locator('body').innerText()).includes('Check important details in the cited sources.'));
+  const scopeButton = page.locator('.scope-button');
+  await scopeButton.focus();
+  await page.keyboard.press('ArrowDown');
+  check('the course picker opens with the current course focused', await page.getByRole('option', { selected: true }).evaluate(element => element === document.activeElement));
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  check('keyboard course selection updates the question scope and returns focus', await scopeButton.evaluate(element => element === document.activeElement && element.getAttribute('aria-expanded') === 'false') && !(await scopeButton.innerText()).includes('All my courses'));
+  await scopeButton.click();
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Enter');
+  await scopeButton.click();
+  await page.screenshot({ path: path.join(outDir, '4a-course-picker.png') });
+  check('course choices use compact rows without overflowing the panel', await page.locator('.scope-options').evaluate(element => {
+    const rect = element.getBoundingClientRect();
+    return rect.left >= 0 && rect.right <= innerWidth && rect.bottom <= innerHeight && [...element.children].every(option => option.getBoundingClientRect().height <= 40);
+  }));
+  await page.keyboard.press('Escape');
+  check('Escape closes only the picker and restores its trigger', await scopeButton.evaluate(element => element === document.activeElement && element.getAttribute('aria-expanded') === 'false'));
+  await scopeButton.click();
+  await page.getByRole('heading', { name: 'Ask about your courses' }).click();
+  check('clicking outside dismisses the course picker', await page.locator('.scope-options').evaluate(element => !element.matches(':popover-open')));
   await page.screenshot({ path: path.join(outDir, '4-ask-empty.png') });
+  await page.getByLabel('Question', { exact: true }).fill('Keep this draft');
+  await page.getByLabel('Question', { exact: true }).evaluate(element => element.setSelectionRange(5, 9));
+  await page.evaluate(() => chrome.storage.local.set({ changes: [] }));
+  await page.waitForTimeout(200);
+  check('background updates preserve the question draft, focus and text selection', await page.getByLabel('Question', { exact: true }).evaluate(element => element.value === 'Keep this draft' && document.activeElement === element && element.selectionStart === 5 && element.selectionEnd === 9));
   await page.fill('.composer textarea', 'What do I have due this week?');
+  holdToolResponse = true;
   await page.click('.composer button[type="submit"]');
-  await page.waitForSelector('.message.assistant:not(.pending) .sources', { timeout: 20_000 });
+  for (let attempt = 0; !releaseToolResponse && attempt < 100; attempt++) await sleep(50);
+  if (!releaseToolResponse) throw new Error('The fixture did not reach the tool-result review phase.');
+  check('live activity changes from thinking to reviewing tool results', await page.locator('.pending .trace-current').innerText() === 'Reviewing results');
+  await page.locator('.pending .trace > summary').click();
+  await page.locator('.pending .tool-call > summary').click();
+  await page.locator('.pending .trace-reasoning > summary').click();
+  await page.locator('.pending .tool-call > summary').focus();
+  const argumentSummary = await page.locator('.pending .tool-call > summary').elementHandle();
+  await sleep(1100);
+  check('elapsed-time updates preserve expanded details and keyboard focus', await argumentSummary.evaluate(element => element.isConnected && document.activeElement === element && element.parentElement.open) && await page.locator('.pending .trace-reasoning').evaluate(element => element.open));
+  await page.screenshot({ path: path.join(outDir, '4b-tool-results-live.png') });
+  releaseToolResponse();
+  await showSources(page.locator('.message.assistant:not(.pending)').last());
   const citeCount = await page.locator('.message.assistant .sources a').count();
   check('ask streams through the tool loop and shows sources', modelRequests.length === 2 && modelRequests.every((r) => r.stream) && citeCount >= 1, `${modelRequests.length} model requests, ${citeCount} sources`);
-  const traceSummary = await page.locator('.message.assistant:not(.pending) .trace summary').textContent();
-  await page.click('.message.assistant:not(.pending) .trace summary');
+  const traceSummary = await page.locator('.message.assistant:not(.pending) .trace > summary').textContent();
+  await page.click('.message.assistant:not(.pending) .trace > summary');
   await page.screenshot({ path: path.join(outDir, '5-ask.png') });
-  const toolShown = await page.isVisible('.trace-steps >> text=list_upcoming(days: 7)');
-  const thoughts = await page.locator('.trace-steps .thought-text').allTextContents();
-  check('the work log shows the reasoning and each tool call', /Used 1 tool/.test(traceSummary) && toolShown && thoughts.some((t) => t.includes('I should call list_upcoming')), `${traceSummary}; ${thoughts.length} thoughts`);
+  check('the activity log clearly names the tool and its result without a reasoning wall', /Used 1 tool/.test(traceSummary) && await page.getByText('Check upcoming work', { exact: true }).isVisible() && await page.locator('.tool-step.complete .tool-result').isVisible() && !(await page.locator('.thought-text').isVisible()) && !(await page.locator('.tool-call > code').isVisible()));
+  await page.locator('.tool-call > summary').click();
+  await page.locator('.trace-reasoning > summary').click();
+  check('arguments and reasoning remain available on demand', await page.locator('.tool-call > code').innerText() === 'list_upcoming(days: 7)' && (await page.locator('.thought-text').innerText()).includes('I should call list_upcoming'));
   check('grades never reach the model', !JSON.stringify(modelRequests).includes('9 / 10'));
 
   await page.click('.ask-bar button[aria-label="New chat"]');
   check('new chat starts empty', await page.isVisible('.empty-chat'));
   await page.click('.ask-bar button[aria-label="Chats"]');
   await page.screenshot({ path: path.join(outDir, '5b-chats.png') });
-  check('the chat list keeps the earlier chat', (await page.locator('.chat-row').count()) === 1 && (await page.isVisible('.chat-name >> text=What do I have due this week?')));
+  await page.locator('.chat-name').filter({ hasText: 'Weekly deadlines' }).waitFor({ timeout: 15000 });
+  check('the chat list keeps the earlier chat', (await page.locator('.chat-row').count()) === 1 && (await page.isVisible('.chat-name >> text=Weekly deadlines')));
   await page.click('.chat-open');
   check('opening a chat brings its messages back', await page.isVisible('.message.user >> text=What do I have due this week?'));
 
   await page.locator('.message.assistant .message-actions button', { hasText: 'Retry' }).click();
-  await page.waitForSelector('.message.assistant:not(.pending) .sources', { timeout: 20_000 });
+  await showSources(page.locator('.message.assistant:not(.pending)').last());
   check('a completed answer can be retried without duplicating the question',
     modelRequests.length === 4 && (await page.locator('.message.user').count()) === 1 && (await page.locator('.message.assistant:not(.pending)').count()) === 1);
+  await page.locator('.message.assistant [data-disclosure^="sources-"] > summary').click();
+  await page.setViewportSize({ width: 400, height: 820 });
+  await page.screenshot({ path: path.join(outDir, '5c-ask-compact.png') });
+
+  await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async text => { window.copiedAnswer = text; } } }));
+  await page.getByRole('button', { name: 'Copy answer', exact: true }).click();
+  check('copy uses the current answer text', await page.evaluate(() => window.copiedAnswer.includes('Here is what is due')));
+  for (const width of [320, 400]) {
+    await page.setViewportSize({ width, height: 600 });
+    const layout = await page.evaluate(() => {
+      const composer = document.querySelector('.composer').getBoundingClientRect(), messages = document.querySelector('.messages');
+      return { fits: composer.bottom <= innerHeight + 1 && composer.top > 0 && document.documentElement.scrollWidth <= innerWidth, scrolls: messages.scrollHeight > messages.clientHeight };
+    });
+    check(`long conversations scroll while the composer stays visible at ${width}px`, layout.fits && layout.scrolls);
+  }
+  await page.setViewportSize({ width: 400, height: 900 });
+  await page.getByRole('button', { name: 'New chat', exact: true }).click();
+  holdNextResponse = true;
+  await page.getByLabel('Question', { exact: true }).fill('What is due next?');
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  for (let attempt = 0; !releaseHeldResponse && attempt < 240; attempt++) await sleep(50);
+  if (!releaseHeldResponse) throw new Error('The pending response did not reach the fixture.');
+  check('real model requests show a compact live work indicator', await page.locator('.pending .trace.live').count() === 1 && !(await page.locator('.pending .trace').evaluate(element => element.open)));
+  await page.getByRole('button', { name: 'Stop', exact: true }).click();
+  await page.locator('.message.stopped').waitFor();
+  releaseHeldResponse();
+  check('Stop ends a pending response and restores the composer', await page.getByRole('button', { name: 'Stop', exact: true }).count() === 0 && await page.getByRole('button', { name: 'Continue', exact: true }).isVisible());
 
   await page.click('.tabs button[data-view="settings"]');
-  await page.waitForSelector('.field select option >> nth=2', { state: 'attached', timeout: 5000 });
+  check('Settings keeps data tools in Advanced without the inline disclaimer panel', await page.getByText('Advanced', { exact: true }).isVisible() && await page.getByText('What is shared', { exact: true }).count() === 0);
+  await page.locator('[data-disclosure="advanced-settings"] > summary').click();
+  check('Advanced retains export and clear controls without putting them in the default view', await page.getByRole('button', { name: 'Export data', exact: true }).isVisible() && await page.getByRole('button', { name: 'Clear local data', exact: true }).isVisible());
+  await page.locator('[data-disclosure="advanced-settings"] > summary').click();
   await page.screenshot({ path: path.join(outDir, '6-settings.png') });
+  for (const width of [320, 720, 400]) {
+    await page.setViewportSize({ width, height: 900 });
+    check(`connection controls fit a ${width}px panel`, await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  }
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.screenshot({ path: path.join(outDir, '6-settings-dark.png') });
+  check('dark mode uses the dark surface and remains within the panel', await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme === 'dark' && document.documentElement.scrollWidth <= innerWidth));
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.locator('[data-disclosure="genai-details"] > summary').click();
+  await page.waitForSelector('.field select option >> nth=2', { state: 'attached', timeout: 5000 });
   const options = await page.locator('.field select option').allTextContents();
   check('model picker lists GenAI Studio chat models', options.includes('qwen3.8:27b (recommended)') && options.includes('llama3.3:70b') && !options.some((o) => o.includes('embed')), options.join(', '));
   await page.selectOption('.field select', 'llama3.3:70b');
@@ -266,7 +398,7 @@ try {
   bs.on('pageerror', (err) => consoleErrors.push(`brightspace: ${err.message}`));
   await bs.setViewportSize({ width: 1280, height: 860 });
   await bs.goto('https://purdue.brightspace.com/d2l/home');
-  const navButton = bs.locator('.d2l-navigation-s-header-right .boilerspace-nav-item button');
+  const navButton = bs.locator('.boilerspace-nav-item button');
   await navButton.waitFor({ timeout: 15_000 });
   check('BoilerSpace button sits in the Brightspace navbar', (await navButton.textContent()).includes('BoilerSpace'));
   await bs.screenshot({ path: path.join(outDir, '7-brightspace-navbar.png'), clip: { x: 0, y: 0, width: 1280, height: 120 } });
@@ -313,8 +445,8 @@ try {
   await frame.locator('.tabs button[data-view="ask"]').click();
   await frame.locator('.composer textarea').fill('When is my CS 25200 midterm?');
   await frame.locator('.composer button[type="submit"]').click();
-  await frame.locator('.message.assistant:not(.pending) .sources').waitFor({ timeout: 20_000 });
-  await frame.locator('.message.assistant:not(.pending) .trace summary').last().click();
+  await showSources(frame.locator('.message.assistant:not(.pending)').last());
+  await frame.locator('.message.assistant:not(.pending) .trace > summary').last().click();
   await sleep(200);
   await bs.screenshot({ path: path.join(outDir, '10-brightspace-ask.png') });
   const answer = await frame.locator('.message.assistant:not(.pending)').last().textContent();
@@ -412,6 +544,7 @@ try {
     return href;
   }, { pages: overviewPages });
   await reopened.locator('.tabs button[data-view="ask"]').click();
+  await showSources(reopened.locator('.message.assistant:not(.pending)').last());
   const viewerOpened = context.waitForEvent('page');
   await reopened.locator(`.sources a[href="${viewerHref}"]`).click();
   const viewer = await viewerOpened;
@@ -434,6 +567,31 @@ try {
   await bs.goto('https://purdue.brightspace.com/d2l/lms/quizzing/user/attempt/quiz_start_frame_auto.d2l?ou=1600001');
   await sleep(2000);
   check('nothing is added on quiz attempt pages', (await bs.locator('#boilerspace-root, .boilerspace-nav-item').count()) === 0);
+
+  await worker.evaluate(() => chrome.storage.local.set({ drawerOpen: false }));
+  const legacy = await context.newPage();
+  await legacy.route('https://purdue.brightspace.com/d2l/legacy-navbar', route => route.fulfill({ contentType: 'text/html', body: FAKE_HOME.replaceAll('d2l-labs-navigation-main-header', 'd2l-navigation-main-header').replaceAll('d2l-labs-navigation-header-right', 'd2l-navigation-s-header-right') }));
+  await legacy.goto('https://purdue.brightspace.com/d2l/legacy-navbar');
+  await legacy.locator('.boilerspace-nav-item button').waitFor();
+  check('the older Brightspace header remains supported', await legacy.locator('.boilerspace-nav-item button').isVisible());
+  await legacy.close();
+
+  const reloaded = await context.newPage();
+  const staleMarkup = '<style id="stale-layout">html.boilerspace-pushed { margin-right: 400px; }</style><div id="boilerspace-root" data-stale="true"></div><div class="boilerspace-nav-item" data-stale="true"></div>';
+  await reloaded.route('https://purdue.brightspace.com/d2l/reloaded-navbar', route => route.fulfill({ contentType: 'text/html', body: FAKE_HOME.replace('</body>', staleMarkup + '</body>') }));
+  await reloaded.goto('https://purdue.brightspace.com/d2l/reloaded-navbar');
+  await reloaded.locator('.boilerspace-nav-item button').waitFor();
+  check('reloading the extension replaces stale drawers, navbar controls and layout styles', await reloaded.locator('#boilerspace-root').count() === 1 && await reloaded.locator('.boilerspace-nav-item').count() === 1 && await reloaded.locator('[data-stale], #stale-layout').count() === 0);
+  check('the panel host has no box in the Brightspace content flow', await reloaded.locator('#boilerspace-root').evaluate(el => { const r = el.getBoundingClientRect(); return getComputedStyle(el).position === 'fixed' && r.width === 0 && r.height === 0; }));
+  await reloaded.close();
+
+  const storageFailure = await context.newPage();
+  storageFailure.on('pageerror', error => consoleErrors.push(error.message));
+  await storageFailure.addInitScript(() => { chrome.storage.local.get = async () => { throw new Error('Synthetic storage failure'); }; });
+  await storageFailure.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+  await storageFailure.locator('#status').filter({ hasText: 'Synthetic storage failure' }).waitFor();
+  check('a saved-data error is revealed instead of leaving the loading panel hidden', await storageFailure.locator('#status').isVisible() && await storageFailure.evaluate(() => !document.documentElement.hasAttribute('data-panel-loading')));
+  await storageFailure.close();
 
   check('no page errors', consoleErrors.length === 0, consoleErrors.join(' | '));
 } catch (error) {

@@ -88,7 +88,8 @@ async function readSessionToken(tabId) {
 }
 
 async function signInViaTab(onStatus) {
-  const tab = await chrome.tabs.create({ url: `${GENAI_BASE}/auth` });
+  const tab = await chrome.tabs.create({ url: 'about:blank', active: true });
+  await chrome.tabs.update(tab.id, { url: `${GENAI_BASE}/auth` });
   onStatus('Sign in to GenAI Studio with your Purdue account in the new tab. BoilerSpace continues on its own.');
   const deadline = Date.now() + SIGN_IN_TIMEOUT_MS;
   while (Date.now() < deadline) {
@@ -127,7 +128,7 @@ export async function linkAccount({ onStatus = () => {} } = {}) {
     const user = (await whoami()) ?? (await signInViaTab(onStatus));
     if (!user) throw new GenAIError('GenAI Studio sign-in was not completed.');
 
-    onStatus(`Signed in as ${user.name}. Getting your API key…`);
+    onStatus('Connecting to Purdue GenAI Studio…');
     const { key, created } = await getOrCreateKey();
 
     const ids = await fetchModelIds(key).catch((err) => {
@@ -149,10 +150,21 @@ export async function linkAccount({ onStatus = () => {} } = {}) {
 let queue = Promise.resolve();
 let lastRequestAt = 0;
 
-function schedule(task) {
+function waitForRequest(ms, signal) {
+  signal?.throwIfAborted();
+  if (ms <= 0) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const finish = () => { signal?.removeEventListener('abort', abort); resolve(); };
+    const timer = setTimeout(finish, ms);
+    const abort = () => { clearTimeout(timer); signal.removeEventListener('abort', abort); reject(signal.reason); };
+    signal?.addEventListener('abort', abort, { once: true });
+  });
+}
+
+function schedule(task, signal) {
   const run = queue.then(async () => {
     const wait = lastRequestAt + MIN_REQUEST_SPACING_MS - Date.now();
-    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    await waitForRequest(wait, signal);
     lastRequestAt = Date.now();
     return task();
   });
@@ -228,6 +240,7 @@ export async function chatCompletion(body, { onDelta = null, signal = null } = {
   const connection = await getConnection();
   if (!connection?.key) throw new GenAIError('Connect Purdue GenAI Studio first.', { code: 'not-linked' });
   const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+  const requestSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
 
   for (let attempt = 0; ; attempt++) {
     const res = await schedule(() =>
@@ -236,14 +249,21 @@ export async function chatCompletion(body, { onDelta = null, signal = null } = {
         credentials: 'omit',
         headers: { Authorization: `Bearer ${connection.key}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: connection.model ?? DEFAULT_MODEL, ...body, ...(onDelta ? { stream: true } : {}) }),
-        signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+        signal: requestSignal,
       }),
+      requestSignal,
     );
-    if (res.status === 429 && attempt < MAX_RATE_LIMIT_RETRIES) {
-      const retryAfter = Number(res.headers.get('retry-after')) || 4 * 2 ** attempt;
-      await new Promise((r) => setTimeout(r, retryAfter * 1000));
+    // Purdue's gateway also reports an explicit rate limit as HTTP 400.
+    const problem = res.status === 400 ? await res.clone().json().catch(() => null) : null;
+    const detail = problem?.detail ?? problem?.error?.message ?? problem?.message;
+    const rateLimited = res.status === 429 || (res.status === 400 && typeof detail === 'string' && /\brate limit (?:exceeded|reached)\b|\btoo many requests\b/i.test(detail));
+    if (rateLimited && attempt < MAX_RATE_LIMIT_RETRIES) {
+      const header = res.headers.get('retry-after');
+      const retryMs = header && (/^\d+(?:\.\d+)?$/.test(header) ? Number(header) * 1000 : Date.parse(header) - Date.now());
+      await waitForRequest(retryMs > 0 ? retryMs : 15_000 * 2 ** attempt, requestSignal);
       continue;
     }
+    if (rateLimited) throw new GenAIError('GenAI Studio’s request limit was reached. Wait a minute and try again.', { status: res.status, code: 'rate-limited' });
     if (res.status === 401) throw new GenAIError('GenAI Studio rejected the saved key. Connect your account again.', { status: 401, code: 'not-linked' });
     if (!res.ok) throw new GenAIError(`GenAI Studio request failed (HTTP ${res.status}).`, { status: res.status });
     if (onDelta && (res.headers.get('content-type') ?? '').includes('event-stream')) return readEventStream(res.body, onDelta);

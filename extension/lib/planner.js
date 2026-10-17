@@ -4,6 +4,7 @@ import { dayKey, isValidDate, zonedToUtc } from './dates.js';
 import { shortCourseLabel } from './courses.js';
 import { usableRecord } from './syllabus.js';
 import { locationUrl, syllabusFile } from './links.js';
+import { deadlineIssue } from './deadline-status.js';
 
 export { courseTitle, shortCourseLabel } from './courses.js';
 
@@ -38,7 +39,8 @@ export function syllabusItems(syllabi, reviews = {}, snapshot = null) {
     for (const d of usable.deadlines) {
       const review = reviews[d.id];
       if (review === 'dismissed') continue;
-      if (d.matchedItem && !d.dateDiffers && review !== 'confirmed') continue;
+      if (d.matchedItem && review !== 'confirmed') continue;
+      if (deadlineIssue(d) && review !== 'confirmed') continue;
       out.push({
         key: d.id,
         courseId: d.courseId,
@@ -49,7 +51,7 @@ export function syllabusItems(syllabi, reviews = {}, snapshot = null) {
         date: d.date,
         url: locationUrl(file, d.page),
         source: 'syllabus',
-        confirmed: review === 'confirmed',
+        confirmed: true,
         deadline: d,
       });
     }

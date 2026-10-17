@@ -1,4 +1,4 @@
-import { DISCUSSION_BATCH_SIZE, DISCUSSION_CAPTURE_VERSION, DISCUSSION_SITES, matchDiscussionCourse, normalizeEdThread, normalizePiazzaThread, parseDiscussionUrl } from './discussions.js';
+import { DISCUSSION_BATCH_SIZE, DISCUSSION_CAPTURE_VERSION, DISCUSSION_SITES, reconcileDiscussionCourse, normalizeEdThread, normalizePiazzaThread, parseDiscussionUrl } from './discussions.js';
 import { readDiscussionSite } from './discussions-page.js';
 
 let queue = Promise.resolve();
@@ -6,10 +6,11 @@ const pending = new Map();
 
 async function readSite(platform, args) {
   const origins = DISCUSSION_SITES[platform];
-  if (!origins || !(await chrome.permissions.contains({ origins }))) throw new Error(`Allow ${platform === 'ed' ? 'Ed' : 'Piazza'} access in Settings → Discussions (beta).`);
+  if (!origins || !(await chrome.permissions.contains({ origins }))) throw new Error(`Allow ${platform === 'ed' ? 'Ed' : 'Piazza'} access by connecting it in Settings.`);
   const tabs = await chrome.tabs.query({ url: origins });
-  const url = platform === 'ed' ? 'https://edstem.org/us/' : `https://piazza.com/class/${args.remoteId}`;
-  let tab = tabs.find((t) => platform === 'ed' || new URL(t.url).pathname === `/class/${args.remoteId}`);
+  const url = platform === 'ed' ? 'https://edstem.org/us/' : args.remoteId ? `https://piazza.com/class/${args.remoteId}` : 'https://piazza.com/';
+  let tab = tabs.filter((t) => platform === 'ed' || (args.remoteId ? new URL(t.url).pathname.replace(/\/+$/, '') === `/class/${args.remoteId}` : args.discover))
+    .sort((a, b) => Number(b.active ?? false) - Number(a.active ?? false) || (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0))[0];
   const created = !tab;
   if (!tab) {
     tab = await chrome.tabs.create({ url: 'about:blank', active: false });
@@ -19,7 +20,11 @@ async function readSite(platform, args) {
     let ready = false;
     for (let i = 0; i < 120; i++) {
       const current = await chrome.tabs.get(tab.id);
-      if (current.status === 'complete') { ready = true; break; }
+      // Firefox may still report the initial about:blank as complete after update().
+      // Injection must wait until the tab has committed to an allowed site.
+      const currentUrl = new URL(current.url ?? 'about:blank');
+      const allowed = currentUrl.protocol === 'https:' && (platform === 'ed' ? ['edstem.org', 'us.edstem.org'].includes(currentUrl.hostname) : currentUrl.hostname === 'piazza.com');
+      if (current.status === 'complete' && allowed) { ready = true; break; }
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
     if (!ready) throw new Error('The discussion page took too long to load. Sign in and retry.');
@@ -64,6 +69,7 @@ async function perform({ action, platform, url, sourceId, courseId, force = fals
     if (!source) throw new Error('Discussion course not found.');
     if (courseId !== null && !all.snapshot?.courses.some((c) => c.id === courseId && c.current)) throw new Error('Choose a current Brightspace course.');
     source.courseId = courseId;
+    source.linkOrigin = 'manual';
     await save();
     return data;
   }
@@ -74,18 +80,33 @@ async function perform({ action, platform, url, sourceId, courseId, force = fals
       discovered = result.courses.map((c) => ({ ...parseDiscussionUrl(`https://edstem.org/us/courses/${c.remoteId}/discussion`), name: c.name, code: c.code }));
       if (!discovered.length) throw new Error('No active Ed courses were found in your account.');
     } else {
-      const source = parseDiscussionUrl(url);
-      if (source.platform !== 'piazza') throw new Error('Enter a Piazza class URL.');
-      discovered = [{ ...source, name: 'Piazza course' }];
+      if (url) {
+        const source = parseDiscussionUrl(url);
+        if (source.platform !== 'piazza') throw new Error('Enter a Piazza class URL.');
+        const result = await readSite('piazza', { remoteId: source.remoteId, discover: true });
+        const course = result.courses.find(course => course.remoteId === source.remoteId);
+        if (!course) throw new Error('Sign into Piazza and open this class in this browser, then retry.');
+        discovered = [{ ...source, name: course.name }];
+      } else {
+        const result = await readSite('piazza', { discover: true });
+        discovered = result.courses.map(course => ({ ...parseDiscussionUrl(`https://piazza.com/class/${course.remoteId}`), name: course.name }));
+        if (!discovered.length) throw new Error('Open a Piazza class in this browser to connect it, or add its class link.');
+      }
     }
     for (const source of discovered) {
-      if (!data.sources.some((s) => s.id === source.id)) data.sources.push({ ...source, courseId: matchDiscussionCourse(source, all.snapshot?.courses ?? []), threads: [], status: 'connected' });
+      if (!data.sources.some((s) => s.id === source.id)) {
+        reconcileDiscussionCourse(source, all.snapshot?.courses ?? []);
+        data.sources.push({ ...source, threads: [], status: 'connected' });
+      }
     }
     await save();
     return { ...data, connectedIds: discovered.map((s) => s.id) };
   } else if (action !== 'sync') throw new Error('Unknown discussion action.');
 
   const sources = data.sources.filter((s) => !sourceId || (Array.isArray(sourceId) ? sourceId.includes(s.id) : s.id === sourceId));
+  const previousLinks = sources.map(source => [source.courseId, source.linkOrigin]);
+  for (const source of sources) reconcileDiscussionCourse(source, all.snapshot?.courses ?? []);
+  if (sources.some((source, index) => source.courseId !== previousLinks[index][0] || source.linkOrigin !== previousLinks[index][1])) await save();
   if (force) {
     for (const source of sources) {
       // Resume a partial import; a completed history starts a fresh update sweep.
@@ -120,6 +141,7 @@ async function perform({ action, platform, url, sourceId, courseId, force = fals
       else { threads.delete(id); seen.delete(id); }
     }
     source.name = read.name || source.name;
+    reconcileDiscussionCourse(source, all.snapshot?.courses ?? []);
     source.threads = [...threads.values()].sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''));
     source.sync = { offset: read.nextOffset, seenIds: [...seen], pageIds: [...new Set([...source.sync.pageIds, ...read.pageIds])] };
     source.checkedCount = source.sync.pageIds.length;

@@ -95,3 +95,36 @@ test('an empty Ed history page ends pagination without issuing detail requests',
     assert.equal(fixture.calls.length, 2);
   } finally { fixture.restore(); }
 });
+
+test('Piazza discovers visible class links and the current class without fetching private account data', async () => {
+  const fixture = site('piazza', () => { throw new Error('Discovery should not issue an API call.'); });
+  document.querySelectorAll = () => [
+    { href: 'https://piazza.com/class/course250', textContent: 'CS250' },
+    { href: 'https://piazza.com/class/course251', textContent: 'CS251' },
+    { href: 'https://piazza.com.evil.test/class/other', textContent: 'Wrong origin' },
+  ];
+  try {
+    const result = await readDiscussionSite({ platform: 'piazza', discover: true });
+    assert.deepEqual(result.courses.map(course => course.remoteId), ['course250', 'course251', 'example']);
+    assert.equal(fixture.calls.length, 0);
+  } finally { fixture.restore(); }
+});
+
+test('slow background tabs checkpoint a partial feed rather than leaving a long batch uncommitted', async () => {
+  const originalNow = Date.now;
+  let clock = 0;
+  const fixture = site('ed', url => {
+    if (url.endsWith('/user')) return user;
+    if (url.includes('/courses/')) return { threads: Array.from({ length: 30 }, (_, n) => ({ id: n + 1 })) };
+    clock += 4000;
+    return { thread: { id: Number(url.split('/').at(-1)) } };
+  });
+  Date.now = () => clock;
+  try {
+    const page = await readDiscussionSite({ platform: 'ed', remoteId: '1' });
+    assert.equal(page.threads.length, 3);
+    assert.equal(page.nextOffset, 3);
+    assert.equal(page.hasMore, true);
+    assert.deepEqual(page.pageIds, ['1', '2', '3']);
+  } finally { Date.now = originalNow; fixture.restore(); }
+});

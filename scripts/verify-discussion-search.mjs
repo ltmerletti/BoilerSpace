@@ -50,7 +50,9 @@ try {
       const blank = await retrieve('   ', {});
       const invalidatedSearch = createDiscussionSearch(data, { searchClient: client });
       client.revision++; client.dispose();
-      const invalidated = await invalidatedSearch('notebook', {});
+      let invalidated;
+      try { await invalidatedSearch('notebook', {}); }
+      catch (error) { invalidated = { code: error.code }; }
       return { cold, warm, unlinked, updated, removed, sameWorker, idleReleased, restarted, blank, invalidated };
     } finally { client.dispose(); }
   });
@@ -60,7 +62,7 @@ try {
   assert.ok(results.updated.indexed && results.updated.results[0].text.includes('now preserve variables'));
   assert.equal(results.removed.results.length, 0); assert.ok(results.sameWorker);
   assert.ok(results.idleReleased && results.restarted.indexed); assert.equal(results.blank.results.length, 0);
-  assert.equal(results.invalidated.results.length, 0); assert.match(results.invalidated.note, /changed/);
+  assert.equal(results.invalidated.code, 'discussion-data-changed');
   console.log(`PASS  ${engine}: cold/warm worker, course/source isolation, edited posts, removed sources, idle release/restart and invalidation`);
   brokenModel = true;
   await page.reload();

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseDiscussionUrl, matchDiscussionCourse, normalizeEdThread, normalizePiazzaThread, discussionDocuments } from '../extension/lib/discussions.js';
+import { parseDiscussionUrl, matchDiscussionCourse, reconcileDiscussionCourse, normalizeEdThread, normalizePiazzaThread, discussionDocuments, recentDiscussionThreads } from '../extension/lib/discussions.js';
 import { createTools } from '../extension/lib/agent.js';
 import { snapshotFixture } from './helpers.mjs';
 
@@ -10,6 +10,23 @@ const edPayload = () => ({
   thread: { id: 456, course_id: 123, user_id: 1, number: 7, title: 'Project clarification', content: '<document><paragraph>When is the report due?</paragraph></document>', created_at: '2026-10-12T12:00:00Z', updated_at: '2026-10-13T12:00:00Z', answers: [
     { id: 11, user_id: 2, content: '<paragraph>The report is due Friday.</paragraph>', is_endorsed: true, comments: [{ id: 12, user_id: 1, content: 'Thanks.' }, { id: 13, is_private: true, content: 'Private reply' }] },
   ], comments: [{ id: 14, deleted_at: '2026-10-12', content: 'Deleted reply' }] },
+});
+
+test('recent discussion previews use posting dates and leave full history searchable', () => {
+  const now = Date.parse('2026-10-17T03:30:00Z');
+  const threads = [
+    { id: 'old', title: 'Lab Drops/Skips', createdAt: '2026-09-22T01:20:00Z', updatedAt: new Date(now).toISOString(), pinned: true },
+    { id: 'recent', createdAt: '2026-10-16T12:00:00Z' },
+    { id: 'older', createdAt: '2026-10-12T12:00:00Z' },
+    { id: 'newest', createdAt: '2026-10-17T01:00:00Z' },
+    { id: 'future', createdAt: '2026-10-18T01:00:00Z' },
+    { id: 'unknown', createdAt: null },
+  ];
+  const source = { threads };
+  assert.deepEqual(recentDiscussionThreads(source, { now }).map(thread => thread.id), ['newest', 'recent', 'older']);
+  assert.deepEqual(recentDiscussionThreads(source, { now, limit: 1 }).map(thread => thread.id), ['newest']);
+  assert.equal(source.threads.length, 6);
+  assert.equal(discussionDocuments({ sources: [{ ...source, id: 'ed:1' }] }).length, 6, 'the preview filter does not trim Ask evidence');
 });
 
 test('discussion URLs are canonical and reject unrelated sites and schemes', () => {
@@ -36,6 +53,25 @@ test('Ed normalization retains staff replies but omits author identities and pri
   assert.ok(!/Private|example.test|user_id|Deleted reply/.test(JSON.stringify(thread)));
   assert.equal(normalizeEdThread({ ...edPayload(), thread: { ...edPayload().thread, course_id: 999 } }, source), null);
   assert.equal(normalizeEdThread({ ...edPayload(), thread: { ...edPayload().thread, is_private: true } }, source), null);
+});
+
+test('course matching recognizes compact codes and unique fuzzy titles while refusing old terms and ambiguous sections', () => {
+  const courses = [
+    { id: 1, current: true, code: 'wl.202620.CS.25000.LE1', name: 'Fall 2026 CS 25000 Computer Architecture' },
+    { id: 2, current: true, code: 'wl.202620.CS.25100.LE1', name: 'Fall 2026 CS 25100 Data Structures' },
+  ];
+  for (const name of ['CS250', 'CS_25000', 'CS-250', 'Computer architecture', 'Computer architectre']) assert.equal(matchDiscussionCourse({ name }, courses), 1, name);
+  assert.equal(matchDiscussionCourse({ name: 'CS251 discussion' }, courses), 2);
+  for (const name of ['Fall 2025 CS250', 'CS250 2025', 'Spring 2026 CS250', 'Computer', 'CS259', 'CS250 / CS251']) assert.equal(matchDiscussionCourse({ name }, courses), null, name);
+  assert.equal(matchDiscussionCourse({ name: 'Computer architecture' }, [...courses, { ...courses[0], id: 3 }]), null);
+  const manual = { name: 'CS250', courseId: null, linkOrigin: 'manual' };
+  reconcileDiscussionCourse(manual, courses);
+  assert.equal(manual.courseId, null, 'explicitly separate courses stay separate');
+  const automatic = { name: 'Piazza course', courseId: null, linkOrigin: 'automatic' };
+  reconcileDiscussionCourse(automatic, courses);
+  automatic.name = 'CS250';
+  reconcileDiscussionCourse(automatic, courses);
+  assert.equal(automatic.courseId, 1, 'newly discovered metadata repairs an earlier unmatched connection');
 });
 
 test('Piazza normalization separates instructor and student answers and preserves source links', () => {

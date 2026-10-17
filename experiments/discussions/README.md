@@ -139,11 +139,32 @@ Native process RSS is not incremental browser RAM. The visible Jina q4 WebGPU qu
 
 ## Tests and merge readiness
 
-The feature passed **176 unit tests** locally. CI covers Node 22/24 units, Chromium UI, syllabus and discussion integration, and retrieval-worker checks in Chromium and Firefox. The full 330-case extension-tool replay passed in Chromium and Zen. Three real Qwen questions, one per connected Ed/Piazza class, each used semantic search, opened the expected thread and cited its original post without tool errors. These are smoke checks, not an answer-accuracy benchmark.
+The branch passed **206 unit tests**, **76 interface checks** and **27 chat streaming/control checks** locally on October 17, 2026. Streaming checks include multiple narration/tool rounds, folding narration when the final answer starts, pointer clicks held across streamed tokens, saved activity after reopening the panel, and recovery from Purdue’s explicit HTTP 400 rate-limit response. Seven additional synthetic checks passed in Zen for narration timing, live disclosure toggles and the thinking control. Interface checks also cover quiet background refreshes and recovery from saved-data read failures. Piazza reader tests verify reuse of class URLs with trailing slashes, retention of user-owned tabs, and inactive temporary readers.
+
+CI covers Node 22/24 units, Chromium UI, incremental chat streaming, syllabus and discussion integration, restart/offline recovery, and retrieval-worker checks in Chromium and Firefox. The full 330-case extension-tool replay passed in Chromium and Zen. Live-site verification is separate from the credential-free CI fixtures.
+
+A fresh signed-in Zen 1.23.3b profile completed both Ed histories (157 and 365 public posts) and the Piazza history (931 posts). A real Ask question for each source returned the expected original-site citation, and the model generated short chat titles. Native site prompts were approved by the account holder. Firefox now registers its waking listeners synchronously and returns a native message promise; short import batches preserve progress in throttled tabs. These checks use one account, not an independent multi-student sample.
+
+A frozen **40-question Qwen3.8:27b answer check** adds thirty primary questions, four follow-up or multi-thread challenges, and six clarification or abstention probes. It uses a later saved snapshot of 1,452 public threads, separate from the 1,448-thread retrieval corpus. Selection was deterministic and balanced across the three discussion sources before answer generation. The corpus and exact source quotes were checked locally. Private prompts, posts, answers and per-case review remain outside Git.
+
+| Answer check | Core answer correctness | Probe intent |
+| --- | ---: | ---: |
+| Initial full run | 32/34 | 6/6 |
+| Full rerun after fixes | 33/34 | 6/6 |
+| Targeted retest of the remaining failure | 1/1 | n/a |
+| Final complete streamed release run | 34/34 | 6/6 |
+
+Live import progress was incorrectly invalidating searches, and a real post change could be mistaken for an empty search. Search now ignores bookkeeping-only changes; an evidence change triggers one fresh Ask attempt without duplicating the question. The remaining case passed a targeted retest. The final release row was subsequently evaluated as a complete run of all forty unchanged questions, rather than combining targeted retests. One answer also incorrectly described a complete code template as truncated; a complete-message instruction corrected it on rerun.
+
+Manual review accepted source-supported equivalent evidence and recorded a gold-label polarity error without changing the frozen bank. The final release run had no tool or unhandled provider errors. It used an isolated disposable extension profile, the frozen corpus and question hashes, streamed Qwen3.8:27b answers, and a five-second gap between questions. Earlier attempts in the shared test profile were disrupted by a scheduled sync or shared-account throttling; those reports are retained privately and are not treated as clean final runs. Purdue also returns explicit rate limits as HTTP 400, so requests now retry those responses as well as HTTP 429, honor Retry-After, and allow cancellation during backoff.
+
+Core correctness and probe intent do not mean every sentence was grounded. A numeric-age answer still added an uncited causal explanation, an ambiguous-policy clarification remained verbose, and a future-exam answer confused semester scope and volunteered unrelated information. Source-grounding instructions reduce these behaviors but do not eliminate them. All answer reviews are assistant-authored, not independent human annotation; repeated runs of the same bank do not establish population accuracy.
 
 Regression checks cover asset hashes, evidence budgets, class isolation, edited/deleted posts, disconnects, worker reuse, idle release, timeouts, retry backoff, corrupted-model fallback, sync recovery and Ask citations. Long-thread checks cover more than 100 replies, deep nesting, text beyond 40,000 characters, direct search-to-reply pointers, continuation without gaps, and one-time refresh of older captures. The synthetic Ask flow exercises source selection, reply-list paging, long-reply continuation and original-post citations for Ed, plus an unlinked Piazza class. CI uses synthetic sites without Purdue credentials; live-site verification is separate.
 
-The integration remains labeled **beta**. It reads saved public text and available replies; attachments and images require opening the original site. Incomplete history, stale sessions and site changes can affect available evidence. Source selection and final-answer quality need ongoing real-user evaluation. RAM measurements cover the tested corpus, not arbitrary future import sizes.
+**Public-text discussion retrieval is released without the beta label.** The final 330-case replay matched the production scores in Chromium and Zen: 295/300 primary questions and 29/30 challenges. Real refreshes in both signed-in test profiles completed all three available histories without source errors. Live verification still uses one account; an independent multi-student trial has not been performed.
+
+The supported scope is saved public post text and available replies. Attachments and images require opening the original site. Incomplete history, stale sessions and site changes can affect available evidence. Source selection and final-answer quality need ongoing real-user evaluation. RAM measurements cover the tested corpus, not arbitrary future import sizes.
 
 ## Run the checks
 
@@ -154,6 +175,8 @@ export BOILERSPACE_FIXTURES_DIR=.verify-tmp/Brightspace-Bar/session-capture/test
 npm test
 npx playwright install chromium firefox
 node scripts/verify-discussions.mjs ./node_modules/playwright/index.mjs
+node scripts/verify-discussion-recovery.mjs
+node scripts/verify-chat-streaming.mjs
 node scripts/verify-discussion-search.mjs
 VERIFY_BROWSER=firefox node scripts/verify-discussion-search.mjs
 ```

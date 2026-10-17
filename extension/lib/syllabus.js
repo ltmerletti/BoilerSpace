@@ -9,6 +9,7 @@ import { extractText } from './extract.js';
 import { canReachBrightspace, discoverSyllabusOnPage, downloadTopicFile } from './sync.js';
 import { dayKey, daysBetweenKeys, formatDayKey, isValidDate, isValidTime, zonedToUtc } from './dates.js';
 import { shortCourseLabel } from './courses.js';
+import { deadlineIssue } from './deadline-status.js';
 
 const MAX_PROMPT_CHARS = 90_000;
 const MAX_QUOTE_WORDS = 40;
@@ -584,7 +585,7 @@ export function pendingReviews(syllabi, reviews, now = new Date()) {
     const usable = usableRecord(record);
     for (const d of usable?.deadlines ?? []) {
       if (reviews?.[d.id] || d.date < today) continue;
-      if (!d.matchedItem || d.dateDiffers || d.weekdayMismatch) out.push(d);
+      if (deadlineIssue(d)) out.push(d);
     }
   }
   return out.sort((a, b) => a.date.localeCompare(b.date));

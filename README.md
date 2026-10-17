@@ -9,31 +9,35 @@ Your Purdue Brightspace courses, deadlines, syllabi, and course questions in one
 BoilerSpace is a browser extension for Chrome, Firefox, and Zen. It reads your current courses from Brightspace, finds syllabi, and answers questions with citations through your own Purdue GenAI Studio account. There is no separate BoilerSpace account or server.
 
 <p align="center">
-  <img src="docs/images/week.png" width="270" alt="Week view showing upcoming work and syllabus dates to confirm">
-  <img src="docs/images/courses.png" width="270" alt="Courses view showing automatic syllabus checks and AI policy summaries">
-  <img src="docs/images/ask.png" width="270" alt="Ask view researching a midterm across the syllabus and lecture material, with citations">
+  <img src="docs/images/week.png" width="270" alt="Week view showing upcoming work and verified syllabus dates">
+  <img src="docs/images/courses.png" width="270" alt="Courses view showing current courses and the last syllabus sync">
+  <img src="docs/images/ask.png" width="270" alt="Ask view for searching syllabi, course files, and connected discussions">
 </p>
 
-*Screenshots are from the running extension with real course data. Course names, course identifiers, and the greeting were renamed in the page HTML for privacy.*
+*Screenshots are from the running extension with real saved course data. Visible course names and identifiers were renamed in the page HTML for privacy. Automatic background work was paused in the screenshot tab; the interface and saved content were otherwise unchanged.*
 
 ## What it does
 
-- **Week:** upcoming assignments, quizzes, and exams, plus dates found in syllabi. Confirm syllabus-only dates before adding them to your calendar export.
+- **Week:** upcoming assignments, quizzes, and exams, plus syllabus dates verified against their source wording. Clear dates appear and export automatically. If sources disagree, the agenda uses Brightspace and keeps the discrepancy available to inspect.
 - **Courses:** current enrollments, upcoming work, syllabus text, and cited policy summaries. Syllabi are checked automatically, including Purdue Simple Syllabus pages.
 - **Ask:** questions about your course material, with citations to the source page or item. Conversations can be revisited and answers retried.
-- **Settings:** choose a GenAI Studio model, export an `.ics` calendar, download local data, or disconnect and clear the extension's data.
+- **Settings:** connect Brightspace, GenAI Studio, Ed, and Piazza. Expand a connection row for account details and course-link overrides. Export a calendar below the connections. Local data tools are under **Advanced**.
 
 Course sync and syllabus reading run separately. Assignments and announcements can finish syncing while a slow syllabus page is still loading. Some courses have no syllabus; a confirmed missing syllabus is shown separately from a failed check.
 
-## Ed and Piazza beta
+## Ed and Piazza
 
-In **Settings → Discussions (beta)**, choose **Connect Ed courses** or enter a Piazza class URL and choose **Connect Piazza class**. Approve the optional site access in the extension tab. Sign into the discussion site in the same browser profile if prompted, then retry.
+In **Settings**, choose **Connect** on the Ed or Piazza row and approve site access. Ed discovers your active US courses. Piazza finds visible class links and the open class in your signed-in Piazza page, so pasting a URL is usually unnecessary. **Add a class by link** remains available inside the Piazza row when needed.
 
-Ed discovers active US courses and matches unambiguous course codes to current Brightspace courses. Piazza classes and unmatched courses can stay separate, or you can choose their Brightspace course in Settings. That keeps an older class from being mixed into a current course's answers.
+Connections use your existing sign-ins. If a sign-in is needed, it opens in a site tab and connecting resumes automatically afterward. The browser sidebar connects directly; the panel embedded in Brightspace uses a short extension-tab handoff for the permission request. History imports continue in the open panel after that handoff closes.
 
-The beta imports **the full available discussion history**, including available replies, in batches. It saves progress after each batch and resumes interrupted imports on the next sync. Later syncs check every history page and only reopen new or changed posts. Settings shows the saved post count and whether the history check is complete. Ask can search those saved posts, open a saved thread, distinguish staff replies from student suggestions, and cite the original Ed/Piazza link. Linked courses also show recent post links on their course page. Discussion sync has its own status and **Sync discussions now** control; it refreshes independently at most every 20 minutes while BoilerSpace is open.
+Ed and Piazza courses match current Brightspace courses using course codes first, then distinctive titles with minor spelling differences. Explicitly older terms and ambiguous matches stay separate. **Connection row → Options → Brightspace course** provides an optional override, which later syncs preserve. Courses connected before Brightspace is loaded are matched when their metadata becomes available.
 
-The beta does not read attachments, post, reply, or vote. It excludes private and deleted posts. Site changes can interrupt the reader; a failed refresh keeps the last successful posts and shows an error. Relevant discussion text may be sent to Purdue GenAI Studio when you ask. See [Privacy](PRIVACY.md#optional-ed-and-piazza-beta).
+The reader imports **the full available discussion history**, including available replies, in batches. It saves progress after each batch and resumes interrupted imports on the next sync. Later syncs check every history page and only reopen new or changed posts. Settings shows the saved post count and whether the history check is complete. Ask can search those saved posts, open a saved thread, distinguish staff replies from student suggestions, and cite the original Ed/Piazza link. Course pages offer a collapsed list of posts from the last seven days, sorted by posting date. Ask still searches the complete saved history. Discussion sync has its own status and **Sync discussions now** control; it refreshes independently at most every 20 minutes while BoilerSpace is open.
+
+The reader reuses an open class tab when possible. Otherwise it opens a temporary inactive tab using your existing sign-in, reads the posts and closes that tab afterward. Automatic refresh does not request tab focus.
+
+The reader does not read attachments, post, reply, or vote. It excludes private and deleted posts. Site changes can interrupt the reader; a failed refresh keeps the last successful posts and shows an error. Relevant discussion text may be sent to Purdue GenAI Studio when you ask. See [Privacy](PRIVACY.md#optional-ed-and-piazza).
 
 ## Local discussion search
 
@@ -49,7 +53,11 @@ See [Discussion search and benchmark results](experiments/discussions/README.md)
 
 Ask can search your course material, open relevant files, read syllabus pages and lecture slides, and bring the findings into one answer. The expandable work log shows its actual lookups, and citations let you check each finding against the source.
 
-The example above comes from a real midterm question. BoilerSpace opened the syllabus and the relevant lecture material before answering. The course name is shown as **Course C** in the screenshots.
+Chats receive short model-generated titles. Interim commentary is visible during lookups, then moves into the expandable work log when the answer starts streaming. Tool details remain interactive while text arrives, and you can scroll back without losing your place. Completed quiz reviews can be read when Brightspace makes their questions visible, including reviews whose student API access is restricted.
+
+The composer offers a thinking control for recognized models. **Default** sends no reasoning override. Qwen3.8 supports Quick (thinking off), Low, Medium and XHigh; its [published default is XHigh](https://huggingface.co/Qwen/Qwen3.8-27B#api-usage). Purdue's configured model remains in charge when Default is selected.
+
+The example above comes from a real midterm question. BoilerSpace opened the syllabus and the relevant lecture material before answering. The expanded lookup below shows that run, with the course renamed **Course C**.
 
 <details>
   <summary>See part of the actual lecture-material lookup</summary>
@@ -103,7 +111,7 @@ After course sync, BoilerSpace checks syllabi for every current course. It can r
 
 If you see **Allow Simple Syllabus access**, click it to open the extension's permission page, then approve access there. Granting permission starts a retry automatically. A site-permission problem cannot be fixed by repeatedly checking individual courses.
 
-Temporary network or loading failures get one retry after the other courses finish. A completed search that finds no syllabus is remembered for a day. Use **Check all syllabi** for a fresh pass, or the course's **Check again** / **Read again** control to retry one course. If the automatic choice is wrong, select another course file or upload the syllabus.
+Temporary network or loading failures get one retry after the other courses finish. A completed search that finds no syllabus is remembered for a day. Use **Courses → Check again** for a fresh pass, or the course's **Check again** / **Read again** control to retry one course. If the automatic choice is wrong, select another course file or upload the syllabus.
 
 Answers cite the material they used. Overview PDFs open in BoilerSpace's document reader at the cited page, and **Show original PDF** opens the source through your signed-in session. Check important dates and policies against the cited material.
 

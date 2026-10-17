@@ -18,6 +18,12 @@
   window.__boilerspaceLoaded = true;
   if (location.pathname.startsWith('/d2l/lms/quizzing/user/attempt/') || location.pathname.startsWith('/d2l/login')) return;
 
+  // Reloading an unpacked extension can leave its previous DOM behind in an open tab.
+  document.querySelectorAll('#boilerspace-root, .boilerspace-nav-item').forEach(node => node.remove());
+  document.querySelectorAll('style').forEach(style => {
+    if (style.textContent.trimStart().startsWith('html.boilerspace-pushed')) style.remove();
+  });
+
   const extensionUrl = (path) => chrome.runtime.getURL(path);
   const extensionOrigin = new URL(extensionUrl('')).origin;
   const loadLib = (name) => import(extensionUrl(`lib/${name}`));
@@ -90,6 +96,7 @@
   pushStyle.textContent = `
     html.boilerspace-pushed { margin-right: var(--boilerspace-width, ${DEFAULT_WIDTH}px) !important; }
     html.boilerspace-animating { transition: margin-right 180ms ease !important; }
+    @media (prefers-reduced-motion: reduce) { html.boilerspace-animating { transition: none !important; } }
   `;
   (document.head ?? document.documentElement).append(pushStyle);
 
@@ -98,7 +105,7 @@
   const shadow = root.attachShadow({ mode: 'open' });
   shadow.innerHTML = `
     <style>
-      :host { all: initial; }
+      :host { all: initial; position: fixed; top: 0; right: 0; width: 0; height: 0; z-index: 2147483000; }
       .drawer {
         position: fixed; top: 0; right: 0; z-index: 2147483000;
         width: var(--boilerspace-width, ${DEFAULT_WIDTH}px); max-width: 100vw; height: 100vh;
@@ -121,13 +128,18 @@
         position: absolute; top: 14px; left: -32px; z-index: 2;
         width: 32px; height: 36px; padding: 0; cursor: pointer;
         display: grid; place-items: center;
-        border: 1px solid #d3d9e3; border-right: 0; border-radius: 8px 0 0 8px;
+        border: 1px solid #d3d9e3; border-right: 0; border-radius: 6px 0 0 6px;
         background: #fff; color: #202122;
         box-shadow: -4px 0 12px rgba(32, 33, 34, 0.08);
       }
       .collapse svg { transform: rotate(180deg); }
       .drawer.open .collapse svg { transform: none; }
       .collapse:hover { color: #006fbf; }
+      @media (prefers-color-scheme: dark) {
+        .drawer, .collapse { background: #141417; color: #f2f2f5; }
+        .drawer.open, .collapse { border-color: #37373f; }
+        .collapse:hover { color: #75b5ff; }
+      }
       @media (prefers-reduced-motion: reduce) { .drawer, .drawer.open { transition: none; } }
     </style>
     <div class="drawer" role="complementary" aria-label="BoilerSpace">
@@ -237,7 +249,9 @@
   function navbarSlot() {
     return (
       document.querySelector('.d2l-navigation-s-header-right') ??
+      document.querySelector('.d2l-labs-navigation-header-right') ??
       document.querySelector('d2l-navigation-main-header [slot="right"]') ??
+      document.querySelector('d2l-labs-navigation-main-header [slot="right"]') ??
       document.querySelector('d2l-navigation-main-header .d2l-navigation-header-right')
     );
   }

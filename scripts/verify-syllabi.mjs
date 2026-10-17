@@ -119,12 +119,12 @@ try {
   check('the real missing-section response is saved as no syllabus rather than a loading failure', all.syllabi[1438550].status === 'none' && civicsLaunches === 1);
   check('a closed Math syllabus tab recovers in the automatic pass without clicking a retry button', mathLaunches === 2 && all.syllabi[1600004].pages.length > 0, `Math launches: ${mathLaunches}`);
   await panel.locator('.tabs button[data-view="courses"]').click();
-  const allButton = panel.getByRole('button', { name: 'Check all syllabi', exact: true });
+  const allButton = panel.getByRole('button', { name: 'Check again', exact: true });
   await allButton.waitFor();
   for (let i = 0; i < 100 && !(await allButton.isEnabled()); i++) await pause(100);
   check('one batch retry control covers all current courses', await allButton.isEnabled());
   await panel.locator('.course-row').filter({ hasText: 'CS 25000' }).click();
-  await panel.getByText('Wrong file?', { exact: true }).click();
+  await panel.getByText('Choose a different syllabus', { exact: true }).click();
   check('CS 250 offers Read again after automatic discovery', await panel.getByRole('button', { name: 'Read again', exact: true }).isEnabled());
   await worker.evaluate(async () => { const { syllabi } = await chrome.storage.local.get('syllabi'); syllabi[1600002] = { courseId: 1600002, status: 'error', error: 'The course navigation did not finish loading.' }; await chrome.storage.local.set({ syllabi }); });
   const retry = panel.getByRole('button', { name: 'Check again', exact: true });
@@ -134,16 +134,18 @@ try {
   await poll((all) => all.syllabi[1600002]?.status === 'done', 'Retry after discovery error');
   await panel.getByRole('button', { name: 'All courses', exact: true }).click();
   await panel.locator('.course-row').filter({ hasText: 'Civics' }).click();
-  check('missing Civics is an ordinary result with Check again', (await panel.locator('.view').textContent()).includes('No syllabus was found') && await panel.getByRole('button', { name: 'Check again', exact: true }).isEnabled());
+  check('missing Civics is an ordinary result with optional syllabus controls', (await panel.locator('.view').textContent()).includes('No syllabus was found') && await panel.getByText('Add a syllabus', { exact: true }).isVisible());
   await panel.getByRole('button', { name: 'All courses', exact: true }).click();
   await panel.locator('.course-row').filter({ hasText: 'CS 25200' }).click();
   for (const text of ['First syllabus revision.', 'Second syllabus revision.']) {
     revision = text;
     const before = overviewDownloads;
-    await panel.getByText('Wrong file?', { exact: true }).click();
+    const picker = panel.locator('[data-disclosure="syllabus-file-1600001"]');
+    if (!(await picker.evaluate(element => element.open))) await picker.locator('summary').first().click();
     await panel.getByRole('button', { name: 'Read again', exact: true }).click();
     await poll((all) => all.syllabi[1600001]?.status === 'done' && all.syllabi[1600001].pages?.[0]?.text.includes(text), 'Read again latest bytes');
     check(`Read again downloads ${text}`, overviewDownloads === before + 1);
+    check('syllabus controls stay open after the background update', await picker.evaluate(element => element.open));
   }
   await bs.screenshot({ path: path.join(outDir, 'syllabus-retry.png') });
   const [redirected, shared] = await panel.evaluate((href) => Promise.all(Array.from({ length: 2 }, () => chrome.runtime.sendMessage({ type: 'boilerspace-syllabus', phase: 'page', href, origin: 'https://purdue.brightspace.com' }))), ltiPath.replace('ou=1600002', 'ou=1600003'));

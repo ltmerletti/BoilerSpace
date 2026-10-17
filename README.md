@@ -1,149 +1,106 @@
-<img src="extension/icons/icon128.png" width="64" height="64" alt="BoilerSpace icon">
+<div align="center">
+
+<img src="extension/icons/icon128.png" width="72" height="72" alt="BoilerSpace">
 
 # BoilerSpace
 
+**Course answers, right beside Brightspace.**
+
+Understand a lecture. Plan your exam review. Find the clarification you missed.
+
+BoilerSpace brings your Purdue course material, syllabi, deadlines, and Ed and Piazza discussions into one browser side panel. Ask a question, let it look through the material, and follow the citations back to the source.
+
+[**Get started**](#get-started) · [See it in use](#see-it-in-use) · [Privacy](PRIVACY.md)
+
 [![CI](https://github.com/ltmerletti/BoilerSpace/actions/workflows/ci.yml/badge.svg)](https://github.com/ltmerletti/BoilerSpace/actions/workflows/ci.yml)
+[![License: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
 
-Your Purdue Brightspace courses, deadlines, syllabi, and course questions in one side panel.
+<img src="docs/images/overview.png" width="1000" alt="BoilerSpace showing a real exam-review conversation beside the course's learning objectives">
 
-BoilerSpace is a browser extension for Chrome, Firefox, and Zen. It reads your current courses from Brightspace, finds syllabi, and answers questions with citations through your own Purdue GenAI Studio account. There is no separate BoilerSpace account or server.
+*For Purdue students. Works in Chrome, Firefox, and Zen. No separate BoilerSpace account.*
 
-<p align="center">
-  <img src="docs/images/week.png" width="270" alt="Week view showing upcoming work and verified syllabus dates">
-  <img src="docs/images/courses.png" width="270" alt="Courses view showing current courses and the last syllabus sync">
-  <img src="docs/images/ask.png" width="270" alt="Ask view for searching syllabi, course files, and connected discussions">
-</p>
+</div>
 
-*Screenshots are from the running extension with real saved course data. Visible course names and identifiers were renamed in the page HTML for privacy. Automatic background work was paused in the screenshot tab; the interface and saved content were otherwise unchanged.*
+## See it in use
 
-## What it does
+### Turn an exam scope into a study plan
 
-- **Week:** upcoming assignments, quizzes, and exams, plus syllabus dates verified against their source wording. Clear dates appear and export automatically. If sources disagree, the agenda uses Brightspace and keeps the discrepancy available to inspect.
-- **Courses:** current enrollments, upcoming work, syllabus text, and cited policy summaries. Syllabi are checked automatically, including Purdue Simple Syllabus pages.
-- **Ask:** questions about your course material, with citations to the source page or item. Conversations can be revisited and answers retried.
-- **Settings:** connect Brightspace, GenAI Studio, Ed, and Piazza. Expand a connection row for account details and course-link overrides. Export a calendar below the connections. Local data tools are under **Advanced**.
+> What does the syllabus say about the midterm, what does it cover, and what should I review in the course materials?
 
-Course sync and syllabus reading run separately. Assignments and announcements can finish syncing while a slow syllabus page is still loading. Some courses have no syllabus; a confirmed missing syllabus is shown separately from a failed check.
+A syllabus can name a module without spelling out everything you need to study. BoilerSpace opens the relevant lecture files and brings their topics and learning objectives into one cited answer.
 
-## Ed and Piazza
-
-In **Settings**, choose **Connect** on the Ed or Piazza row and approve site access. Ed discovers your active US courses. Piazza finds visible class links and the open class in your signed-in Piazza page, so pasting a URL is usually unnecessary. **Add a class by link** remains available inside the Piazza row when needed.
-
-Connections use your existing sign-ins. If a sign-in is needed, it opens in a site tab and connecting resumes automatically afterward. The browser sidebar connects directly; the panel embedded in Brightspace uses a short extension-tab handoff for the permission request. History imports continue in the open panel after that handoff closes.
-
-Ed and Piazza courses match current Brightspace courses using course codes first, then distinctive titles with minor spelling differences. Explicitly older terms and ambiguous matches stay separate. **Connection row → Options → Brightspace course** provides an optional override, which later syncs preserve. Courses connected before Brightspace is loaded are matched when their metadata becomes available.
-
-The reader imports **the full available discussion history**, including available replies, in batches. It saves progress after each batch and resumes interrupted imports on the next sync. Later syncs check every history page and only reopen new or changed posts. Settings shows the saved post count and whether the history check is complete. Ask can search those saved posts, open a saved thread, distinguish staff replies from student suggestions, and cite the original Ed/Piazza link. Course pages offer a collapsed list of posts from the last seven days, sorted by posting date. Ask still searches the complete saved history. Discussion sync has its own status and **Sync discussions now** control; it refreshes independently at most every 20 minutes while BoilerSpace is open.
-
-The reader reuses an open class tab when possible. Otherwise it opens a temporary inactive tab using your existing sign-in, reads the posts and closes that tab afterward. Automatic refresh does not request tab focus.
-
-The reader does not read attachments, post, reply, or vote. It excludes private and deleted posts. Site changes can interrupt the reader; a failed refresh keeps the last successful posts and shows an error. Relevant discussion text may be sent to Purdue GenAI Studio when you ask. See [Privacy](PRIVACY.md#optional-ed-and-piazza).
-
-## Local discussion search
-
-Saved Ed/Piazza posts use **BM25 plus POTION semantic search**, running locally in a browser worker. This finds both exact terms and related wording. The bundled int8 model is about 33 MB; it needs no model account, external search service, GPU, or first-run download. The worker loads when discussion search is used and releases its memory after a minute of inactivity. Other course material continues to use keyword search.
-
-The assistant receives up to 6,000 characters of discussion evidence, with instructor/student roles and links to the original posts. If the semantic model cannot load, keyword search remains available and the tool reports that fallback. Search candidates can still be irrelevant; the assistant must check their content and saved-history status.
-
-See [Discussion search and benchmark results](experiments/discussions/README.md) for the production choice, all aggregate comparisons, browser measurements, limitations and test commands. Benchmark evidence recall measures whether labeled source text reaches the assistant, not whether every generated answer is correct.
-
-## Ask across your course material
-
-> Hey can you tell me what the Course C syllabus says about the midterm, what it covers, and what I should review in the course materials?
-
-Ask can search your course material, open relevant files, read syllabus pages and lecture slides, and bring the findings into one answer. The expandable work log shows its actual lookups, and citations let you check each finding against the source.
-
-Chats receive short model-generated titles. Interim commentary is visible during lookups, then moves into the expandable work log when the answer starts streaming. Tool details remain interactive while text arrives, and you can scroll back without losing your place. Completed quiz reviews can be read when Brightspace makes their questions visible, including reviews whose student API access is restricted.
-
-The composer offers a thinking control for recognized models. **Default** sends no reasoning override. Qwen3.8 supports Quick (thinking off), Low, Medium and XHigh; its [published default is XHigh](https://huggingface.co/Qwen/Qwen3.8-27B#api-usage). Purdue's configured model remains in charge when Default is selected.
-
-The example above comes from a real midterm question. BoilerSpace opened the syllabus and the relevant lecture material before answering. The expanded lookup below shows that run, with the course renamed **Course C**.
+In this real conversation, it also found a detail worth checking. The syllabus named Module 1, while a later lecture summary included the first part of Topic 7. The answer called out that difference and linked both sources.
 
 <details>
-  <summary>See part of the actual lecture-material lookup</summary>
-  <p><img src="docs/images/ask-research.png" width="540" alt="Expanded work log showing the actual lecture decks opened for the midterm question, with course identifiers renamed"></p>
+<summary>See the lecture-by-lecture lookup</summary>
+
+<img src="docs/images/exam-research.png" width="640" alt="Expanded activity from the real midterm question, showing BoilerSpace opening the lecture material for learning objectives">
+
 </details>
 
-## Install
+### Find the answer buried in a discussion
 
-This is a source installation. The extension has no build step, and Node.js is not needed to use it.
+A project handout may leave an edge case unclear. An instructor's reply several weeks ago may already answer it. Ask searches the saved discussion history, including available replies, and cites the original thread.
 
-1. [Download the source ZIP](https://github.com/ltmerletti/BoilerSpace/archive/refs/heads/main.zip) and extract it, or clone the repository:
+- **Ed · Resolve a project edge case.** Two events finish on the same tick. Which gets processed first? BoilerSpace finds the instructor's tie-breaking rule and links the reply.
+- **Piazza · Catch a changed deadline.** A later announcement extends two projects again. BoilerSpace finds the newer date and distinguishes it from the earlier extension.
 
-   ```sh
-   git clone https://github.com/ltmerletti/BoilerSpace.git
-   cd BoilerSpace
-   ```
+<p>
+  <img src="docs/images/ed-clarification.png" width="440" alt="Real Ed-backed answer explaining that simultaneous reviews are processed in increasing official ID order, with a link to the instructor's thread">
+  <img src="docs/images/piazza-update.png" width="440" alt="Real Piazza-backed answer identifying May 1 as the revised deadline and citing both the later announcement and the earlier extension">
+</p>
 
-2. Load the `extension` folder using your browser's instructions below.
-3. Sign into [Purdue Brightspace](https://purdue.brightspace.com), open BoilerSpace, and use **Connect** to link [Purdue GenAI Studio](https://genai.rcac.purdue.edu). Complete any Purdue sign-in prompts in the browser.
-4. Allow the requested access to Brightspace, GenAI Studio, and Purdue Simple Syllabus.
+### Work through a lecture without losing your place
 
-### Chrome
+Keep the lecture open and name the slide, topic, or equation you want to unpack. Ask can read the course file, explain the material, and handle follow-up questions in the same conversation.
 
-Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select the `extension` folder. Keep that folder in place after installation.
+> In the Sun–Earth connection lecture, why is Earth's emission temperature lower than its surface temperature? Walk me through the energy balance.
 
-### Firefox and Zen
+This is an example of a question to try. The screenshots above use actual saved answers, not scripted demo responses. Course labels are renamed for privacy. [About the screenshots](docs/images/README.md)
 
-Open `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on**, and select `extension/manifest.json`. Temporary add-ons are removed when the browser quits; load it again next session.
+## Keep the rest of the course in view
 
-### Open and update BoilerSpace
+- **Week** brings upcoming assignments, quizzes, and exams together, including dates found in syllabi. Export them to your calendar when you need them elsewhere.
+- **Courses** keeps current classes, syllabi, and upcoming work close by. Syllabi are checked automatically, including Purdue Simple Syllabus pages.
+- **Ask** looks through course files, announcements, syllabi, and connected discussions. Expand its activity to see what it read, or open a citation to inspect the original.
 
-On Brightspace, click **BoilerSpace** in the navigation bar or use the arrow at the edge of its panel. The browser toolbar button also opens it: a side panel in Chrome, or a sidebar in Firefox and Zen.
+Ed and Piazza are optional. Connect them in Settings using your existing sign-ins. Courses are matched to Brightspace automatically when there is a clear match, and the full available public discussion history is imported, including older posts and replies.
 
-After updating the source, reload the existing extension entry in `chrome://extensions` or `about:debugging`, then refresh Brightspace. Refreshing the website alone does not load updated extension scripts.
+## Get started
 
-## Browser support
+You need a Purdue account with access to Brightspace and [Purdue GenAI Studio](https://genai.rcac.purdue.edu). Installation currently uses the source folder. There is no build step, and you do not need Node.js.
 
-The manifest targets Chrome 116+ and Firefox 128+, including compatible Zen versions. Use a current browser release.
+**1. Download BoilerSpace.** [Download the source ZIP](https://github.com/ltmerletti/BoilerSpace/archive/refs/heads/main.zip) and extract it. Keep the extracted folder in place.
 
-| Browser | Verification |
+**2. Load the extension in your browser.**
+
+| Browser | Installation |
 | --- | --- |
-| Chrome / Chromium | Automated UI checks and signed-in live tests |
-| Zen | Signed-in user session and full discussion-retrieval replay |
-| Firefox | Automated discussion-worker checks in CI; full signed-in Purdue UI coverage remains through Zen |
+| **Chrome** | Open `chrome://extensions`, enable **Developer mode**, select **Load unpacked**, and choose the `extension` folder. |
+| **Firefox / Zen** | Open `about:debugging#/runtime/this-firefox`, select **Load Temporary Add-on**, and choose `extension/manifest.json`. Temporary add-ons must be loaded again after quitting the browser. |
 
-BoilerSpace is currently specific to Purdue's Brightspace, Simple Syllabus, and GenAI Studio domains. Other universities' Brightspace installations are not configured.
+**3. Open Brightspace and connect.** Sign into [Purdue Brightspace](https://purdue.brightspace.com), open **BoilerSpace** from its navigation bar or your browser toolbar, and connect Purdue GenAI Studio in **Settings**. Approve the requested site access. Connect Ed or Piazza there if you use them.
 
-## Syllabi and citations
+Your courses load automatically. Once the material is ready, open **Ask** and start with a course question.
 
-After course sync, BoilerSpace checks syllabi for every current course. It can read files in Content, course overview attachments, and the **Syllabus** navigation tab, including its JavaScript-rendered Simple Syllabus document.
+[Setup, updates, and troubleshooting →](docs/USER_GUIDE.md)
 
-If you see **Allow Simple Syllabus access**, click it to open the extension's permission page, then approve access there. Granting permission starts a retry automatically. A site-permission problem cannot be fixed by repeatedly checking individual courses.
+## Your data
 
-Temporary network or loading failures get one retry after the other courses finish. A completed search that finds no syllabus is remembered for a day. Use **Courses → Check again** for a fresh pass, or the course's **Check again** / **Read again** control to retry one course. If the automatic choice is wrong, select another course file or upload the syllabus.
+Course data, conversations, settings, and your GenAI Studio connection are stored in this browser. Answering questions and reading syllabi sends relevant material to **Purdue GenAI Studio** through your account. Grade records and quiz scores are excluded from model inputs.
 
-Answers cite the material they used. Overview PDFs open in BoilerSpace's document reader at the cited page, and **Show original PDF** opens the source through your signed-in session. Check important dates and policies against the cited material.
+BoilerSpace has no separate server, account system, or analytics. Ed and Piazza access is read-only. It does not post or reply on your behalf. [Read the privacy details →](PRIVACY.md)
 
-## Data and permissions
+## A few boundaries
 
-Course data, conversations, settings, and the GenAI Studio API key are stored locally in the browser's extension storage. Syllabus text is sent to Purdue GenAI Studio to extract dates and policies. Questions, relevant course material, and conversation context are sent there to answer questions. Grade records are excluded from model requests.
+BoilerSpace is built for Purdue's Brightspace setup. It reads PDFs, `.pptx`, `.docx`, and HTML when readable content is available. Scanned documents and discussion attachments or images are not currently supported. It stays off active quiz attempt pages.
 
-| Site access | Purpose |
-| --- | --- |
-| `purdue.brightspace.com` | Sync courses and read course material through your signed-in session |
-| `purdue.simplesyllabus.com` | Read the rendered syllabus launched by Brightspace |
-| `genai.rcac.purdue.edu` | Connect your account and request model responses |
-| `edstem.org`, `us.edstem.org` (optional) | Import saved public Ed posts and replies when connected |
-| `piazza.com` (optional) | Import a connected class's public posts and replies |
+Answers depend on the available material and the selected GenAI Studio model. Citations make the evidence inspectable; they do not guarantee that every answer is correct. This is an independent project, not an official Purdue or D2L product.
 
-BoilerSpace does not add its own analytics or send data to a separate BoilerSpace server. Exports can contain course content and conversation history. See [Privacy](PRIVACY.md) for storage, exports, and deletion details.
+## Help improve BoilerSpace
 
-## Current limits
+[Report a bug or suggest an improvement](https://github.com/ltmerletti/BoilerSpace/issues). For development and testing, see [Contributing](CONTRIBUTING.md). Search experiments and evaluation results live in the [technical notes](experiments/discussions/README.md).
 
-- Supported document formats include PDF, `.pptx`, `.docx`, and HTML. Scanned PDFs without readable text, old `.ppt` files, `.rtf`, video, and arbitrary external websites are not supported.
-- The extension stays off quiz attempt pages. The assistant's quiz reader excludes scores and uses finished attempts or closed quizzes.
-- The default model is `qwen3.8:27b`; availability and response speed depend on Purdue GenAI Studio. Change the model in Settings.
-- This is an independent project, not an official Purdue or D2L product.
+[Security](SECURITY.md) · [Code of conduct](CODE_OF_CONDUCT.md) · [Third-party notices](THIRD_PARTY_NOTICES.md)
 
-## Development and feedback
-
-See [Contributing](CONTRIBUTING.md) for test setup, local browser checks, and signed-in live verification. The benchmark suite has its own [guide](bench/README.md); its private captures and cases are not included in a clone.
-
-Report reproducible bugs or suggest changes through [GitHub Issues](https://github.com/ltmerletti/BoilerSpace/issues). Follow the [security reporting instructions](SECURITY.md) for vulnerabilities, and remove personal course information from screenshots and logs. Project participation follows the [code of conduct](CODE_OF_CONDUCT.md).
-
-## License and credits
-
-Copyright (C) 2026 Luke Merletti. BoilerSpace's original code is licensed under the **GNU General Public License, version 3 only** (`GPL-3.0-only`). See [LICENSE](LICENSE). The extension directory also includes [COPYING](extension/COPYING) and [NOTICE](extension/NOTICE) so its license travels with the installable files.
-
-Bundled libraries and fonts retain their own licenses. See [Third-party notices](THIRD_PARTY_NOTICES.md). The project license does not grant rights to instructors' course documents, third-party services, or their trademarks.
+BoilerSpace's original code is licensed under [GPL-3.0-only](LICENSE). Copyright © 2026 Luke Merletti. Bundled libraries and fonts retain their own licenses.

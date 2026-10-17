@@ -1,6 +1,7 @@
 import { htmlToText } from './extract.js';
 
 export const DISCUSSION_BATCH_SIZE = 30;
+export const DISCUSSION_CAPTURE_VERSION = 2;
 export const DISCUSSION_SITES = {
   ed: ['https://edstem.org/*', 'https://us.edstem.org/*'],
   piazza: ['https://piazza.com/*'],
@@ -18,9 +19,21 @@ export function parseDiscussionUrl(value) {
   throw new Error('This beta supports US Ed course URLs and Piazza class URLs.');
 }
 
-const text = (value) => htmlToText(String(value ?? '')).trim().slice(0, 40_000);
+const text = (value) => htmlToText(String(value ?? '')).trim();
 const staff = (role) => /^(staff|admin|instructor|teacher|tutor|ta)$/i.test(role ?? '');
 const date = (value) => value && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : null;
+
+// Iterative preorder preserves reply order without dropping deeply nested comments.
+function* publicReplies(nodes, children, privateNode) {
+  const stack = [...(nodes ?? [])].reverse();
+  while (stack.length) {
+    const node = stack.pop();
+    if (privateNode(node)) continue;
+    yield node;
+    const nested = node[children] ?? [];
+    for (let i = nested.length - 1; i >= 0; i--) stack.push(nested[i]);
+  }
+}
 
 export function matchDiscussionCourse(source, courses) {
   const raw = `${source.code ?? ''} ${source.name ?? ''}`.toUpperCase();
@@ -41,18 +54,11 @@ export function normalizeEdThread(payload, source) {
     return staff(value) ? 'instructor' : value === 'student' ? 'student' : 'unknown';
   };
   const replies = [];
-  const visit = (nodes, depth = 0) => {
-    if (depth > 8) return;
-    for (const node of nodes ?? []) {
-      if (replies.length >= 100 || node.is_private || node.deleted_at) continue;
-      replies.push({ id: String(node.id), text: text(node.content), role: role(node), endorsed: node.is_endorsed === true, createdAt: date(node.created_at) });
-      visit(node.comments, depth + 1);
-    }
-  };
-  visit(item.answers);
-  visit(item.comments);
+  for (const node of publicReplies([...(item.answers ?? []), ...(item.comments ?? [])], 'comments', (node) => node.is_private || node.deleted_at)) {
+    replies.push({ id: String(node.id), text: text(node.content), role: role(node), endorsed: node.is_endorsed === true, createdAt: date(node.created_at) });
+  }
   return {
-    id: String(item.id), key: `${source.id}:${item.id}`, sourceId: source.id, platform: 'ed',
+    id: String(item.id), key: `${source.id}:${item.id}`, sourceId: source.id, platform: 'ed', captureVersion: DISCUSSION_CAPTURE_VERSION,
     number: item.number, title: text(item.title), text: text(item.content), role: role(item),
     endorsed: item.is_endorsed === true, pinned: item.is_pinned === true,
     createdAt: date(item.created_at), updatedAt: date(item.updated_at), replies,
@@ -65,18 +71,12 @@ export function normalizePiazzaThread(item, source) {
   const latest = item.history?.[0];
   if (!latest) return null;
   const replies = [];
-  const visit = (nodes, depth = 0) => {
-    if (depth > 8) return;
-    for (const node of nodes ?? []) {
-      if (replies.length >= 100 || ['deleted', 'private'].includes(node.status) || node.is_private || (node.tags ?? []).includes('private')) continue;
-      const h = node.history?.[0] ?? node;
-      if (h.content) replies.push({ id: String(node.id ?? replies.length), text: text(h.content), role: node.type === 'i_answer' ? 'instructor' : node.type === 's_answer' ? 'student' : 'unknown', endorsed: node.tag_good_prof === true, createdAt: date(h.created ?? node.created) });
-      visit(node.children, depth + 1);
-    }
-  };
-  visit(item.children);
+  for (const node of publicReplies(item.children, 'children', (node) => ['deleted', 'private'].includes(node.status) || node.is_private || (node.tags ?? []).includes('private'))) {
+    const h = node.history?.[0] ?? node;
+    if (h.content) replies.push({ id: String(node.id ?? replies.length), text: text(h.content), role: node.type === 'i_answer' ? 'instructor' : node.type === 's_answer' ? 'student' : 'unknown', endorsed: node.tag_good_prof === true, createdAt: date(h.created ?? node.created) });
+  }
   return {
-    id: String(item.nr), key: `${source.id}:${item.nr}`, sourceId: source.id, platform: 'piazza',
+    id: String(item.nr), key: `${source.id}:${item.nr}`, sourceId: source.id, platform: 'piazza', captureVersion: DISCUSSION_CAPTURE_VERSION,
     number: item.nr, title: text(latest.subject), text: text(latest.content),
     role: (item.tags ?? []).includes('instructor-note') ? 'instructor' : 'unknown',
     endorsed: item.tag_good_prof === true, pinned: item.is_pinned === true,

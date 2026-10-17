@@ -59,13 +59,93 @@ test('discussion search respects course links and full reads cite the instructor
   assert.equal(discussionDocuments(discussions).length, 2);
   const tools = createTools({ snapshot: snapshotFixture(), discussions });
   const hit = await tools.run('search_course_material', { query: 'report Friday', course_id: 1600001 });
-  assert.equal(hit.results[0].discussion_key, thread.key);
+  assert.ok(hit.results.some(result => result.discussion_key === thread.key));
   const wrongCourse = await tools.run('search_course_material', { query: 'Notebook downtime', course_id: 1600002 });
   assert.equal(wrongCourse.results.length, 0);
   const all = await tools.run('list_discussions', {});
   assert.equal(all.courses.length, 2);
+  assert.deepEqual(all.courses.map(course => course.source_id), ['ed:123', 'piazza:old']);
   const read = await tools.run('read_discussion', { discussion_key: thread.key });
   assert.equal(read.replies[0].author_role, 'instructor');
   assert.equal(tools.sources.get(read.replies[0].source).url, thread.url);
   assert.ok(!JSON.stringify(read).includes('Private Staff Name'));
+});
+
+test('both readers preserve long messages, more than 100 replies and deeply nested public comments', () => {
+  const long = 'complete message '.repeat(3000);
+  let edNested = { id: 'deep', content: 'Deep public Ed reply' };
+  let piazzaNested = { id: 'deep', content: 'Deep public Piazza reply' };
+  for (let i = 0; i < 20; i++) {
+    edNested = { id: `nested-${i}`, content: 'Public comment', comments: [edNested] };
+    piazzaNested = { id: `nested-${i}`, content: 'Public comment', children: [piazzaNested] };
+  }
+  const payload = edPayload();
+  payload.thread.content = long;
+  payload.thread.answers = Array.from({ length: 120 }, (_, i) => ({ id: i, content: i === 119 ? long : `Reply ${i}` }));
+  payload.thread.comments = [edNested, { id: 'private-parent', is_private: true, comments: [{ id: 'hidden-child', content: 'Hidden descendant' }] }];
+  const ed = normalizeEdThread(payload, source);
+  assert.equal(ed.text, long.trim());
+  assert.equal(ed.replies.length, 141);
+  assert.equal(ed.replies[119].text, long.trim());
+  assert.equal(ed.replies.at(-1).text, 'Deep public Ed reply');
+  assert.ok(!JSON.stringify(ed).includes('Hidden descendant'));
+  const piazza = normalizePiazzaThread({ nr: 1, history: [{ content: long }], children: [
+    ...Array.from({ length: 120 }, (_, i) => ({ id: i, content: i === 119 ? long : `Reply ${i}` })),
+    piazzaNested, { status: 'private', children: [{ content: 'Hidden descendant' }] },
+  ] }, { ...source, platform: 'piazza' });
+  assert.equal(piazza.text, long.trim());
+  assert.equal(piazza.replies.length, 141);
+  assert.equal(piazza.replies[119].text, long.trim());
+  assert.equal(piazza.replies.at(-1).text, 'Deep public Piazza reply');
+  assert.ok(!JSON.stringify(piazza).includes('Hidden descendant'));
+});
+
+test('discussion reads page every reply and continue long messages without gaps or changing citations', async () => {
+  const thread = { ...normalizeEdThread(edPayload(), source), text: 'Post text. '.repeat(4000),
+    replies: Array.from({ length: 105 }, (_, i) => ({ id: String(i), role: 'instructor', text: `Reply ${i}. `.repeat(5000), endorsed: i === 104 })) };
+  const tools = createTools({ snapshot: snapshotFixture(), discussions: { sources: [{ ...source, threads: [thread] }] } });
+  const read = (args = {}) => tools.run('read_discussion', { discussion_key: thread.key, ...args });
+  let page = await read(), text = page.text;
+  const postSource = page.source;
+  assert.equal(page.next_reply_offset, 30);
+  assert.ok(JSON.stringify(page).length < 32_000, 'long replies do not inflate the tool response');
+  while (page.next_offset !== null) {
+    page = await read({ offset: page.next_offset });
+    assert.equal(page.source, postSource);
+    assert.equal(page.replies, undefined, 'post continuations do not repeat the reply previews');
+    text += page.text;
+  }
+  assert.equal(text, thread.text);
+  const ids = [];
+  page = await read();
+  while (true) {
+    ids.push(...page.replies.map(reply => reply.reply_id));
+    if (page.next_reply_offset === null) break;
+    page = await read({ reply_offset: page.next_reply_offset });
+    assert.equal(page.text, undefined, 'reply pages do not repeat the original post');
+  }
+  assert.deepEqual(ids, thread.replies.map(reply => reply.id));
+  const preview = page.replies.at(-1);
+  assert.equal(preview.endorsed, true);
+  text = preview.text;
+  let next = preview.next_offset;
+  while (next !== null) {
+    const reply = await read({ reply_id: preview.reply_id, offset: next });
+    assert.equal(reply.source, preview.source);
+    assert.equal(reply.author_role, 'instructor');
+    text += reply.text;
+    next = reply.next_offset;
+  }
+  assert.equal(text, thread.replies.at(-1).text);
+  assert.equal(tools.sources.get(preview.source).url, thread.url);
+  assert.equal((await read({ reply_offset: 105 })).next_reply_offset, null);
+  assert.equal((await read({ offset: thread.text.length })).next_offset, null);
+});
+
+test('discussion read continuations reject invalid offsets and unknown replies', async () => {
+  const thread = normalizeEdThread(edPayload(), source);
+  const tools = createTools({ snapshot: snapshotFixture(), discussions: { sources: [{ ...source, threads: [thread] }] } });
+  for (const args of [{ offset: -1 }, { offset: 1.5 }, { offset: '0' }, { offset: thread.text.length + 1 }, { reply_offset: 100 }, { reply_id: 'missing' }, { reply_id: 11 }, { reply_id: '11', reply_offset: 0 }, { offset: 1, reply_offset: 1 }]) {
+    assert.ok((await tools.run('read_discussion', { discussion_key: thread.key, ...args })).error, JSON.stringify(args));
+  }
 });

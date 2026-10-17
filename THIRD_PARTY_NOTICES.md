@@ -10,6 +10,8 @@ BoilerSpace's original code is licensed under GPLv3 only. The following bundled 
 | Liberation font data | `extension/vendor/pdfjs/standard_fonts/` | [SIL Open Font License 1.1 and copyright notices](extension/vendor/pdfjs/standard_fonts/LICENSE_LIBERATION) |
 | [fflate](https://github.com/101arrowz/fflate) | `extension/vendor/fflate/` | [MIT License](extension/vendor/fflate/LICENSE), copyright Arjun Barrett |
 | [Lato](https://www.latofonts.com/) | `extension/fonts/` | [SIL Open Font License 1.1](extension/fonts/OFL.txt), copyright tyPoland Łukasz Dziedzic, with Reserved Font Name “Lato” |
+| [Tokenizers.js](https://github.com/huggingface/tokenizers.js), version 0.2.0 | `extension/vendor/tokenizers/` | [Apache License 2.0](extension/vendor/tokenizers/LICENSE); Hugging Face and contributors |
+| [POTION retrieval 32M](https://huggingface.co/minishlab/potion-retrieval-32M), revision `6fc8051fab2a1e0ee76689cf08c853792ac285e7` | `extension/vendor/potion/` | MIT per the bundled [upstream model card](extension/vendor/potion/MODEL_CARD.md); includes the [Model2Vec MIT notice](extension/vendor/potion/LICENSE), copyright Thomas van Dongen. BoilerSpace converts the published float32 table to row-wise symmetric int8. |
 
 Keep the bundled license files and source notices when redistributing the extension or updating a dependency. Update this table when the bundled components change.
 

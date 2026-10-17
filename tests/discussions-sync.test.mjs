@@ -127,6 +127,19 @@ test('a fresh sweep supplies saved versions and removes posts no longer public',
   assert.equal(data.discussions.sources[0].threads.length, 0);
 });
 
+test('older truncated captures are reread once even when the remote post version is unchanged', async () => {
+  const { data, calls } = setup(async ({ discover, remoteId, offset }) => discover ? { courses: [{ remoteId: '1' }] } : feed(remoteId, offset));
+  await connect();
+  delete data.discussions.sources[0].threads[0].captureVersion;
+  const before = calls.length;
+  await sync(true);
+  assert.deepEqual(calls[before].knownVersions, {});
+  assert.equal(data.discussions.sources[0].threads[0].captureVersion, 2);
+  const after = calls.length;
+  await sync(true);
+  assert.equal(calls[after].knownVersions['101'], 'v1');
+});
+
 test('a server repeating the same history page stops with a recoverable error', async () => {
   const { data } = setup(async ({ discover, remoteId, offset }) => discover ? { courses: [{ remoteId: '1' }] } : { ...feed(remoteId), nextOffset: offset + 1 });
   await connect();

@@ -1,4 +1,4 @@
-import { DISCUSSION_BATCH_SIZE, DISCUSSION_SITES, matchDiscussionCourse, normalizeEdThread, normalizePiazzaThread, parseDiscussionUrl } from './discussions.js';
+import { DISCUSSION_BATCH_SIZE, DISCUSSION_CAPTURE_VERSION, DISCUSSION_SITES, matchDiscussionCourse, normalizeEdThread, normalizePiazzaThread, parseDiscussionUrl } from './discussions.js';
 import { readDiscussionSite } from './discussions-page.js';
 
 let queue = Promise.resolve();
@@ -105,7 +105,8 @@ async function perform({ action, platform, url, sourceId, courseId, force = fals
   await save();
   try {
     const read = await readSite(source.platform, { remoteId: source.remoteId, offset: source.sync.offset,
-      knownVersions: Object.fromEntries((source.threads ?? []).map((t) => [t.id, t.remoteVersion])) });
+      // Reread older captures once, even if the site's version has not changed.
+      knownVersions: Object.fromEntries((source.threads ?? []).filter((t) => t.captureVersion === DISCUSSION_CAPTURE_VERSION).map((t) => [t.id, t.remoteVersion])) });
     if (!Array.isArray(read.pageIds) || !Array.isArray(read.seenIds) || !Number.isInteger(read.nextOffset) || read.nextOffset < source.sync.offset) throw new Error('The discussion reader returned an invalid page.');
     const previousPages = new Set(source.sync.pageIds);
     if (read.hasMore && !read.errors?.length && (!read.pageIds.length || read.pageIds.every((id) => previousPages.has(id)))) throw new Error('Discussion pagination stopped advancing. Your saved posts are kept; retry the import.');

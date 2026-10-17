@@ -44,15 +44,17 @@ Use `VERIFY_OUT=/tmp/boilerspace-verification` to choose a screenshot directory.
 
 ### Continuous integration
 
-[CI](https://github.com/ltmerletti/BoilerSpace/actions/workflows/ci.yml) runs on pushes and pull requests, and can also be started manually from GitHub Actions. It runs the unit suite on Node.js 22 and 24, plus the interface, syllabus, and discussion Chromium suites in separate jobs. The interface and discussion suites run headlessly; the syllabus suite uses visible Chromium under `xvfb-run`. The broader interface suite also saves a Playwright trace and captures page state if it throws.
+[CI](https://github.com/ltmerletti/BoilerSpace/actions/workflows/ci.yml) runs on pushes and pull requests, and can also be started manually from GitHub Actions. It runs the unit suite on Node.js 22 and 24; the interface, syllabus and discussion Chromium suites; and the discussion-worker checks in Chromium and Firefox. The interface, discussion and worker suites run headlessly; the syllabus suite uses visible Chromium under `xvfb-run`. The broader interface suite saves a Playwright trace and page state if it throws.
 
 CI installs from `package-lock.json` and checks out the public fixtures at the same pinned commit shown above. It needs no Purdue credentials, API keys, or repository secrets. Each browser job uploads any generated fixture-test screenshots for seven days, including on failure. New runs cancel older runs on the same branch or pull request.
 
-These checks cover fixture behavior in Chromium. They do not replace signed-in verification of Purdue authentication, actual course pages, or Firefox/Zen behavior.
+These checks cover synthetic integration behavior and the bundled retrieval worker in both browser engines. They do not replace signed-in verification of Purdue authentication, actual course rendering or the full Firefox/Zen interface.
 
 ### Local retrieval experiments
 
-The pure ranking tests run in `npm test` without model downloads. To run real local embedding inference and compare source-evidence recall, use the separate [retrieval experiment](experiments/retrieval/README.md). Its optional dependencies, model cache, and private reports stay separate from the extension runtime.
+The ranking, packaged-asset integrity, worker lifecycle, timeout, scope isolation, and fallback tests run in `npm test` without model downloads. `node scripts/verify-discussion-search.mjs` exercises the bundled model in a real Chromium worker under the extension CSP, including edited/deleted posts, idle release, and a damaged-model fallback. Set `VERIFY_BROWSER=firefox` for Playwright Firefox. CI runs both engines, and the discussion integration suite requires the real semantic worker in Ask.
+
+The [discussion search README](experiments/discussions/README.md) is the single guide to the production choice, aggregate benchmark results, limitations and reproduction. Optional embedding dependencies and private reports remain separate from the extension runtime.
 
 ### Live verification
 

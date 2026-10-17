@@ -63,6 +63,9 @@ try {
     } else if (/\/threads\/\d+$/.test(url.pathname)) {
       const id = Number(url.pathname.split('/').at(-1));
       data = { users: [{ id: 1, name: 'Secret Student', course_role: 'student' }, { id: 2, name: 'Secret Instructor', course_role: 'staff' }], thread: { id, number: 7, course_id: Math.floor(id / 100), user_id: 1, title: id % 100 === 0 ? 'Project deadline clarification' : `Older discussion ${id}`, content: revisedOldPost && id === 2034 ? '<p>An older clarification has been revised.</p>' : '<document><paragraph>When is the report due?</paragraph></document>', created_at: '2026-10-12T12:00:00Z', updated_at: '2026-10-13T12:00:00Z', answers: [{ id: 99, user_id: 2, content: '<paragraph>The report deadline is Friday at 5 PM.</paragraph>', is_endorsed: true, comments: [] }], comments: [] } };
+      if (id === 2000) data.thread.answers = Array.from({ length: 105 }, (_, i) => ({ id: 1000 + i, user_id: i === 104 ? 2 : 1,
+        content: i === 104 ? 'Receipt context. '.repeat(1000) + 'The appendixreceipt report deadline is Friday at 5 PM.' : `Earlier student comment ${i}.`,
+        is_endorsed: i === 104, comments: [] }));
     } else throw new Error(`Unexpected Ed route: ${url.pathname}`);
     return route.fulfill({ contentType: 'application/json', headers, body: JSON.stringify(data) });
   });
@@ -89,15 +92,41 @@ try {
   await context.route('https://genai.rcac.purdue.edu/**', (route) => {
     if (route.request().method() === 'GET') return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: [{ id: 'qwen3.8:27b' }] }) });
     const body = route.request().postDataJSON();
-    const toolResults = body.messages.filter((m) => m.role === 'tool');
+    const lastQuestion = body.messages.findLastIndex((message) => message.role === 'user');
+    const toolResults = body.messages.slice(lastQuestion + 1).filter((m) => m.role === 'tool');
+    const piazzaQuestion = body.messages[lastQuestion].content.includes('Piazza');
+    const call = (name, args) => ({ tool_calls: [{ index: 0, id: `call-${toolResults.length}`, type: 'function', function: { name, arguments: JSON.stringify(args) } }] });
+    const result = toolResults.length ? JSON.parse(toolResults.at(-1).content) : null;
     let delta;
-    if (!toolResults.length) delta = { tool_calls: [{ index: 0, id: 'search', type: 'function', function: { name: 'search_course_material', arguments: JSON.stringify({ query: 'report deadline Friday', course_id: 1600001 }) } }] };
+    if (!toolResults.length) delta = call('list_discussions', {});
     else if (toolResults.length === 1) {
-      const result = JSON.parse(toolResults[0].content);
-      delta = { tool_calls: [{ index: 0, id: 'read', type: 'function', function: { name: 'read_discussion', arguments: JSON.stringify({ discussion_key: result.results[0].discussion_key }) } }] };
+      const source = result.courses.find(course => course.platform === (piazzaQuestion ? 'Piazza' : 'Ed'));
+      assert.ok(source);
+      delta = call('search_course_material', { query: piazzaQuestion ? 'Notebook maintenance deadline' : 'appendixreceipt report deadline', source_id: source.source_id });
+    } else if (toolResults.length === 2) {
+      assert.equal(result.discussion_search, 'potion-i8-bm25', 'Ask uses the bundled semantic worker, rather than falling back silently');
+      const hit = result.results.find(hit => piazzaQuestion || hit.discussion_key === 'ed:20:2000');
+      assert.ok(hit?.read_targets?.length, 'search exposes direct read targets');
+      delta = call('read_discussion', { discussion_key: hit.discussion_key });
+    } else if (piazzaQuestion) {
+      assert.equal(result.replies[0].author_role, 'instructor');
+      delta = { content: `The instructor extended the deadline to Monday [${result.replies[0].source}].` };
+    } else if (toolResults.length === 3) {
+      assert.equal(result.saved_reply_count, 105);
+      assert.equal(result.next_reply_offset, 30);
+      delta = call('read_discussion', { discussion_key: 'ed:20:2000', reply_offset: result.next_reply_offset });
+    } else if (toolResults.length === 4) {
+      assert.equal(result.reply_offset, 30);
+      const search = JSON.parse(toolResults[1].content);
+      const target = search.results.find(hit => hit.snippet.includes('appendixreceipt')).read_targets.find(target => target.reply_id === '1104');
+      assert.ok(target, 'a late reply can be opened without paging through every preview');
+      delta = call('read_discussion', { discussion_key: 'ed:20:2000', reply_id: target.reply_id });
+    } else if (result.next_offset !== null) {
+      delta = call('read_discussion', { discussion_key: 'ed:20:2000', reply_id: result.reply_id, offset: result.next_offset });
     } else {
-      const result = JSON.parse(toolResults.at(-1).content);
-      delta = { content: `The instructor clarified that the report deadline is Friday at 5 PM [${result.replies[0].source}].` };
+      assert.ok(result.text.includes('appendixreceipt report deadline is Friday at 5 PM.'));
+      assert.equal(result.author_role, 'instructor');
+      delta = { content: `The instructor clarified that the report deadline is Friday at 5 PM [${result.source}].` };
     }
     return route.fulfill({ contentType: 'text/event-stream', body: `data: ${JSON.stringify({ choices: [{ delta }] })}\n\ndata: [DONE]\n\n` });
   });
@@ -119,7 +148,8 @@ try {
   const read = () => worker.evaluate(async () => (await chrome.storage.local.get('discussions')).discussions);
   let saved = await read();
   check('Ed discovers two active courses, excludes the archive, and links both Brightspace courses', saved.sources.length === 2 && saved.sources[0].courseId === 1600001 && saved.sources[1].courseId === 1600002);
-  check('Ed imports more than 30 posts across short pages, with instructor replies and private posts excluded', saved.sources.every((s) => s.threads.length === (s.remoteId === '20' ? 35 : 33) && s.historyComplete && s.threads.every((t) => t.replies[0].role === 'instructor')));
+  check('Ed imports more than 30 posts across short pages, with instructor replies and private posts excluded', saved.sources.every((s) => s.threads.length === (s.remoteId === '20' ? 35 : 33) && s.historyComplete && s.threads.every((t) => t.replies.some(reply => reply.role === 'instructor'))));
+  check('Ed retains more than 100 replies in a busy thread', saved.sources[0].threads.find(thread => thread.id === '2000').replies.length === 105);
   check('discussion storage excludes session tokens, user profiles and author names', !/fixture-ed-token|fixture-csrf|Secret Student|Secret Instructor|do-not-persist/.test(JSON.stringify(saved)));
   await access.close();
   await panel.getByLabel('Piazza class URL', { exact: true }).fill('https://piazza.com/class/example123');
@@ -162,8 +192,13 @@ try {
   await panel.getByLabel('Question', { exact: true }).fill('What did the instructor clarify about the report deadline on Ed?');
   await panel.getByRole('button', { name: 'Send', exact: true }).click();
   const answer = panel.locator('.message.assistant:not(.pending)');
-  await answer.locator('.sources a').waitFor();
-  check('Ask searches discussion text, reads staff replies and renders a direct Ed citation', (await answer.innerText()).includes('Friday at 5 PM') && (await answer.locator('.sources a').first().getAttribute('href')).includes('https://edstem.org/us/courses/20/discussion/2000'));
+  await answer.locator('.sources a').waitFor({ timeout: 90_000 });
+  check('Ask selects the Ed source, searches, pages replies, continues a long staff answer and cites its original post', (await answer.innerText()).includes('Friday at 5 PM') && (await answer.locator('.sources a').first().getAttribute('href')).includes('https://edstem.org/us/courses/20/discussion/2000'));
+  await panel.getByLabel('Question', { exact: true }).fill('What did the instructor say about the deadline on Piazza?');
+  await panel.getByRole('button', { name: 'Send', exact: true }).click();
+  const piazzaAnswer = panel.locator('.message.assistant:not(.pending)').nth(1);
+  await piazzaAnswer.locator('.sources a').waitFor({ timeout: 90_000 });
+  check('Ask searches an unlinked Piazza course by source_id and cites the instructor reply', (await piazzaAnswer.innerText()).includes('Monday') && (await piazzaAnswer.locator('.sources a').first().getAttribute('href')).startsWith('https://piazza.com/class/example123?cid='));
   await panel.locator('.tabs button[data-view="settings"]').click();
   await panel.locator('[data-source-id="ed:20"]').getByRole('button', { name: 'Disconnect', exact: true }).click();
   await poll(async () => (await read()).sources.length === 2, 'disconnect');

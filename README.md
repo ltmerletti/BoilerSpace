@@ -35,9 +35,13 @@ The beta imports **the full available discussion history**, including available 
 
 The beta does not read attachments, post, reply, or vote. It excludes private and deleted posts. Site changes can interrupt the reader; a failed refresh keeps the last successful posts and shows an error. Relevant discussion text may be sent to Purdue GenAI Studio when you ask. See [Privacy](PRIVACY.md#optional-ed-and-piazza-beta).
 
-## Retrieval experiments
+## Local discussion search
 
-This beta branch includes a [local retrieval comparison](experiments/retrieval/README.md) for BM25, small embedding models, and hybrid ranking. It has a public fixture and can also use private course captures. Model inference stays local; the extension keeps its existing keyword search by default.
+Saved Ed/Piazza posts use **BM25 plus POTION semantic search**, running locally in a browser worker. This finds both exact terms and related wording. The bundled int8 model is about 33 MB; it needs no model account, external search service, GPU, or first-run download. The worker loads when discussion search is used and releases its memory after a minute of inactivity. Other course material continues to use keyword search.
+
+The assistant receives up to 6,000 characters of discussion evidence, with instructor/student roles and links to the original posts. If the semantic model cannot load, keyword search remains available and the tool reports that fallback. Search candidates can still be irrelevant; the assistant must check their content and saved-history status.
+
+See [Discussion search and benchmark results](experiments/discussions/README.md) for the production choice, all aggregate comparisons, browser measurements, limitations and test commands. Benchmark evidence recall measures whether labeled source text reaches the assistant, not whether every generated answer is correct.
 
 ## Ask across your course material
 
@@ -88,8 +92,8 @@ The manifest targets Chrome 116+ and Firefox 128+, including compatible Zen vers
 | Browser | Verification |
 | --- | --- |
 | Chrome / Chromium | Automated UI checks and signed-in live tests |
-| Zen | Confirmed in a signed-in user session |
-| Standard Firefox | Compatibility reviewed; no separate automated live Firefox suite yet |
+| Zen | Signed-in user session and full discussion-retrieval replay |
+| Firefox | Automated discussion-worker checks in CI; full signed-in Purdue UI coverage remains through Zen |
 
 BoilerSpace is currently specific to Purdue's Brightspace, Simple Syllabus, and GenAI Studio domains. Other universities' Brightspace installations are not configured.
 
@@ -112,6 +116,8 @@ Course data, conversations, settings, and the GenAI Studio API key are stored lo
 | `purdue.brightspace.com` | Sync courses and read course material through your signed-in session |
 | `purdue.simplesyllabus.com` | Read the rendered syllabus launched by Brightspace |
 | `genai.rcac.purdue.edu` | Connect your account and request model responses |
+| `edstem.org`, `us.edstem.org` (optional) | Import saved public Ed posts and replies when connected |
+| `piazza.com` (optional) | Import a connected class's public posts and replies |
 
 BoilerSpace does not add its own analytics or send data to a separate BoilerSpace server. Exports can contain course content and conversation history. See [Privacy](PRIVACY.md) for storage, exports, and deletion details.
 

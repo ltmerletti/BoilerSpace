@@ -77,6 +77,7 @@ const state = {
   syncLock: null,
   progress: null,
   runningSync: false,
+  quietSync: false,
   status: '',
   busy: { sync: false, syllabi: false, link: false, capture: false, discussions: false, discussionConnect: false },
   linkStatus: '',
@@ -206,6 +207,10 @@ function setStatus(text) {
 function renderStatus() {
   const el = document.getElementById('status');
   const p = state.progress;
+  if (state.snapshot && state.busy.sync && (!state.runningSync || state.quietSync)) {
+    el.hidden = true;
+    return;
+  }
   let text = state.status;
   let fraction = null;
   let bar = Boolean(text);
@@ -217,7 +222,7 @@ function renderStatus() {
     } else {
       text ||= 'Syncing…';
     }
-  } else if (!text && p && !p.finished && Date.now() - p.at < STOPPED_SYNC_NOTICE_MS) {
+  } else if (!text && p && !p.finished && (!state.snapshot || state.syncMeta?.ok === false) && Date.now() - p.at < STOPPED_SYNC_NOTICE_MS) {
     text = 'The last sync stopped partway, probably because the Brightspace page changed. It tries again on the next page, or press sync.';
   }
   el.hidden = !text;
@@ -228,9 +233,10 @@ function renderStatus() {
 
 // ---------- Actions ----------
 
-async function runSync() {
+async function runSync({ quiet = false } = {}) {
   if (state.busy.sync) return;
   state.runningSync = true;
+  state.quietSync = quiet;
   state.busy.sync = true;
   state.syncError = '';
   render();
@@ -1230,7 +1236,7 @@ function traceStep(entry, key) {
   const status = entry.active ? 'running' : failed ? 'failed' : stopped ? 'stopped' : 'complete';
   return h(
     'li',
-    { class: `tool-step ${status}`, 'data-tool': entry.name, 'aria-busy': String(Boolean(entry.active)) },
+    { class: `tool-step ${status}`, 'data-step-key': key, 'data-tool': entry.name, 'aria-busy': String(Boolean(entry.active)) },
     h('span', { class: `tool-status${entry.active ? ' spinner' : ''}`, 'aria-label': entry.active ? 'Running' : failed ? 'Failed' : stopped ? 'Stopped' : 'Complete' }, entry.active ? null : failed ? '!' : stopped ? '–' : '✓'),
     h('div', { class: 'tool-content' },
       h('div', { class: 'trace-label' }, TOOL_TITLES[entry.name] ?? entry.name?.replaceAll('_', ' ') ?? entry.label),
@@ -1259,11 +1265,11 @@ function traceView(trace, { key, live = false, seconds = 0, open = false, ontogg
   }
   return h(
     'details',
-    { class: `trace${live ? ' live' : ''}`, open, ontoggle },
+    { class: `trace${live ? ' live' : ''}`, 'data-disclosure': key, open, ontoggle },
     h('summary', { 'data-focus-key': `${key}-toggle` }, summary),
     trace.some(entry => entry.type !== 'thought') && h('ol', { class: 'trace-steps', 'aria-label': 'Tool activity' }, trace.map((entry, index) =>
       entry.type === 'thought' ? null : entry.type === 'commentary'
-        ? h('li', { class: 'trace-commentary' }, answerBody(entry.text))
+        ? h('li', { class: 'trace-commentary', 'data-step-key': `${key}-commentary-${index}` }, answerBody(entry.text))
         : traceStep(entry, `${key}-tool-${index}`))),
     trace.some(entry => entry.type === 'thought' && entry.text) && h('details', { class: 'trace-reasoning', 'data-disclosure': `${key}-reasoning` },
       h('summary', { 'data-focus-key': `${key}-reasoning` }, 'Reasoning'),
@@ -1281,7 +1287,10 @@ function messageView(message, index) {
     key: `trace-${state.activeChatId}-${key}`,
     seconds: message.seconds ?? 0,
     open: state.openTraces.has(key),
-    ontoggle: (e) => (e.target.open ? state.openTraces.add(key) : state.openTraces.delete(key)),
+    ontoggle: (e) => {
+      if (e.target !== e.currentTarget || !e.currentTarget.isConnected) return;
+      e.currentTarget.open ? state.openTraces.add(key) : state.openTraces.delete(key);
+    },
   });
   const latest = index === chatMessages().length - 1;
   const actions =
@@ -1340,14 +1349,39 @@ function pendingView() {
       writing: Boolean(p.text),
       seconds: Math.floor((Date.now() - p.startedAt) / 1000),
       open: p.open,
-      ontoggle: (e) => (p.open = e.target.open),
+      ontoggle: (e) => {
+        if (e.target === e.currentTarget && e.currentTarget.isConnected) p.open = e.currentTarget.open;
+      },
     }),
+    !p.text && p.trace.filter(entry => entry.type === 'commentary').map(entry => h('div', { class: 'live-commentary' }, answerBody(entry.text))),
     p.text && h('div', { class: 'streaming-answer' }, answerBody(p.text)),
   );
 }
 
 let pendingFrame = null;
 let followAnswer = true;
+
+// Patch the live answer in place so pointer-down targets survive the next token.
+function patchPendingNode(current, next) {
+  if (current.nodeType === Node.TEXT_NODE) {
+    if (current.data !== next.data) current.data = next.data;
+    return;
+  }
+  for (const attribute of [...current.attributes]) if (!next.hasAttribute(attribute.name)) current.removeAttribute(attribute.name);
+  for (const attribute of next.attributes) if (current.getAttribute(attribute.name) !== attribute.value) current.setAttribute(attribute.name, attribute.value);
+  const key = node => node.nodeType === Node.ELEMENT_NODE ? node.dataset.disclosure ?? node.dataset.stepKey : null;
+  const existing = new Map([...current.childNodes].filter(node => key(node)).map(node => [key(node), node]));
+  const kept = new Set();
+  for (const [index, child] of [...next.childNodes].entries()) {
+    const candidate = key(child) ? existing.get(key(child)) : current.childNodes[index];
+    const compatible = candidate && (key(child) || !key(candidate)) && candidate.nodeType === child.nodeType && candidate.nodeName === child.nodeName;
+    const element = compatible ? candidate : child;
+    if (element !== current.childNodes[index]) current.insertBefore(element, current.childNodes[index] ?? null);
+    if (compatible) patchPendingNode(element, child);
+    kept.add(element);
+  }
+  for (const child of [...current.childNodes]) if (!kept.has(child)) child.remove();
+}
 
 function updatePending() {
   if (pendingFrame !== null) return;
@@ -1370,13 +1404,13 @@ function paintPending() {
     const previous = disclosures.find(item => item.key === details.dataset.disclosure);
     if (previous) details.open = previous.open;
   }
-  el.replaceWith(next);
-  for (const details of next.querySelectorAll('details[data-disclosure]')) {
+  patchPendingNode(el, next);
+  for (const details of el.querySelectorAll('details[data-disclosure]')) {
     const previous = disclosures.find(item => item.key === details.dataset.disclosure);
     const box = details.querySelector('.thought-text');
     if (box && previous?.scroll !== undefined) box.scrollTop = previous.scroll;
   }
-  if (focusKey) [...next.querySelectorAll('[data-focus-key]')].find(element => element.dataset.focusKey === focusKey)?.focus({ preventScroll: true });
+  if (focusKey) [...el.querySelectorAll('[data-focus-key]')].find(element => element.dataset.focusKey === focusKey)?.focus({ preventScroll: true });
   main.scrollTop = followAnswer ? main.scrollHeight : scroll;
 }
 
@@ -1482,10 +1516,12 @@ function thinkingPicker() {
   const value = h('span', null, thinkingLabel(level));
   const label = h('output', null, thinkingLabel(level));
   const slider = h('input', { type: 'range', min: 0, max: levels.length - 1, step: 1, value: levels.indexOf(level), disabled: Boolean(state.pending), 'aria-label': 'Thinking level', 'aria-valuetext': thinkingLabel(level),
+    style: `--range-fill:${100 * levels.indexOf(level) / (levels.length - 1)}%`,
     oninput: event => {
       const selected = levels[Number(event.target.value)];
       value.textContent = label.textContent = thinkingLabel(selected);
       event.target.setAttribute('aria-valuetext', thinkingLabel(selected));
+      event.target.style.setProperty('--range-fill', `${100 * Number(event.target.value) / (levels.length - 1)}%`);
     },
     onchange: event => { state.thinkingByModel[model] = levels[Number(event.target.value)]; saveUi(); },
   });
@@ -1773,7 +1809,7 @@ function syncAge(at) {
 }
 
 function syncLine() {
-  if (state.busy.sync) return 'Syncing';
+  if (state.busy.sync && (!state.snapshot || (state.runningSync && !state.quietSync))) return 'Syncing';
   const meta = state.syncMeta;
   if (!meta?.lastSuccessAt) return '';
   return state.busy.syllabi ? 'Reading syllabi…' : `Synced ${syncAge(meta.lastSuccessAt)}`;
@@ -1816,17 +1852,18 @@ function renderHeader() {
   document.getElementById('sync-status').textContent = syncLine();
   const syncButton = document.getElementById('sync-button');
   syncButton.disabled = state.busy.sync;
-  syncButton.classList.toggle('spinning', state.busy.sync);
+  syncButton.classList.toggle('spinning', state.busy.sync && (!state.snapshot || (state.runningSync && !state.quietSync)));
   syncButton.hidden = !state.snapshot || CONNECT_PAGE || ACCESS_PAGE || DISCUSSION_ACCESS;
 }
 
 // Progress updates arrive several times a second during a sync, so they skip the full re-render.
 function onSyncActivity() {
   const busy = computeSyncBusy();
-  if (busy !== state.busy.sync) {
+  if (busy !== state.busy.sync && !state.snapshot) {
     state.busy.sync = busy;
     render();
   } else {
+    state.busy.sync = busy;
     renderHeader();
     renderStatus();
     const syllabusStatus = document.getElementById('syllabus-sync-status');
@@ -1872,6 +1909,7 @@ async function init() {
 
   await loadState({ includeChat: true });
   render();
+  document.documentElement.removeAttribute('data-panel-loading');
 
   window.addEventListener('online', () => {
     if (state.discussions.sources.some(source => source.status === 'error' || source.sync)) refreshDiscussions(true);
@@ -1930,10 +1968,16 @@ async function init() {
 
   // Sync on open if Brightspace is reachable; otherwise wait for the student to ask.
   const syncAge = state.syncMeta?.lastSuccessAt ? Date.now() - Date.parse(state.syncMeta.lastSuccessAt) : Infinity;
-  if (syncAge > AUTO_SYNC_INTERVAL_MS && (await attempt(canReachBrightspace))) runSync();
+  if (syncAge > AUTO_SYNC_INTERVAL_MS && (await attempt(canReachBrightspace))) runSync({ quiet: true });
   else if (courses().some(course => !state.syllabi[course.id])) processSyllabi();
   refreshDiscussions();
   setInterval(() => { if (document.visibilityState === 'visible') refreshDiscussions(); }, 20 * 60_000);
 }
 
-init();
+init().catch(error => {
+  document.documentElement.removeAttribute('data-panel-loading');
+  const status = document.getElementById('status');
+  status.hidden = false;
+  status.classList.add('error-text');
+  status.textContent = `BoilerSpace could not load saved data. ${error.message}`;
+});

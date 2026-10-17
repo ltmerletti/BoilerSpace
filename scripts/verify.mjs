@@ -216,6 +216,12 @@ try {
   await page.waitForSelector('.agenda');
   await page.screenshot({ path: path.join(outDir, '1-week.png') });
   check('opening a recently synced panel keeps cached syllabi without starting another pass', await page.evaluate(() => !window.syncLabels.some(text => text.includes('Reading syllabi'))));
+  const cachedAgenda = await page.locator('.agenda').elementHandle();
+  await page.evaluate(() => chrome.storage.local.set({ syncLock: { owner: 'synthetic-background', heartbeat: Date.now() }, syncProgress: { message: 'Reading courses', at: Date.now(), finished: false, done: 1, total: 5 } }));
+  await page.waitForFunction(() => document.getElementById('sync-button').disabled);
+  check('routine background refresh keeps cached content and hides progress animation', await cachedAgenda.evaluate(el => el.isConnected) && await page.locator('#status').isHidden() && !(await page.locator('#sync-button').getAttribute('class')).includes('spinning') && (await page.locator('#sync-status').innerText()).startsWith('Synced'));
+  await page.evaluate(() => chrome.storage.local.remove(['syncLock', 'syncProgress']));
+  check('the panel becomes visible only after its saved state is rendered', await page.evaluate(() => !document.documentElement.hasAttribute('data-panel-loading')));
   check('week shows today with items', (await page.locator('.day.today .item').count()) >= 1);
   check('the selected design uses Brightspace typography and a flat agenda', await page.evaluate(async () => {
     await document.fonts.ready;
@@ -578,6 +584,14 @@ try {
   check('reloading the extension replaces stale drawers, navbar controls and layout styles', await reloaded.locator('#boilerspace-root').count() === 1 && await reloaded.locator('.boilerspace-nav-item').count() === 1 && await reloaded.locator('[data-stale], #stale-layout').count() === 0);
   check('the panel host has no box in the Brightspace content flow', await reloaded.locator('#boilerspace-root').evaluate(el => { const r = el.getBoundingClientRect(); return getComputedStyle(el).position === 'fixed' && r.width === 0 && r.height === 0; }));
   await reloaded.close();
+
+  const storageFailure = await context.newPage();
+  storageFailure.on('pageerror', error => consoleErrors.push(error.message));
+  await storageFailure.addInitScript(() => { chrome.storage.local.get = async () => { throw new Error('Synthetic storage failure'); }; });
+  await storageFailure.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+  await storageFailure.locator('#status').filter({ hasText: 'Synthetic storage failure' }).waitFor();
+  check('a saved-data error is revealed instead of leaving the loading panel hidden', await storageFailure.locator('#status').isVisible() && await storageFailure.evaluate(() => !document.documentElement.hasAttribute('data-panel-loading')));
+  await storageFailure.close();
 
   check('no page errors', consoleErrors.length === 0, consoleErrors.join(' | '));
 } catch (error) {

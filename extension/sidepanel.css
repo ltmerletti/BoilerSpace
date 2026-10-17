@@ -51,6 +51,8 @@
   display: none !important;
 }
 
+:root[data-panel-loading] { visibility: hidden; }
+
 
 /* Chrome gives extension pages a default body style (system-ui at 75%), so set it here. */
 body {
@@ -1107,6 +1109,7 @@ a.cite:hover {
 .tool-preview dt { font-weight: 700; color: var(--ferrite-soft); }
 .tool-preview dd { margin: 2px 0 9px; }
 .trace-commentary { margin-left: 23px; color: var(--ferrite-soft); }
+.pending:has(.trace[open]) .live-commentary { display: none; }
 
 .tool-call code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -1195,11 +1198,20 @@ a.cite:hover {
 
 .thinking-picker { position: relative; flex: none; margin-left: auto; font-size: var(--text-ui); color: var(--tungsten); }
 .thinking-trigger { display: flex; align-items: center; gap: 5px; padding: 5px 3px; border: 0; background: none; color: inherit; font-size: inherit; }
-.thinking-options { position: fixed; inset: auto; margin: 0; width: min(280px, calc(100vw - 48px)); padding: 15px; background: var(--surface); color: var(--tungsten); border: 1px solid var(--mica); border-radius: 7px; box-shadow: 0 4px 16px #0002; }
+.thinking-options { position: fixed; inset: auto; margin: 0; width: min(290px, calc(100vw - 32px)); padding: 12px 14px; background: var(--surface); color: var(--tungsten); border: 1px solid var(--gypsum); border-radius: 8px; box-shadow: 0 3px 14px #00000014; font-size: var(--text-meta); }
 .thinking-options label { display: flex; justify-content: space-between; gap: 10px; color: var(--ferrite-soft); }
 .thinking-options output { color: var(--tungsten); }
-.thinking-options input { width: 100%; margin: 15px 0 8px; accent-color: var(--celestine); }
+.thinking-options input { appearance: none; -webkit-appearance: none; display: block; width: 100%; height: 20px; margin: 10px 0 5px; padding: 0; border: 0; background: transparent; box-shadow: none; cursor: pointer; }
+.thinking-options input::-webkit-slider-runnable-track { height: 3px; border-radius: 2px; background: linear-gradient(to right, var(--celestine) var(--range-fill), var(--mica) var(--range-fill)); }
+.thinking-options input::-moz-range-track { height: 3px; border-radius: 2px; background: var(--mica); }
+.thinking-options input::-moz-range-progress { height: 3px; border-radius: 2px; background: var(--celestine); }
+.thinking-options input::-webkit-slider-thumb { appearance: none; -webkit-appearance: none; width: 12px; height: 12px; margin-top: -4.5px; border: 1px solid var(--celestine); border-radius: 50%; background: var(--surface); box-shadow: 0 1px 3px #0002; }
+.thinking-options input::-moz-range-thumb { width: 10px; height: 10px; border: 1px solid var(--celestine); border-radius: 50%; background: var(--surface); box-shadow: 0 1px 3px #0002; }
+.thinking-options input:focus-visible { outline: none; }
+.thinking-options input:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--celestine-wash); }
+.thinking-options input:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 3px var(--celestine-wash); }
 .thinking-stops { display: flex; justify-content: space-between; gap: 4px; font-size: var(--text-meta); }
+.thinking-stops span { white-space: nowrap; }
 
 .scope {
   display: flex;

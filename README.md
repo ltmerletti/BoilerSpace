@@ -35,6 +35,8 @@ Ed and Piazza courses match current Brightspace courses using course codes first
 
 The reader imports **the full available discussion history**, including available replies, in batches. It saves progress after each batch and resumes interrupted imports on the next sync. Later syncs check every history page and only reopen new or changed posts. Settings shows the saved post count and whether the history check is complete. Ask can search those saved posts, open a saved thread, distinguish staff replies from student suggestions, and cite the original Ed/Piazza link. Course pages offer a collapsed list of posts from the last seven days, sorted by posting date. Ask still searches the complete saved history. Discussion sync has its own status and **Sync discussions now** control; it refreshes independently at most every 20 minutes while BoilerSpace is open.
 
+The reader reuses an open class tab when possible. Otherwise it opens a temporary inactive tab using your existing sign-in, reads the posts and closes that tab afterward. Automatic refresh does not request tab focus.
+
 The reader does not read attachments, post, reply, or vote. It excludes private and deleted posts. Site changes can interrupt the reader; a failed refresh keeps the last successful posts and shows an error. Relevant discussion text may be sent to Purdue GenAI Studio when you ask. See [Privacy](PRIVACY.md#optional-ed-and-piazza).
 
 ## Local discussion search
@@ -51,7 +53,7 @@ See [Discussion search and benchmark results](experiments/discussions/README.md)
 
 Ask can search your course material, open relevant files, read syllabus pages and lecture slides, and bring the findings into one answer. The expandable work log shows its actual lookups, and citations let you check each finding against the source.
 
-Chats receive short model-generated titles. Interim commentary stays in the work log, and you can scroll back while an answer streams. Completed quiz reviews can be read when Brightspace makes their questions visible, including reviews whose student API access is restricted.
+Chats receive short model-generated titles. Interim commentary is visible during lookups, then moves into the expandable work log when the answer starts streaming. Tool details remain interactive while text arrives, and you can scroll back without losing your place. Completed quiz reviews can be read when Brightspace makes their questions visible, including reviews whose student API access is restricted.
 
 The composer offers a thinking control for recognized models. **Default** sends no reasoning override. Qwen3.8 supports Quick (thinking off), Low, Medium and XHigh; its [published default is XHigh](https://huggingface.co/Qwen/Qwen3.8-27B#api-usage). Purdue's configured model remains in charge when Default is selected.
 

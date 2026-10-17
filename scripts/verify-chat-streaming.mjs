@@ -32,15 +32,20 @@ try {
     const original = window.fetch;
     let streamTurn = 0;
     window.syntheticRateLimits = 0;
+    window.syntheticModelRequests = 0;
     window.fetch = async (url, options) => {
       if (!String(url).includes('/api/chat/completions')) return original(url, options);
       const body = JSON.parse(options.body);
       if (!body.stream) return new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'Course review' } }] }), { headers: { 'content-type': 'application/json' } });
-      if (!window.syntheticRateLimits++) return new Response(JSON.stringify({ detail: 'Rate limit exceeded. Please try again later.' }), { status: 400, headers: { 'content-type': 'application/json', 'retry-after': '0.01' } });
+      window.syntheticModelRequests++;
+      if (!window.syntheticRateLimits) {
+        window.syntheticRateLimits++;
+        return new Response(JSON.stringify({ detail: 'Rate limit exceeded. Please try again later.' }), { status: 400, headers: { 'content-type': 'application/json', 'retry-after': '0.01' } });
+      }
       const turn = ++streamTurn;
       const isFinal = turn === 4;
       const deltas = isFinal
-        ? Array.from({ length: 70 }, (_, index) => ({ content: `\n\nParagraph ${index + 1}. These are the posted course dates and instructions, with context from the source.` }))
+        ? Array.from({ length: 130 }, (_, index) => ({ content: `\n\nParagraph ${index + 1}. These are the posted course dates and instructions, with context from the source.` }))
         : turn === 1
           ? [{ content: 'Let me find ' }, { content: 'the posted deadlines.' }]
           : turn === 2
@@ -48,6 +53,7 @@ try {
             : [{ content: 'I will check the saved assignments too.' }, { tool_calls: [{ index: 0, id: 'items', type: 'function', function: { name: 'list_items', arguments: '{}' } }] }];
       const encoder = new TextEncoder();
       const stream = new ReadableStream({ async start(controller) {
+        if (isFinal) await new Promise(resolve => { window.releaseFinal = resolve; });
         for (const delta of deltas) {
           await new Promise(resolve => setTimeout(resolve, isFinal ? 55 : 200));
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta }] })}\n\n`));
@@ -62,13 +68,14 @@ try {
   for (const width of [320, 400, 720]) {
     await page.setViewportSize({ width, height: 750 });
     await page.getByRole('button', { name: 'Thinking level', exact: true }).click();
-    check(`thinking options fit a ${width}px panel`, await page.locator('.thinking-options').evaluate(el => { const r = el.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && r.bottom <= innerHeight; }));
+    check(`thinking options fit a ${width}px panel without wrapping their labels`, await page.locator('.thinking-options').evaluate(el => { const r = el.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && r.bottom <= innerHeight && [...el.querySelectorAll('.thinking-stops span')].every(label => label.getBoundingClientRect().height < 25 && label.getBoundingClientRect().right <= r.right - 8); }));
     await page.keyboard.press('Escape');
   }
   await page.setViewportSize({ width: 400, height: 750 });
   await page.getByRole('button', { name: 'Thinking level', exact: true }).click();
   await page.getByRole('slider', { name: 'Thinking level' }).press('ArrowRight');
   check('thinking slider selects Quick and reports its value accessibly', await page.getByRole('slider').getAttribute('aria-valuetext') === 'Quick');
+  await page.locator('.thinking-options').screenshot({ path: path.join(out, 'thinking-slider.png') });
   await page.keyboard.press('Escape');
   check('Escape dismisses the thinking popup', await page.locator('.thinking-options').evaluate(el => !el.matches(':popover-open')));
   await page.reload();
@@ -80,12 +87,35 @@ try {
   await page.getByLabel('Question', { exact: true }).fill('Check the posted work.');
   await page.getByRole('button', { name: 'Send', exact: true }).click();
   await page.locator('#pending .trace-commentary').first().waitFor({ state: 'attached' });
-  check('a Purdue-style HTTP 400 rate limit retries before streaming the first narration', await page.evaluate(() => window.syntheticRateLimits === 2));
-  check('interim narration stays inside the collapsed activity block', !(await page.locator('#pending').innerText()).includes('Let me find') && await page.locator('#pending > .live-commentary').count() === 0);
+  check('a Purdue-style HTTP 400 rate limit retries before streaming the first narration', await page.evaluate(() => window.syntheticRateLimits === 1 && window.syntheticModelRequests >= 2));
+  await page.waitForFunction(() => typeof window.releaseFinal === 'function');
+  check('interim narration stays visible while the model is using tools', await page.locator('#pending > .live-commentary').count() === 3 && await page.locator('#pending > .live-commentary').first().isVisible());
   await page.locator('#pending .trace > summary').click();
   check('opening activity reveals narration from a separate assistant turn', await page.locator('#pending .trace-commentary').first().innerText() === 'Let me find the posted deadlines.');
-  await page.waitForFunction(() => (document.querySelector('.streaming-answer')?.textContent.length ?? 0) > 700);
   check('multiple narration rounds remain interleaved with their tools during generation', JSON.stringify(await page.locator('#pending .trace-steps > li').evaluateAll(elements => elements.map(element => element.dataset.tool ?? element.textContent))) === JSON.stringify(['Let me find the posted deadlines.', 'I will check the upcoming course work.', 'list_upcoming', 'I will check the saved assignments too.', 'list_items']));
+  await page.locator('#pending .trace > summary').click();
+  await page.evaluate(() => window.releaseFinal());
+  await page.waitForFunction(() => (document.querySelector('.streaming-answer')?.textContent.length ?? 0) > 700);
+  check('the first final-answer text folds all prior narration into the activity block', await page.locator('#pending > .live-commentary').count() === 0 && !(await page.locator('#pending .trace-commentary').first().isVisible()));
+  const heldClick = async locator => {
+    await locator.scrollIntoViewIfNeeded();
+    const element = await locator.elementHandle();
+    const box = await locator.boundingBox();
+    await page.mouse.move(box.x + 8, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.waitForTimeout(250);
+    check('a disclosure summary remains attached through streamed token updates', await element.evaluate(el => el.isConnected));
+    await page.mouse.up();
+    await page.waitForTimeout(80);
+  };
+  await heldClick(page.locator('#pending .trace > summary'));
+  check('the activity block opens while tokens arrive', await page.locator('#pending .trace').evaluate(el => el.open));
+  await heldClick(page.locator('#pending .tool-call > summary').first());
+  check('tool details open while tokens arrive', await page.locator('#pending .tool-call').first().evaluate(el => el.open));
+  await heldClick(page.locator('#pending .tool-call > summary').first());
+  check('tool details close while tokens arrive', !(await page.locator('#pending .tool-call').first().evaluate(el => el.open)));
+  await heldClick(page.locator('#pending .trace > summary'));
+  check('the activity block closes while tokens arrive', !(await page.locator('#pending .trace').evaluate(el => el.open)));
   const messages = page.locator('.messages');
   await messages.hover();
   await page.mouse.wheel(0, -500);

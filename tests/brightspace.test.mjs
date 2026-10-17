@@ -488,3 +488,20 @@ test('an explicit Simple Syllabus missing section is not a loading failure', asy
   const tab = await findSyllabusTab({}, { courseId: 1631469, le: '1.99', origin: ORIGIN, pageLinks: [LTI_SYLLABUS], readTab: { page: async () => ({ notFound: true }) } });
   assert.equal(tab, null);
 });
+
+test('student-visible completed review links work when the attempts API is forbidden', async () => {
+  const paths = [];
+  const review = '<div class="dco updated-submission-question-header"><label>Score 1 / 1</label></div><d2l-html-block html="&lt;p&gt;Which sort is stable?&lt;/p&gt;"></d2l-html-block><div class="dco d2l-quiz-answer-container"><d2l-html-block html="&lt;p&gt;Merge sort&lt;/p&gt;"></d2l-html-block></div>';
+  const result = await readQuiz({
+    getJson: async () => { throw Object.assign(new Error('Forbidden'), { status: 403 }); },
+    getText: async path => {
+      paths.push(path);
+      if (path.includes('quiz_submissions.d2l')) return '<a href="/d2l/lms/quizzing/user/quiz_submissions_attempt.d2l?qi=21&amp;ou=5&amp;ai=9">Attempt 1</a><a href="/d2l/lms/quizzing/user/attempt/quiz_start.d2l?qi=21&amp;ou=5">Start</a><a href="https://example.com/d2l/lms/quizzing/user/quiz_submissions_attempt.d2l?qi=21&amp;ou=5&amp;ai=9">Wrong origin</a>';
+      assert.match(path, /^\/d2l\/lms\/quizzing\/user\/quiz_submissions_attempt\.d2l\?/);
+      return review;
+    },
+  }, { courseId: 5, quizId: 21, le: '1.96', dueAt: '2026-10-20', now: new Date('2026-10-17') });
+  assert.deepEqual(result.questions, [{ number: 1, text: 'Which sort is stable?', choices: ['Merge sort'] }]);
+  assert.equal(JSON.stringify(result).includes('Score'), false);
+  assert.equal(paths.length, 2);
+});

@@ -256,7 +256,7 @@ export function normalizeAssignment(folder, courseId, origin) {
 }
 
 const QUIZ_QUESTION_CHARS = 900;
-const QUIZ_QUESTION_LIMIT = 40;
+const QUIZ_QUESTION_LIMIT = 500;
 
 // A quiz with no end stays open. Once the later of the due date and the end date has passed, it is closed.
 export function quizStillOpen(quiz, now = new Date()) {
@@ -296,6 +296,27 @@ export function visibleQuizQuestions(payload) {
 
 export function questionsFromReviewHtml(html) {
   const clean = String(html ?? '').replace(/<(script|style)[\s\S]*?<\/\1>/gi, '');
+  const modern = clean.split(/<div\b[^>]*class=["'][^"']*\bupdated-submission-question-header\b[^"']*["'][^>]*>/i);
+  if (modern.length > 1) {
+    const blockText = part => {
+      const encoded = /<d2l-html-block\b[^>]*\bhtml="([^"]*)"/i.exec(part)?.[1];
+      if (!encoded) return '';
+      const decoded = encoded.replace(/&(?:quot|apos|lt|gt|amp);|&#(?:x[0-9a-f]+|\d+);/gi, entity => {
+        const named = { '&quot;': '"', '&apos;': "'", '&lt;': '<', '&gt;': '>', '&amp;': '&' };
+        if (named[entity.toLowerCase()]) return named[entity.toLowerCase()];
+        const number = entity.slice(2, -1);
+        const point = number[0].toLowerCase() === 'x' ? parseInt(number.slice(1), 16) : Number(number);
+        return point <= 0x10ffff ? String.fromCodePoint(point) : '';
+      });
+      return htmlToText(decoded).replace(/\s+/g, ' ').trim().slice(0, QUIZ_QUESTION_CHARS);
+    };
+    return modern.slice(1, QUIZ_QUESTION_LIMIT + 1).flatMap(part => {
+      const text = blockText(part);
+      if (!text) return [];
+      const choices = part.split(/<div\b[^>]*class=["'][^"']*\bd2l-quiz-answer-container\b[^"']*["'][^>]*>/i).slice(1).map(blockText).filter(Boolean).slice(0, 12);
+      return [{ text, ...(choices.length ? { choices } : {}) }];
+    }).map((question, index) => ({ number: index + 1, ...question }));
+  }
   const parts = clean.split(/<(?:div|td)\b[^>]*class="[^"]*(?:d2l-quiz-question-text|dco_qtext)[^"]*"[^>]*>/i);
   if (parts.length < 2) return [];
   const questions = [];
@@ -306,6 +327,19 @@ export function questionsFromReviewHtml(html) {
     if (questions.length >= QUIZ_QUESTION_LIMIT) break;
   }
   return questions;
+}
+
+export function completedQuizReviewPaths(html, courseId, quizId) {
+  const paths = new Set();
+  for (const match of String(html ?? '').matchAll(/<a\b[^>]*\bhref=["']([^"']+)["']/gi)) {
+    try {
+      const url = new URL(match[1].replace(/&amp;/g, '&'), 'https://purdue.brightspace.com');
+      if (url.origin !== 'https://purdue.brightspace.com' || !/^\/d2l\/lms\/quizzing\/user\/(?:quiz_submissions_attempt|attempt\/quiz_review)\.d2l$/.test(url.pathname)) continue;
+      if (url.searchParams.get('ou') !== String(courseId) || url.searchParams.get('qi') !== String(quizId) || !/^\d+$/.test(url.searchParams.get('ai') ?? '')) continue;
+      paths.add(url.pathname + url.search);
+    } catch { /* Ignore a malformed review link. */ }
+  }
+  return [...paths].reverse().slice(0, 3);
 }
 
 async function quietGet(client, path, { text = false } = {}) {
@@ -331,13 +365,19 @@ export async function readQuiz(client, { courseId, quizId, le, dueAt = null, end
     const fromReview = questionsFromReviewHtml(await quietGet(client, reviewPath, { text: true }));
     if (fromReview.length) return { questions: fromReview };
   }
+  // Student roles can be denied the attempts API while their completed reviews remain visible.
+  const submissionsHtml = await quietGet(client, `/d2l/lms/quizzing/user/quiz_submissions.d2l?qi=${quizId}&ou=${courseId}`, { text: true });
+  const submissions = questionsFromReviewHtml(submissionsHtml);
+  if (submissions.length) return { questions: submissions };
+  for (const path of completedQuizReviewPaths(submissionsHtml, courseId, quizId)) {
+    const questions = questionsFromReviewHtml(await quietGet(client, path, { text: true }));
+    if (questions.length) return { questions };
+  }
   if (quizStillOpen({ dueAt, endAt }, now)) {
     return { questions: [], note: 'This quiz can still be taken, so its questions stay hidden.' };
   }
   const fromBank = visibleQuizQuestions(await quietGet(client, `${base}/questions/`));
   if (fromBank.length) return { questions: fromBank };
-  const submissions = questionsFromReviewHtml(await quietGet(client, `/d2l/lms/quizzing/user/quiz_submissions.d2l?qi=${quizId}&ou=${courseId}`, { text: true }));
-  if (submissions.length) return { questions: submissions };
   return { questions: [], note: 'Brightspace did not release the questions for this quiz.' };
 }
 

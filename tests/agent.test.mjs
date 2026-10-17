@@ -480,3 +480,16 @@ test('search_course_material indexes readable course files and quiz metadata, ge
   assert.match(failed.error, /25 MB/);
   assert.match(failed.note, /do not substitute another file/);
 });
+
+test('past quizzes with more than forty questions page without gaps or scores', async () => {
+  const tools = createTools({ snapshot: snapshotFixture(), readQuiz: async () => ({ questions: Array.from({ length: 45 }, (_, index) => ({ number: index + 1, text: `Question ${index + 1}` })), score: 99 }) });
+  const results = [];
+  let offset = 0;
+  do {
+    const page = await tools.run('read_quiz', { item_key: 'quiz:21', offset });
+    results.push(...page.questions);
+    assert.equal(page.score, undefined);
+    offset = page.next_offset;
+  } while (offset !== undefined);
+  assert.deepEqual(results.map(question => question.number), Array.from({ length: 45 }, (_, index) => index + 1));
+});

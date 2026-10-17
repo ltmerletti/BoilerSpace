@@ -77,11 +77,12 @@ const TOOLS = [
   {
     name: 'read_quiz',
     description:
-      'Read the questions on a quiz. Uses a finished attempt when there is one, or the quiz itself after it has closed. Does not include the score. Use this when the student asks what was on a quiz.',
+      'Read questions from a finished attempt, or from a quiz after it has closed. Returns twenty questions per page, without scores or answer keys. Follow next_offset for the remaining questions.',
     parameters: {
       type: 'object',
       properties: {
         item_key: { type: 'string', description: 'Quiz key from list_items or get_item, like "quiz:21".' },
+        offset: { type: 'integer', description: 'Continue at next_offset from the previous response. Default 0.' },
       },
       required: ['item_key'],
     },
@@ -425,7 +426,8 @@ export function createTools({ snapshot, syllabi = {}, reviews = {}, discussions 
       };
     },
 
-    async read_quiz({ item_key }) {
+    async read_quiz({ item_key, offset = 0 }) {
+      if (!Number.isInteger(offset) || offset < 0) throw new Error('Quiz offset must be a nonnegative integer.');
       const found = findQuiz(item_key);
       if (!found) throw new Error(`No quiz has item_key "${item_key}". Call list_items to find it.`);
       const result = await readQuiz(found);
@@ -433,7 +435,9 @@ export function createTools({ snapshot, syllabi = {}, reviews = {}, discussions 
         source: sources.add({ key: `quiz:${found.id}`, label: `${label(found.courseId)}: ${found.title}`, url: found.url }),
         item_key: `quiz:${found.id}`,
         title: found.title,
-        questions: result?.questions ?? [],
+        questions: (result?.questions ?? []).slice(offset, offset + 20),
+        total_questions: result?.questions?.length ?? 0,
+        ...((result?.questions?.length ?? 0) > offset + 20 ? { next_offset: offset + 20 } : {}),
         ...(result?.note ? { note: result.note } : {}),
       };
     },

@@ -7,7 +7,7 @@ BoilerSpace is a browser extension that works through your existing Purdue sessi
 The extension uses `chrome.storage.local` / the compatible Firefox extension storage for:
 
 - Synced course information, assignments, quizzes, announcements, calendar items, content listings, course overview text, and grade records returned by sync.
-- Readable syllabus text, extracted dates and policies, chosen syllabus sources, and date confirmations.
+- Readable syllabus text, extracted dates and policies, chosen syllabus sources, and saved date preferences.
 - Conversations, answers, citations, settings, and sync status.
 - Your GenAI Studio connection information and API key.
 - If you connect the discussion beta, Ed/Piazza course links, post text, replies, author roles, direct post URLs, and discussion sync status. Author profile names and account identifiers are omitted; names written in post text may remain.
@@ -28,7 +28,7 @@ Grade records and quiz scores are excluded from the assistant's model inputs. Bo
 
 ## Optional Ed and Piazza beta
 
-Ed and Piazza access is requested only when you choose to connect them in Settings. The reader uses the site's signed-in page: Ed's token remains in Ed's page, and Piazza's CSRF token remains in Piazza's page. BoilerSpace does not save those tokens or ask for discussion passwords.
+Ed and Piazza access is requested only when you choose to connect them. The reader uses the site's signed-in page: Ed's token remains in Ed's page, and Piazza's CSRF token remains in Piazza's page. Piazza discovery reads visible class links and the current class label. Automatic Brightspace matching uses course codes, terms and title similarity locally, without sending course names to a model. BoilerSpace does not save discussion session tokens or ask for discussion passwords.
 
 Discussion retrieval uses a bundled POTION token table and BM25 in a local browser worker. Embedding posts and searching them makes no external requests. The worker keeps its search vectors in memory, rebuilds them when saved posts change, and releases them after a minute idle or when the panel page unloads. It does not create a separate persistent vector database or query log. Selected passages still go to Purdue GenAI Studio when Ask uses them to answer your question, as described above.
 
@@ -54,6 +54,6 @@ Browser test profiles and benchmark captures are ignored by Git. The README imag
 
 ## Delete local data
 
-Use **Settings → Delete all data** to clear BoilerSpace's extension storage in the current browser profile. This also removes its saved GenAI Studio connection. Exported files, test profiles, and data already sent to Purdue services are not removed by that control. Clearing extension storage does not sign you out of Purdue websites.
+Use **Settings → Data → Data and advanced options → Delete all data** to clear BoilerSpace's extension storage in the current browser profile. This also removes its saved GenAI Studio connection. Exported files, test profiles, and data already sent to Purdue services are not removed by that control. Clearing extension storage does not sign you out of Purdue websites.
 
 For a suspected leak, credential exposure, or unauthorized cross-course access, follow [SECURITY.md](SECURITY.md). For general questions, open a [GitHub issue](https://github.com/ltmerletti/BoilerSpace/issues) with private information removed.

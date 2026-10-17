@@ -139,7 +139,7 @@ Native process RSS is not incremental browser RAM. The visible Jina q4 WebGPU qu
 
 ## Tests and merge readiness
 
-The feature passed **176 unit tests** locally. CI covers Node 22/24 units, Chromium UI, syllabus and discussion integration, and retrieval-worker checks in Chromium and Firefox. The full 330-case extension-tool replay passed in Chromium and Zen. Three real Qwen questions, one per connected Ed/Piazza class, each used semantic search, opened the expected thread and cited its original post without tool errors. These are smoke checks, not an answer-accuracy benchmark.
+The feature passed **185 unit tests** locally. CI covers Node 22/24 units, Chromium UI, syllabus and discussion integration, and retrieval-worker checks in Chromium and Firefox. The full 330-case extension-tool replay passed in Chromium and Zen. Three real Qwen questions, one per connected Ed/Piazza class, each used semantic search, opened the expected thread and cited its original post without tool errors. These are smoke checks, not an answer-accuracy benchmark.
 
 Regression checks cover asset hashes, evidence budgets, class isolation, edited/deleted posts, disconnects, worker reuse, idle release, timeouts, retry backoff, corrupted-model fallback, sync recovery and Ask citations. Long-thread checks cover more than 100 replies, deep nesting, text beyond 40,000 characters, direct search-to-reply pointers, continuation without gaps, and one-time refresh of older captures. The synthetic Ask flow exercises source selection, reply-list paging, long-reply continuation and original-post citations for Ed, plus an unlinked Piazza class. CI uses synthetic sites without Purdue credentials; live-site verification is separate.
 

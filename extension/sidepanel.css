@@ -1219,6 +1219,29 @@ a.cite:hover {
   color: var(--tungsten);
 }
 
+.discussion-source {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--gypsum);
+  border-radius: 8px;
+}
+
+.discussion-source .button-row { align-items: center; }
+.discussion-source details { margin-top: 10px; }
+.discussion-preview { margin-top: 12px; }
+.discussion-source .list { margin-top: 8px; }
+#discussions-beta input {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid var(--galena);
+  border-radius: var(--radius);
+  background: #fff;
+  font-size: 14px;
+  font-weight: 400;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

@@ -33,21 +33,32 @@ npx playwright install chromium
 export BOILERSPACE_FIXTURES_DIR=.verify-tmp/Brightspace-Bar/session-capture/tests/fixtures
 node scripts/verify.mjs ./node_modules/playwright/index.mjs
 node scripts/verify-syllabi.mjs ./node_modules/playwright/index.mjs
+node scripts/verify-discussions.mjs ./node_modules/playwright/index.mjs
 ```
 
 These scripts use throwaway Chromium profiles. The broader interface check runs headlessly by default; set `VERIFY_HEADED=1` to open a visible window. The syllabus check always opens a visible window. Brightspace and GenAI Studio requests are intercepted with fixtures. They do not use your real course session. `verify.mjs` checks the wider interface; `verify-syllabi.mjs` checks delayed syllabus rendering, missing sections, permissions, retries, fresh downloads, and concurrent readers.
+
+`verify-discussions.mjs` checks Ed/Piazza discovery, course matching, paginated history, incremental updates to older posts, full replies, expired-session recovery, disconnects, and Ask citations using synthetic sites. Its temporary extension copy pre-grants the discussion hosts so native permission prompts do not need a person in CI; it still exercises the real permission request from the connection page. No discussion credentials or course captures are needed.
 
 Use `VERIFY_OUT=/tmp/boilerspace-verification` to choose a screenshot directory. The broader script otherwise writes to `verification/`; the focused script defaults to a temporary directory. Review screenshots before committing them, since existing demonstration assets are tracked.
 
 ### Continuous integration
 
-[CI](https://github.com/ltmerletti/BoilerSpace/actions/workflows/ci.yml) runs on pushes and pull requests, and can also be started manually from GitHub Actions. It runs the unit suite on Node.js 22 and 24, plus both isolated Chromium suites in separate jobs. The wider interface suite runs headlessly at standard pixel density; the syllabus suite uses visible Chromium under `xvfb-run`. Both exercise real pointer input into the embedded extension panel. The broader suite also saves a Playwright trace and captures page state if it throws.
+[CI](https://github.com/ltmerletti/BoilerSpace/actions/workflows/ci.yml) runs on pushes and pull requests, and can also be started manually from GitHub Actions. It runs the unit suite on Node.js 22 and 24; the interface, syllabus and discussion Chromium suites; and the discussion-worker checks in Chromium and Firefox. The interface, discussion and worker suites run headlessly; the syllabus suite uses visible Chromium under `xvfb-run`. The broader interface suite saves a Playwright trace and page state if it throws.
 
 CI installs from `package-lock.json` and checks out the public fixtures at the same pinned commit shown above. It needs no Purdue credentials, API keys, or repository secrets. Each browser job uploads any generated fixture-test screenshots for seven days, including on failure. New runs cancel older runs on the same branch or pull request.
 
-These checks cover fixture behavior in Chromium. They do not replace signed-in verification of Purdue authentication, actual course pages, or Firefox/Zen behavior.
+These checks cover synthetic integration behavior and the bundled retrieval worker in both browser engines. They do not replace signed-in verification of Purdue authentication, actual course rendering or the full Firefox/Zen interface.
+
+### Local retrieval experiments
+
+The ranking, packaged-asset integrity, worker lifecycle, timeout, scope isolation, and fallback tests run in `npm test` without model downloads. `node scripts/verify-discussion-search.mjs` exercises the bundled model in a real Chromium worker under the extension CSP, including edited/deleted posts, idle release, and a damaged-model fallback. Set `VERIFY_BROWSER=firefox` for Playwright Firefox. CI runs both engines, and the discussion integration suite requires the real semantic worker in Ask.
+
+The [discussion search README](experiments/discussions/README.md) is the single guide to the production choice, aggregate benchmark results, limitations and reproduction. Optional embedding dependencies and private reports remain separate from the extension runtime.
 
 ### Live verification
+
+For a browser that Codex and Antigravity can both attach to, run `npm run browser:live`. See [Shared live browser](docs/LIVE_BROWSER.md) for the local CDP endpoint and connection instructions.
 
 For a change involving authentication, cross-origin frames, or a course's actual rendering behavior, use the real-site test as well:
 

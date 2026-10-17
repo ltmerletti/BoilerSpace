@@ -10,6 +10,7 @@ The extension uses `chrome.storage.local` / the compatible Firefox extension sto
 - Readable syllabus text, extracted dates and policies, chosen syllabus sources, and date confirmations.
 - Conversations, answers, citations, settings, and sync status.
 - Your GenAI Studio connection information and API key.
+- If you connect the discussion beta, Ed/Piazza course links, post text, replies, author roles, direct post URLs, and discussion sync status. Author profile names and account identifiers are omitted; names written in post text may remain.
 
 This data is not placed in the browser's extension sync storage. Copies in other browser profiles or devices are separate. Treat an authenticated browser profile and its extension storage as sensitive.
 
@@ -25,6 +26,16 @@ Syllabus extraction sends readable syllabus text and course context to the selec
 
 Grade records and quiz scores are excluded from the assistant's model inputs. BoilerSpace does not add its own analytics, advertising, or crash-reporting service. Opening the original Purdue pages still loads those services normally; their own privacy and retention policies apply. This project does not control GenAI Studio's server-side retention or model-provider policies.
 
+## Optional Ed and Piazza beta
+
+Ed and Piazza access is requested only when you choose to connect them in Settings. The reader uses the site's signed-in page: Ed's token remains in Ed's page, and Piazza's CSRF token remains in Piazza's page. BoilerSpace does not save those tokens or ask for discussion passwords.
+
+Discussion retrieval uses a bundled POTION token table and BM25 in a local browser worker. Embedding posts and searching them makes no external requests. The worker keeps its search vectors in memory, rebuilds them when saved posts change, and releases them after a minute idle or when the panel page unloads. It does not create a separate persistent vector database or query log. Selected passages still go to Purdue GenAI Studio when Ask uses them to answer your question, as described above.
+
+The beta reads the full available history per connected course, with available replies. Imports run in batches and save progress locally so interrupted imports can resume. Later syncs check history pages and reopen new or changed posts. It omits posts and replies explicitly marked private or deleted. Instructor/student roles are retained so answers can distinguish staff guidance from student suggestions. Attachments and images are not read. Refreshing uses the same read endpoints as the sites, which may update their normal read/view tracking; BoilerSpace does not create posts, reply, vote, or enroll in courses.
+
+Discussion text stays in extension storage until used by Ask or exported. Questions about connected discussions can send matching excerpts and saved replies to Purdue GenAI Studio, with direct thread citations. Disconnecting a discussion source removes its cached posts and course link. Existing chats and exports may still contain quoted discussion content. **Delete all data** clears the discussion cache along with the rest of extension storage.
+
 ## Sign-in and API keys
 
 You sign into Purdue in the browser. BoilerSpace does not ask you to enter your Purdue password into its settings. It uses the existing Brightspace session to read course material and the GenAI Studio connection flow to obtain an API key.
@@ -33,7 +44,7 @@ The normal GenAI Studio connection reuses an existing key, or creates one if the
 
 ## Exports and screenshots
 
-**Download data (JSON)** omits the saved GenAI Studio connection, including its API key. It can still contain course data, grades from the local snapshot, syllabus text, and conversations. It is not an anonymized export.
+**Download data (JSON)** omits the saved GenAI Studio connection, including its API key. It can still contain course data, grades from the local snapshot, syllabus text, connected discussion posts, and conversations. It is not an anonymized export.
 
 **Save benchmark data** omits grade records and the student's profile record and scrubs email addresses and phone numbers. It includes course material and previous questions, so it is not guaranteed anonymous. Instructor names, course identifiers, and other identifying text may remain.
 

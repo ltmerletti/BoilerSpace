@@ -3,6 +3,8 @@ import { saveSyllabusEntryHere } from './lib/syllabus-store.js';
 import { readXsrf } from './lib/sync.js';
 import { snapshotSyllabus } from './lib/syllabus-scan.js';
 import { waitForSyllabus } from './lib/syllabus-wait.js';
+import { handleDiscussionRequest } from './lib/discussions-sync.js';
+import { DISCUSSION_SITES, parseDiscussionUrl } from './lib/discussions.js';
 
 function scanUrl(href, origin) {
   const url = new URL(href, origin);
@@ -90,6 +92,19 @@ if (chrome.sidePanel) {
 
 // Content scripts cannot call the page's own XSRF helper, so they ask for it here.
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === 'boilerspace-discussions') {
+    if (sender.id !== chrome.runtime.id || !sender.url?.startsWith(chrome.runtime.getURL(''))) return false;
+    const run = async () => {
+      if (message.action !== 'open-access') return handleDiscussionRequest(message);
+      if (!DISCUSSION_SITES[message.platform]) throw new Error('Unknown discussion site.');
+      const params = new URLSearchParams({ 'discussions-access': message.platform });
+      if (message.platform === 'piazza') params.set('course', parseDiscussionUrl(message.url).url);
+      await chrome.tabs.create({ url: chrome.runtime.getURL(`sidepanel.html?${params}`), active: true });
+      return null;
+    };
+    run().then((data) => sendResponse({ ok: true, data }), (error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
   if (message?.type === 'boilerspace-open-syllabus-access') {
     chrome.tabs.create({ url: chrome.runtime.getURL('sidepanel.html?syllabus-access=1'), active: true }).then(() => sendResponse({ ok: true }), (err) => sendResponse({ ok: false, error: err.message }));
     return true;

@@ -1,0 +1,46 @@
+[
+  {
+    "id": "help-location",
+    "scopeCourseId": 1600001,
+    "question": "Where can I meet a teaching assistant on Wednesday?",
+    "evidence": [
+      {
+        "topicId": 77,
+        "quote": "Teaching assistants hold office hours in Science Building room 200 on Wednesdays from 2 to 4 PM."
+      }
+    ]
+  },
+  {
+    "id": "late-submission",
+    "scopeCourseId": 1600001,
+    "question": "How much credit is lost when an assignment is overdue?",
+    "evidence": [
+      {
+        "topicId": 77,
+        "quote": "Late assignments lose ten percent per calendar day."
+      }
+    ]
+  },
+  {
+    "id": "child-memory",
+    "scopeCourseId": 1600001,
+    "question": "What memory does a child get after fork?",
+    "evidence": [
+      {
+        "topicId": 78,
+        "quote": "A child process receives a copy of the parent address space."
+      }
+    ]
+  },
+  {
+    "id": "separate-course",
+    "scopeCourseId": 1600002,
+    "question": "Where are the Monday math help hours?",
+    "evidence": [
+      {
+        "topicId": 88,
+        "quote": "Teaching assistants hold office hours in Mathematics room 100 on Mondays from 10 AM until noon."
+      }
+    ]
+  }
+]

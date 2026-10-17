@@ -25,6 +25,24 @@ BoilerSpace is a browser extension for Chrome, Firefox, and Zen. It reads your c
 
 Course sync and syllabus reading run separately. Assignments and announcements can finish syncing while a slow syllabus page is still loading. Some courses have no syllabus; a confirmed missing syllabus is shown separately from a failed check.
 
+## Ed and Piazza beta
+
+In **Settings → Discussions (beta)**, choose **Connect Ed courses** or enter a Piazza class URL and choose **Connect Piazza class**. Approve the optional site access in the extension tab. Sign into the discussion site in the same browser profile if prompted, then retry.
+
+Ed discovers active US courses and matches unambiguous course codes to current Brightspace courses. Piazza classes and unmatched courses can stay separate, or you can choose their Brightspace course in Settings. That keeps an older class from being mixed into a current course's answers.
+
+The beta imports **the full available discussion history**, including available replies, in batches. It saves progress after each batch and resumes interrupted imports on the next sync. Later syncs check every history page and only reopen new or changed posts. Settings shows the saved post count and whether the history check is complete. Ask can search those saved posts, open a saved thread, distinguish staff replies from student suggestions, and cite the original Ed/Piazza link. Linked courses also show recent post links on their course page. Discussion sync has its own status and **Sync discussions now** control; it refreshes independently at most every 20 minutes while BoilerSpace is open.
+
+The beta does not read attachments, post, reply, or vote. It excludes private and deleted posts. Site changes can interrupt the reader; a failed refresh keeps the last successful posts and shows an error. Relevant discussion text may be sent to Purdue GenAI Studio when you ask. See [Privacy](PRIVACY.md#optional-ed-and-piazza-beta).
+
+## Local discussion search
+
+Saved Ed/Piazza posts use **BM25 plus POTION semantic search**, running locally in a browser worker. This finds both exact terms and related wording. The bundled int8 model is about 33 MB; it needs no model account, external search service, GPU, or first-run download. The worker loads when discussion search is used and releases its memory after a minute of inactivity. Other course material continues to use keyword search.
+
+The assistant receives up to 6,000 characters of discussion evidence, with instructor/student roles and links to the original posts. If the semantic model cannot load, keyword search remains available and the tool reports that fallback. Search candidates can still be irrelevant; the assistant must check their content and saved-history status.
+
+See [Discussion search and benchmark results](experiments/discussions/README.md) for the production choice, all aggregate comparisons, browser measurements, limitations and test commands. Benchmark evidence recall measures whether labeled source text reaches the assistant, not whether every generated answer is correct.
+
 ## Ask across your course material
 
 > Hey can you tell me what the Course C syllabus says about the midterm, what it covers, and what I should review in the course materials?
@@ -74,8 +92,8 @@ The manifest targets Chrome 116+ and Firefox 128+, including compatible Zen vers
 | Browser | Verification |
 | --- | --- |
 | Chrome / Chromium | Automated UI checks and signed-in live tests |
-| Zen | Confirmed in a signed-in user session |
-| Standard Firefox | Compatibility reviewed; no separate automated live Firefox suite yet |
+| Zen | Signed-in user session and full discussion-retrieval replay |
+| Firefox | Automated discussion-worker checks in CI; full signed-in Purdue UI coverage remains through Zen |
 
 BoilerSpace is currently specific to Purdue's Brightspace, Simple Syllabus, and GenAI Studio domains. Other universities' Brightspace installations are not configured.
 
@@ -98,6 +116,8 @@ Course data, conversations, settings, and the GenAI Studio API key are stored lo
 | `purdue.brightspace.com` | Sync courses and read course material through your signed-in session |
 | `purdue.simplesyllabus.com` | Read the rendered syllabus launched by Brightspace |
 | `genai.rcac.purdue.edu` | Connect your account and request model responses |
+| `edstem.org`, `us.edstem.org` (optional) | Import saved public Ed posts and replies when connected |
+| `piazza.com` (optional) | Import a connected class's public posts and replies |
 
 BoilerSpace does not add its own analytics or send data to a separate BoilerSpace server. Exports can contain course content and conversation history. See [Privacy](PRIVACY.md) for storage, exports, and deletion details.
 

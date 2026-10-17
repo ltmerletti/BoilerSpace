@@ -1,0 +1,1870 @@
+{
+  "schemaVersion": 1,
+  "evaluatedOn": "2026-10-16",
+  "productionMethod": "potion-i8-hybrid",
+  "discussions": {
+    "corpusHash": "45b73b5971c48d911f76d5aeb8f9056d1a1bf24e67ee79e98f64b11d6cc76d9a",
+    "queryHash": "a41e98bbe12de1da4b78be2946f82fb1a7e0d880b529d1350544a1ea4a37253d",
+    "threads": 1448,
+    "passages": 1637,
+    "primaryQuestions": 300,
+    "relatedChallenges": 30,
+    "unscoredDiagnostics": 12,
+    "sourceTopicGroups": 80,
+    "representation": {
+      "unit": "thread",
+      "chunkChars": 1000,
+      "overlapChars": 150
+    },
+    "context": {
+      "maxChars": 6000,
+      "maxPassages": 12
+    },
+    "scope": "Known discussion source; user-only history; exact labeled source-span coverage.",
+    "methods": [
+      {
+        "name": "bm25",
+        "primary": {
+          "cases": 300,
+          "hitAt1": 0.7566666666666667,
+          "hitAt5": 0.94,
+          "hitAt10": 0.9633333333333334,
+          "mrrAt10": 0.8220873015873015,
+          "allEvidenceAt5": 0.94,
+          "allEvidenceInContext": 0.9633333333333334,
+          "evidenceRecallInContext": 0.9633333333333334,
+          "meanContextChars": 5655.973333333333
+        },
+        "challenges": {
+          "cases": 30,
+          "hitAt1": 0.8,
+          "hitAt5": 1,
+          "hitAt10": 1,
+          "mrrAt10": 0.875,
+          "allEvidenceAt5": 0.9333333333333333,
+          "allEvidenceInContext": 0.9666666666666667,
+          "evidenceRecallInContext": 0.9833333333333333,
+          "meanContextChars": 5772
+        },
+        "lowLexicalOverlap": {
+          "cases": 75,
+          "hitAt1": 0.5866666666666667,
+          "hitAt5": 0.88,
+          "hitAt10": 0.92,
+          "mrrAt10": 0.7043333333333333,
+          "allEvidenceAt5": 0.88,
+          "allEvidenceInContext": 0.92,
+          "evidenceRecallInContext": 0.92,
+          "meanContextChars": 5737.053333333333
+        }
+      },
+      {
+        "name": "bm25-character",
+        "primary": {
+          "cases": 300,
+          "hitAt1": 0.75,
+          "hitAt5": 0.9333333333333333,
+          "hitAt10": 0.9633333333333334,
+          "mrrAt10": 0.8219378306878308,
+          "allEvidenceAt5": 0.9333333333333333,
+          "allEvidenceInContext": 0.9666666666666667,
+          "evidenceRecallInContext": 0.9666666666666667,
+          "meanContextChars": 5779.36
+        },
+        "challenges": {
+          "cases": 30,
+          "hitAt1": 0.7666666666666667,
+          "hitAt5": 0.9666666666666667,
+          "hitAt10": 1,
+          "mrrAt10": 0.8430555555555554,
+          "allEvidenceAt5": 0.9333333333333333,
+          "allEvidenceInContext": 0.9333333333333333,
+          "evidenceRecallInContext": 0.9666666666666667,
+          "meanContextChars": 5952.2
+        },
+        "lowLexicalOverlap": {
+          "cases": 75,
+          "hitAt1": 0.56,
+          "hitAt5": 0.88,
+          "hitAt10": 0.92,
+          "mrrAt10": 0.7009206349206349,
+          "allEvidenceAt5": 0.88,
+          "allEvidenceInContext": 0.92,
+          "evidenceRecallInContext": 0.92,
+          "meanContextChars": 5821.733333333334
+        }
+      },
+      {
+        "name": "sse-f16-pure",
+        "primary": {
+          "cases": 300,
+          "hitAt1": 0.6166666666666667,
+          "hitAt5": 0.8666666666666667,
+          "hitAt10": 0.93,
+          "mrrAt10": 0.7155449735449735,
+          "allEvidenceAt5": 0.8666666666666667,
+          "allEvidenceInContext": 0.9266666666666666,
+          "evidenceRecallInContext": 0.9266666666666666,
+          "meanContextChars": 5458.2
+        },
+        "challenges": {
+          "cases": 30,
+          "hitAt1": 0.5666666666666667,
+          "hitAt5": 0.9333333333333333,
+          "hitAt10": 0.9333333333333333,
+          "mrrAt10": 0.6772222222222221,
+          "allEvidenceAt5": 0.8333333333333334,
+          "allEvidenceInContext": 0.8666666666666667,
+          "evidenceRecallInContext": 0.8944444444444444,
+          "meanContextChars": 5734.166666666667
+        },
+        "lowLexicalOverlap": {
+          "cases": 75,
+          "hitAt1": 0.41333333333333333,
+          "hitAt5": 0.7066666666666667,
+          "hitAt10": 0.84,
+          "mrrAt10": 0.5542010582010582,
+          "allEvidenceAt5": 0.7066666666666667,
+          "allEvidenceInContext": 0.84,
+          "evidenceRecallInContext": 0.84,
+          "meanContextChars": 5583.64
+        }
+      },
+      {
+        "name": "sse-f16-hybrid",
+        "primary": {
+          "cases": 300,
+          "hitAt1": 0.69,
+          "hitAt5": 0.9366666666666666,
+          "hitAt10": 0.97,
+          "mrrAt10": 0.7828148148148147,
+          "allEvidenceAt5": 0.9366666666666666,
+          "allEvidenceInContext": 0.9733333333333334,
+          "evidenceRecallInContext": 0.9733333333333334,
+          "meanContextChars": 5590.13
+        },
+        "challenges": {
+          "cases": 30,
+          "hitAt1": 0.6333333333333333,
+          "hitAt5": 0.9666666666666667,
+          "hitAt10": 1,
+          "mrrAt10": 0.7733333333333332,
+          "allEvidenceAt5": 0.8666666666666667,
+          "allEvidenceInContext": 0.9666666666666667,
+          "evidenceRecallInContext": 0.9833333333333333,
+          "meanContextChars": 5779.9
+        },
+        "lowLexicalOverlap": {
+          "cases": 75,
+          "hitAt1": 0.49333333333333335,
+          "hitAt5": 0.84,
+          "hitAt10": 0.92,
+          "mrrAt10": 0.6400370370370372,
+          "allEvidenceAt5": 0.84,
+          "allEvidenceInContext": 0.92,
+          "evidenceRecallInContext": 0.92,
+          "meanContextChars": 5711.106666666667
+        }
+      },
+      {
+        "name": "potion-32m-pure",
+        "primary": {
+          "cases": 300,
+          "hitAt1": 0.63,
+          "hitAt5": 0.8866666666666667,
+          "hitAt10": 0.9466666666666667,
+          "mrrAt10": 0.7280013227513226,
+          "allEvidenceAt5": 0.8866666666666667,
+          "allEvidenceInContext": 0.9366666666666666,
+          "evidenceRecallInContext": 0.9366666666666666,
+          "meanContextChars": 5539.176666666666
+        },
+        "challenges": {
+          "cases": 30,
+          "hitAt1": 0.6666666666666666,
+          "hitAt5": 0.9333333333333333,
+          "hitAt10": 0.9666666666666667,
+          "mrrAt10": 0.7516666666666665,
+          "allEvidenceAt5": 0.8,
+          "allEvidenceInContext": 0.8,
+          "evidenceRecallInContext": 0.8666666666666667,
+          "meanContextChars": 5801.033333333334
+        },
+        "lowLexicalOverlap": {
+          "cases": 75,
+          "hitAt1": 0.4533333333333333,
+          "hitAt5": 0.7733333333333333,
+          "hitAt10": 0.88,
+          "mrrAt10": 0.5802380952380953,
+          "allEvidenceAt5": 0.7733333333333333,
+          "allEvidenceInContext": 0.8666666666666667,
+          "evidenceRecallInContext": 0.8666666666666667,
+          "meanContextChars": 5652.626666666667
+        }
+      },
+      {
+        "name": "potion-32m-hybrid",
+        "primary": {
+          "cases": 300,
+          "hitAt1": 0.6933333333333334,
+          "hitAt5": 0.94,
+          "hitAt10": 0.9833333333333333,
+          "mrrAt10": 0.7871058201058202,
+          "allEvidenceAt5": 0.94,
+          "allEvidenceInContext": 0.9833333333333333,
+          "evidenceRecallInContext": 0.9833333333333333,
+          "meanContextChars": 5612.956666666667
+        },
+        "challenges": {
+          "cases": 30,
+          "hitAt1": 0.7,
+          "hitAt5": 1,
+          "hitAt10": 1,
+          "mrrAt10": 0.825,
+          "allEvidenceAt5": 0.8666666666666667,
+          "allEvidenceInContext": 0.9666666666666667,
+          "evidenceRecallInContext": 0.9833333333333333,
+          "meanContextChars": 5809.166666666667
+        },
+        "lowLexicalOverlap": {
+          "cases": 75,
+          "hitAt1": 0.5066666666666667,
+          "hitAt5": 0.88,
+          "hitAt10": 0.96,
+          "mrrAt10": 0.6522751322751325,
+          "allEvidenceAt5": 0.88,
+          "allEvidenceInContext": 0.96,
+          "evidenceRecallInContext": 0.96,
+          "meanContextChars": 5736.56
+        }
+      },
+      {
+        "name": "mxbai-xsmall-q4-pure",
+        "primary": {
+          "cases": 300,
+          "hitAt1": 0.7233333333333334,
+          "hitAt5": 0.94,
+          "hitAt10": 0.9733333333333334,
+          "mrrAt10": 0.7962063492063491,
+          "allEvidenceAt5": 0.9366666666666666,
+          "allEvidenceInContext": 0.98,
+          "evidenceRecallInContext": 0.98,
+          "meanContextChars": 5256.97
+        },
+        "challenges": {
+          "cases": 30,
+          "hitAt1": 0.7,
+          "hitAt5": 0.9,
+          "hitAt10": 0.9333333333333333,
+          "mrrAt10": 0.7525,
+          "allEvidenceAt5": 0.8333333333333334,
+          "allEvidenceInContext": 0.9,
+          "evidenceRecallInContext": 0.9111111111111111,
+          "meanContextChars": 5556.3
+        },
+        "lowLexicalOverlap": {
+          "cases": 75,
+          "hitAt1": 0.6666666666666666,
+          "hitAt5": 0.9466666666666667,
+          "hitAt10": 0.9866666666666667,
+          "mrrAt10": 0.756888888888889,
+          "allEvidenceAt5": 0.9466666666666667,
+          "allEvidenceInContext": 0.9866666666666667,
+          "evidenceRecallInContext": 0.9866666666666667,
+          "meanContextChars": 5401.093333333333
+        }
+      },
+      {
+        "name": "mxbai-xsmall-q4-hybrid",
+        "primary": {
+          "cases": 300,
+          "hitAt1": 0.7933333333333333,
+          "hitAt5": 0.9666666666666667,
+          "hitAt10": 0.9866666666666667,
+          "mrrAt10": 0.85475,
+          "allEvidenceAt5": 0.9666666666666667,
+          "allEvidenceInContext": 0.9866666666666667,
+          "evidenceRecallInContext": 0.9866666666666667,
+          "meanContextChars": 5593.73
+        },
+        "challenges": {
+          "cases": 30,
+          "hitAt1": 0.7333333333333333,
+          "hitAt5": 1,
+          "hitAt10": 1,
+          "mrrAt10": 0.8222222222222222,
+          "allEvidenceAt5": 0.9,
+          "allEvidenceInContext": 0.9666666666666667,
+          "evidenceRecallInContext": 0.9833333333333333,
+          "meanContextChars": 5820.333333333333
+        },
+        "lowLexicalOverlap": {
+          "cases": 75,
+          "hitAt1": 0.68,
+          "hitAt5": 0.96,
+          "hitAt10": 0.9866666666666667,
+          "mrrAt10": 0.7897777777777778,
+          "allEvidenceAt5": 0.96,
+          "allEvidenceInContext": 0.9733333333333334,
+          "evidenceRecallInContext": 0.9733333333333334,
+          "meanContextChars": 5668.386666666666
+        }
+      },
+      {
+        "name": "mxbai-xsmall-q8-pure",
+        "primary": {
+          "cases": 300,
+          "hitAt1": 0.7266666666666667,
+          "hitAt5": 0.9366666666666666,
+          "hitAt10": 0.9733333333333334,
+          "mrrAt10": 0.8002248677248679,
+          "allEvidenceAt5": 0.9366666666666666,
+          "allEvidenceInContext": 0.98,
+          "evidenceRecallInContext": 0.98,
+          "meanContextChars": 5276.8133333333335
+        },
+        "challenges": {
+          "cases": 30,
+          "hitAt1": 0.7,
+          "hitAt5": 0.9333333333333333,
+          "hitAt10": 0.9666666666666667,
+          "mrrAt10": 0.7766666666666666,
+          "allEvidenceAt5": 0.8666666666666667,
+          "allEvidenceInContext": 0.9,
+          "evidenceRecallInContext": 0.9277777777777777,
+          "meanContextChars": 5579.233333333334
+        },
+        "lowLexicalOverlap": {
+          "cases": 75,
+          "hitAt1": 0.6933333333333334,
+          "hitAt5": 0.9066666666666666,
+          "hitAt10": 0.9733333333333334,
+          "mrrAt10": 0.7706984126984128,
+          "allEvidenceAt5": 0.9066666666666666,
+          "allEvidenceInContext": 0.9866666666666667,
+          "evidenceRecallInContext": 0.9866666666666667,
+          "meanContextChars": 5380.933333333333
+        }
+      },
+      {
+        "name": "mxbai-xsmall-q8-hybrid",
+        "primary": {
+          "cases": 300,
+          "hitAt1": 0.79,
+          "hitAt5": 0.9666666666666667,
+          "hitAt10": 0.9866666666666667,
+          "mrrAt10": 0.8566706349206349,
+          "allEvidenceAt5": 0.9666666666666667,
+          "allEvidenceInContext": 0.9866666666666667,
+          "evidenceRecallInContext": 0.9866666666666667,
+          "meanContextChars": 5636.1033333333335
+        },
+        "challenges": {
+          "cases": 30,
+          "hitAt1": 0.7333333333333333,
+          "hitAt5": 1,
+          "hitAt10": 1,
+          "mrrAt10": 0.8094444444444445,
+          "allEvidenceAt5": 0.9,
+          "allEvidenceInContext": 0.9333333333333333,
+          "evidenceRecallInContext": 0.961111111111111,
+          "meanContextChars": 5842.133333333333
+        },
+        "lowLexicalOverlap": {
+          "cases": 75,
+          "hitAt1": 0.6933333333333334,
+          "hitAt5": 0.9466666666666667,
+          "hitAt10": 0.9866666666666667,
+          "mrrAt10": 0.7975555555555557,
+          "allEvidenceAt5": 0.9466666666666667,
+          "allEvidenceInContext": 0.9733333333333334,
+          "evidenceRecallInContext": 0.9733333333333334,
+          "meanContextChars": 5766.2266666666665
+        }
+      },
+      {
+        "name": "jina5-nano-q4-pure",
+        "primary": {
+          "cases": 300,
+          "hitAt1": 0.8333333333333334,
+          "hitAt5": 0.9733333333333334,
+          "hitAt10": 0.99,
+          "mrrAt10": 0.8758743386243386,
+          "allEvidenceAt5": 0.9733333333333334,
+          "allEvidenceInContext": 0.99,
+          "evidenceRecallInContext": 0.99,
+          "meanContextChars": 5345.666666666667
+        },
+        "challenges": {
+          "cases": 30,
+          "hitAt1": 0.7666666666666667,
+          "hitAt5": 0.9666666666666667,
+          "hitAt10": 1,
+          "mrrAt10": 0.8366666666666667,
+          "allEvidenceAt5": 0.8666666666666667,
+          "allEvidenceInContext": 0.9333333333333333,
+          "evidenceRecallInContext": 0.961111111111111,
+          "meanContextChars": 5699.666666666667
+        },
+        "lowLexicalOverlap": {
+          "cases": 75,
+          "hitAt1": 0.7733333333333333,
+          "hitAt5": 0.9733333333333334,
+          "hitAt10": 0.9866666666666667,
+          "mrrAt10": 0.8358888888888889,
+          "allEvidenceAt5": 0.9733333333333334,
+          "allEvidenceInContext": 0.9866666666666667,
+          "evidenceRecallInContext": 0.9866666666666667,
+          "meanContextChars": 5381.2
+        }
+      },
+      {
+        "name": "jina5-nano-q4-hybrid",
+        "primary": {
+          "cases": 300,
+          "hitAt1": 0.8266666666666667,
+          "hitAt5": 0.9766666666666667,
+          "hitAt10": 0.9966666666666667,
+          "mrrAt10": 0.8771574074074074,
+          "allEvidenceAt5": 0.9766666666666667,
+          "allEvidenceInContext": 0.9933333333333333,
+          "evidenceRecallInContext": 0.9933333333333333,
+          "meanContextChars": 5534.37
+        },
+        "challenges": {
+          "cases": 30,
+          "hitAt1": 0.7666666666666667,
+          "hitAt5": 1,
+          "hitAt10": 1,
+          "mrrAt10": 0.8388888888888888,
+          "allEvidenceAt5": 0.9333333333333333,
+          "allEvidenceInContext": 0.9333333333333333,
+          "evidenceRecallInContext": 0.961111111111111,
+          "meanContextChars": 5781.366666666667
+        },
+        "lowLexicalOverlap": {
+          "cases": 75,
+          "hitAt1": 0.76,
+          "hitAt5": 0.9733333333333334,
+          "hitAt10": 1,
+          "mrrAt10": 0.8368888888888889,
+          "allEvidenceAt5": 0.9733333333333334,
+          "allEvidenceInContext": 0.9866666666666667,
+          "evidenceRecallInContext": 0.9866666666666667,
+          "meanContextChars": 5581.76
+        }
+      },
+      {
+        "name": "jina5-nano-q8-pure",
+        "primary": {
+          "cases": 300,
+          "hitAt1": 0.81,
+          "hitAt5": 0.9733333333333334,
+          "hitAt10": 0.99,
+          "mrrAt10": 0.864174603174603,
+          "allEvidenceAt5": 0.9733333333333334,
+          "allEvidenceInContext": 0.99,
+          "evidenceRecallInContext": 0.99,
+          "meanContextChars": 5351.93
+        },
+        "challenges": {
+          "cases": 30,
+          "hitAt1": 0.8,
+          "hitAt5": 0.9666666666666667,
+          "hitAt10": 1,
+          "mrrAt10": 0.843095238095238,
+          "allEvidenceAt5": 0.8666666666666667,
+          "allEvidenceInContext": 0.9333333333333333,
+          "evidenceRecallInContext": 0.961111111111111,
+          "meanContextChars": 5712.4
+        },
+        "lowLexicalOverlap": {
+          "cases": 75,
+          "hitAt1": 0.7333333333333333,
+          "hitAt5": 0.9733333333333334,
+          "hitAt10": 0.9866666666666667,
+          "mrrAt10": 0.8183492063492065,
+          "allEvidenceAt5": 0.9733333333333334,
+          "allEvidenceInContext": 0.9866666666666667,
+          "evidenceRecallInContext": 0.9866666666666667,
+          "meanContextChars": 5369.8133333333335
+        }
+      },
+      {
+        "name": "jina5-nano-q8-hybrid",
+        "primary": {
+          "cases": 300,
+          "hitAt1": 0.82,
+          "hitAt5": 0.9766666666666667,
+          "hitAt10": 0.9966666666666667,
+          "mrrAt10": 0.8727407407407406,
+          "allEvidenceAt5": 0.9766666666666667,
+          "allEvidenceInContext": 0.9933333333333333,
+          "evidenceRecallInContext": 0.9933333333333333,
+          "meanContextChars": 5551.23
+        },
+        "challenges": {
+          "cases": 30,
+          "hitAt1": 0.8,
+          "hitAt5": 1,
+          "hitAt10": 1,
+          "mrrAt10": 0.8555555555555555,
+          "allEvidenceAt5": 0.9333333333333333,
+          "allEvidenceInContext": 0.9333333333333333,
+          "evidenceRecallInContext": 0.961111111111111,
+          "meanContextChars": 5768.8
+        },
+        "lowLexicalOverlap": {
+          "cases": 75,
+          "hitAt1": 0.7466666666666667,
+          "hitAt5": 0.9733333333333334,
+          "hitAt10": 1,
+          "mrrAt10": 0.8257777777777777,
+          "allEvidenceAt5": 0.9733333333333334,
+          "allEvidenceInContext": 0.9866666666666667,
+          "evidenceRecallInContext": 0.9866666666666667,
+          "meanContextChars": 5630.546666666667
+        }
+      },
+      {
+        "name": "colbert-lexical-pure",
+        "primary": {
+          "cases": 300,
+          "hitAt1": 0.8266666666666667,
+          "hitAt5": 0.97,
+          "hitAt10": 0.9766666666666667,
+          "mrrAt10": 0.8777407407407406,
+          "allEvidenceAt5": 0.97,
+          "allEvidenceInContext": 0.9733333333333334,
+          "evidenceRecallInContext": 0.9733333333333334,
+          "meanContextChars": 5738.85
+        },
+        "challenges": {
+          "cases": 30,
+          "hitAt1": 0.7666666666666667,
+          "hitAt5": 1,
+          "hitAt10": 1,
+          "mrrAt10": 0.8555555555555556,
+          "allEvidenceAt5": 0.9333333333333333,
+          "allEvidenceInContext": 0.9333333333333333,
+          "evidenceRecallInContext": 0.9666666666666667,
+          "meanContextChars": 5967.966666666666
+        },
+        "lowLexicalOverlap": {
+          "cases": 75,
+          "hitAt1": 0.7733333333333333,
+          "hitAt5": 0.9466666666666667,
+          "hitAt10": 0.9466666666666667,
+          "mrrAt10": 0.8426666666666667,
+          "allEvidenceAt5": 0.9466666666666667,
+          "allEvidenceInContext": 0.9466666666666667,
+          "evidenceRecallInContext": 0.9466666666666667,
+          "meanContextChars": 5818
+        }
+      },
+      {
+        "name": "colbert-lexical-hybrid",
+        "primary": {
+          "cases": 300,
+          "hitAt1": 0.8033333333333333,
+          "hitAt5": 0.9533333333333334,
+          "hitAt10": 0.9766666666666667,
+          "mrrAt10": 0.8607394179894179,
+          "allEvidenceAt5": 0.9533333333333334,
+          "allEvidenceInContext": 0.9766666666666667,
+          "evidenceRecallInContext": 0.9766666666666667,
+          "meanContextChars": 5755.91
+        },
+        "challenges": {
+          "cases": 30,
+          "hitAt1": 0.7666666666666667,
+          "hitAt5": 0.9666666666666667,
+          "hitAt10": 1,
+          "mrrAt10": 0.8500000000000001,
+          "allEvidenceAt5": 0.9333333333333333,
+          "allEvidenceInContext": 0.9333333333333333,
+          "evidenceRecallInContext": 0.9666666666666667,
+          "meanContextChars": 5948.666666666667
+        },
+        "lowLexicalOverlap": {
+          "cases": 75,
+          "hitAt1": 0.7066666666666667,
+          "hitAt5": 0.92,
+          "hitAt10": 0.96,
+          "mrrAt10": 0.7959417989417991,
+          "allEvidenceAt5": 0.92,
+          "allEvidenceInContext": 0.96,
+          "evidenceRecallInContext": 0.96,
+          "meanContextChars": 5824.706666666667
+        }
+      },
+      {
+        "name": "colbert-union-pure",
+        "primary": {
+          "cases": 300,
+          "hitAt1": 0.8266666666666667,
+          "hitAt5": 0.9766666666666667,
+          "hitAt10": 0.9833333333333333,
+          "mrrAt10": 0.8764259259259258,
+          "allEvidenceAt5": 0.9766666666666667,
+          "allEvidenceInContext": 0.9833333333333333,
+          "evidenceRecallInContext": 0.9833333333333333,
+          "meanContextChars": 5642.006666666667
+        },
+        "challenges": {
+          "cases": 30,
+          "hitAt1": 0.7666666666666667,
+          "hitAt5": 1,
+          "hitAt10": 1,
+          "mrrAt10": 0.8555555555555556,
+          "allEvidenceAt5": 0.9,
+          "allEvidenceInContext": 0.9333333333333333,
+          "evidenceRecallInContext": 0.9666666666666667,
+          "meanContextChars": 5957.6
+        },
+        "lowLexicalOverlap": {
+          "cases": 75,
+          "hitAt1": 0.7733333333333333,
+          "hitAt5": 0.96,
+          "hitAt10": 0.96,
+          "mrrAt10": 0.8382222222222223,
+          "allEvidenceAt5": 0.96,
+          "allEvidenceInContext": 0.9733333333333334,
+          "evidenceRecallInContext": 0.9733333333333334,
+          "meanContextChars": 5703.16
+        }
+      },
+      {
+        "name": "colbert-union-hybrid",
+        "primary": {
+          "cases": 300,
+          "hitAt1": 0.8,
+          "hitAt5": 0.9666666666666667,
+          "hitAt10": 0.9833333333333333,
+          "mrrAt10": 0.8612539682539682,
+          "allEvidenceAt5": 0.9666666666666667,
+          "allEvidenceInContext": 0.98,
+          "evidenceRecallInContext": 0.98,
+          "meanContextChars": 5653.703333333333
+        },
+        "challenges": {
+          "cases": 30,
+          "hitAt1": 0.8,
+          "hitAt5": 1,
+          "hitAt10": 1,
+          "mrrAt10": 0.8622222222222222,
+          "allEvidenceAt5": 0.9,
+          "allEvidenceInContext": 0.9666666666666667,
+          "evidenceRecallInContext": 0.9833333333333333,
+          "meanContextChars": 5909.966666666666
+        },
+        "lowLexicalOverlap": {
+          "cases": 75,
+          "hitAt1": 0.7466666666666667,
+          "hitAt5": 0.92,
+          "hitAt10": 0.96,
+          "mrrAt10": 0.8234603174603176,
+          "allEvidenceAt5": 0.92,
+          "allEvidenceInContext": 0.9466666666666667,
+          "evidenceRecallInContext": 0.9466666666666667,
+          "meanContextChars": 5766.426666666666
+        }
+      },
+      {
+        "name": "potion-f16-hybrid",
+        "primary": {
+          "cases": 300,
+          "hitAt1": 0.6933333333333334,
+          "hitAt5": 0.94,
+          "hitAt10": 0.9833333333333333,
+          "mrrAt10": 0.7871058201058202,
+          "allEvidenceAt5": 0.94,
+          "allEvidenceInContext": 0.9833333333333333,
+          "evidenceRecallInContext": 0.9833333333333333,
+          "meanContextChars": 5612.956666666667
+        },
+        "challenges": {
+          "cases": 30,
+          "hitAt1": 0.7,
+          "hitAt5": 1,
+          "hitAt10": 1,
+          "mrrAt10": 0.825,
+          "allEvidenceAt5": 0.8666666666666667,
+          "allEvidenceInContext": 0.9666666666666667,
+          "evidenceRecallInContext": 0.9833333333333333,
+          "meanContextChars": 5809.166666666667
+        }
+      },
+      {
+        "name": "potion-i8-hybrid",
+        "primary": {
+          "cases": 300,
+          "hitAt1": 0.6966666666666667,
+          "hitAt5": 0.94,
+          "hitAt10": 0.9833333333333333,
+          "mrrAt10": 0.7908518518518519,
+          "allEvidenceAt5": 0.94,
+          "allEvidenceInContext": 0.9833333333333333,
+          "evidenceRecallInContext": 0.9833333333333333,
+          "meanContextChars": 5612.26
+        },
+        "challenges": {
+          "cases": 30,
+          "hitAt1": 0.7,
+          "hitAt5": 1,
+          "hitAt10": 1,
+          "mrrAt10": 0.825,
+          "allEvidenceAt5": 0.8666666666666667,
+          "allEvidenceInContext": 0.9666666666666667,
+          "evidenceRecallInContext": 0.9833333333333333,
+          "meanContextChars": 5813.966666666666
+        }
+      }
+    ],
+    "browserRuns": [
+      {
+        "engine": "Chromium",
+        "extraRssBytes": 153354240,
+        "coldMs": 417.19999999552965,
+        "p95WarmMs": 0.7999999970197678
+      },
+      {
+        "engine": "Chromium",
+        "extraRssBytes": 153124864,
+        "coldMs": 397.3999999985099,
+        "p95WarmMs": 0.7000000029802322
+      },
+      {
+        "engine": "Zen Firefox",
+        "extraRssBytes": 102170624,
+        "coldMs": 1206,
+        "p95WarmMs": 2
+      }
+    ],
+    "contrasts": [
+      {
+        "method": "bm25-character",
+        "completeEvidence": {
+          "difference": 0.0033333333333333335,
+          "wins": 3,
+          "losses": 2,
+          "exactP": 0.9999999999999998,
+          "holmP": 1,
+          "pairedCI95": [
+            -0.01,
+            0.016666666666666666
+          ],
+          "sourceTopicCI95": [
+            -0.007352941176470588,
+            0.015209125475285171
+          ]
+        },
+        "firstResult": {
+          "difference": -0.006666666666666667,
+          "exactP": 0.7265625,
+          "holmP": 0.7265625
+        }
+      },
+      {
+        "method": "sse-f16-pure",
+        "completeEvidence": {
+          "difference": -0.03666666666666667,
+          "wins": 7,
+          "losses": 18,
+          "exactP": 0.043285250663757324,
+          "holmP": 0.5400390625000002,
+          "pairedCI95": [
+            -0.07,
+            -0.006666666666666667
+          ],
+          "sourceTopicCI95": [
+            -0.06840390879478828,
+            -0.006493506493506494
+          ]
+        },
+        "firstResult": {
+          "difference": -0.14,
+          "exactP": 1.694494122947648e-7,
+          "holmP": 0.0000028806400090110014
+        }
+      },
+      {
+        "method": "sse-f16-hybrid",
+        "completeEvidence": {
+          "difference": 0.01,
+          "wins": 6,
+          "losses": 3,
+          "exactP": 0.5078124999999998,
+          "holmP": 1,
+          "pairedCI95": [
+            -0.01,
+            0.03
+          ],
+          "sourceTopicCI95": [
+            -0.01,
+            0.028986676016830276
+          ]
+        },
+        "firstResult": {
+          "difference": -0.06666666666666667,
+          "exactP": 0.005515201485501112,
+          "holmP": 0.055152014855011124
+        }
+      },
+      {
+        "method": "potion-32m-pure",
+        "completeEvidence": {
+          "difference": -0.02666666666666667,
+          "wins": 7,
+          "losses": 15,
+          "exactP": 0.1338005065917967,
+          "holmP": 1,
+          "pairedCI95": [
+            -0.056666666666666664,
+            0.0033333333333333335
+          ],
+          "sourceTopicCI95": [
+            -0.05204557775712516,
+            -0.0033003300330033004
+          ]
+        },
+        "firstResult": {
+          "difference": -0.12666666666666668,
+          "exactP": 0.0000012143807700186255,
+          "holmP": 0.000019430092320298008
+        }
+      },
+      {
+        "method": "potion-32m-hybrid",
+        "completeEvidence": {
+          "difference": 0.02,
+          "wins": 8,
+          "losses": 2,
+          "exactP": 0.10937500000000004,
+          "holmP": 0.9843750000000003,
+          "pairedCI95": [
+            0,
+            0.04
+          ],
+          "sourceTopicCI95": [
+            0,
+            0.03914590747330961
+          ]
+        },
+        "firstResult": {
+          "difference": -0.06333333333333334,
+          "exactP": 0.006608822842281372,
+          "holmP": 0.059479405580532344
+        }
+      },
+      {
+        "method": "mxbai-xsmall-q4-pure",
+        "completeEvidence": {
+          "difference": 0.016666666666666666,
+          "wins": 9,
+          "losses": 4,
+          "exactP": 0.266845703125,
+          "holmP": 1,
+          "pairedCI95": [
+            -0.006666666666666667,
+            0.04
+          ],
+          "sourceTopicCI95": [
+            -0.003817159486414553,
+            0.03726760711653858
+          ]
+        },
+        "firstResult": {
+          "difference": -0.03333333333333333,
+          "exactP": 0.2370471147627189,
+          "holmP": 0.7111413442881567
+        }
+      },
+      {
+        "method": "mxbai-xsmall-q4-hybrid",
+        "completeEvidence": {
+          "difference": 0.023333333333333334,
+          "wins": 7,
+          "losses": 0,
+          "exactP": 0.015625000000000003,
+          "holmP": 0.23437500000000006,
+          "pairedCI95": [
+            0.006666666666666667,
+            0.04
+          ],
+          "sourceTopicCI95": [
+            0.00816326530612245,
+            0.03934426229508197
+          ]
+        },
+        "firstResult": {
+          "difference": 0.03666666666666667,
+          "exactP": 0.06142834573984141,
+          "holmP": 0.3685700744390485
+        }
+      },
+      {
+        "method": "mxbai-xsmall-q8-pure",
+        "completeEvidence": {
+          "difference": 0.016666666666666666,
+          "wins": 9,
+          "losses": 4,
+          "exactP": 0.266845703125,
+          "holmP": 1,
+          "pairedCI95": [
+            -0.006666666666666667,
+            0.04
+          ],
+          "sourceTopicCI95": [
+            -0.003816793893129771,
+            0.03773722027204912
+          ]
+        },
+        "firstResult": {
+          "difference": -0.03,
+          "exactP": 0.2975952082844292,
+          "holmP": 0.7111413442881567
+        }
+      },
+      {
+        "method": "mxbai-xsmall-q8-hybrid",
+        "completeEvidence": {
+          "difference": 0.023333333333333334,
+          "wins": 8,
+          "losses": 1,
+          "exactP": 0.03906249999999999,
+          "holmP": 0.5400390625000002,
+          "pairedCI95": [
+            0.006666666666666667,
+            0.043333333333333335
+          ],
+          "sourceTopicCI95": [
+            0.00816326530612245,
+            0.03934426229508197
+          ]
+        },
+        "firstResult": {
+          "difference": 0.03333333333333333,
+          "exactP": 0.09873714670538891,
+          "holmP": 0.39494858682155565
+        }
+      },
+      {
+        "method": "jina5-nano-q4-pure",
+        "completeEvidence": {
+          "difference": 0.02666666666666667,
+          "wins": 10,
+          "losses": 2,
+          "exactP": 0.038574218750000014,
+          "holmP": 0.5400390625000002,
+          "pairedCI95": [
+            0.0033333333333333335,
+            0.05
+          ],
+          "sourceTopicCI95": [
+            0.006430352873278919,
+            0.0472978301645494
+          ]
+        },
+        "firstResult": {
+          "difference": 0.07666666666666666,
+          "exactP": 0.0010885382064742511,
+          "holmP": 0.016328073097113767
+        }
+      },
+      {
+        "method": "jina5-nano-q4-hybrid",
+        "completeEvidence": {
+          "difference": 0.03,
+          "wins": 9,
+          "losses": 0,
+          "exactP": 0.00390625,
+          "holmP": 0.06640625,
+          "pairedCI95": [
+            0.013333333333333334,
+            0.05
+          ],
+          "sourceTopicCI95": [
+            0.013422818791946308,
+            0.047619047619047616
+          ]
+        },
+        "firstResult": {
+          "difference": 0.07,
+          "exactP": 0.0014504910141113227,
+          "holmP": 0.020306874197558517
+        }
+      },
+      {
+        "method": "jina5-nano-q8-pure",
+        "completeEvidence": {
+          "difference": 0.02666666666666667,
+          "wins": 10,
+          "losses": 2,
+          "exactP": 0.038574218750000014,
+          "holmP": 0.5400390625000002,
+          "pairedCI95": [
+            0.0033333333333333335,
+            0.05
+          ],
+          "sourceTopicCI95": [
+            0.006430352873278919,
+            0.0472978301645494
+          ]
+        },
+        "firstResult": {
+          "difference": 0.05333333333333334,
+          "exactP": 0.025896081793234698,
+          "holmP": 0.20716865434587758
+        }
+      },
+      {
+        "method": "jina5-nano-q8-hybrid",
+        "completeEvidence": {
+          "difference": 0.03,
+          "wins": 9,
+          "losses": 0,
+          "exactP": 0.00390625,
+          "holmP": 0.06640625,
+          "pairedCI95": [
+            0.013333333333333334,
+            0.05
+          ],
+          "sourceTopicCI95": [
+            0.013422818791946308,
+            0.047619047619047616
+          ]
+        },
+        "firstResult": {
+          "difference": 0.06333333333333334,
+          "exactP": 0.0033778479119064377,
+          "holmP": 0.04391202285478369
+        }
+      },
+      {
+        "method": "colbert-lexical-pure",
+        "completeEvidence": {
+          "difference": 0.01,
+          "wins": 4,
+          "losses": 1,
+          "exactP": 0.375,
+          "holmP": 1,
+          "pairedCI95": [
+            -0.0033333333333333335,
+            0.023333333333333334
+          ],
+          "sourceTopicCI95": [
+            -0.0035714285714285713,
+            0.023952095808383235
+          ]
+        },
+        "firstResult": {
+          "difference": 0.07,
+          "exactP": 0.003801654409748773,
+          "holmP": 0.045619852916985275
+        }
+      },
+      {
+        "method": "colbert-lexical-hybrid",
+        "completeEvidence": {
+          "difference": 0.013333333333333334,
+          "wins": 4,
+          "losses": 0,
+          "exactP": 0.125,
+          "holmP": 1,
+          "pairedCI95": [
+            0.0033333333333333335,
+            0.02666666666666667
+          ],
+          "sourceTopicCI95": [
+            0.003194888178913738,
+            0.02612001268168958
+          ]
+        },
+        "firstResult": {
+          "difference": 0.04666666666666667,
+          "exactP": 0.03847730828420032,
+          "holmP": 0.2693411579894022
+        }
+      },
+      {
+        "method": "colbert-union-pure",
+        "completeEvidence": {
+          "difference": 0.02,
+          "wins": 7,
+          "losses": 1,
+          "exactP": 0.0703125,
+          "holmP": 0.703125,
+          "pairedCI95": [
+            0.0033333333333333335,
+            0.04
+          ],
+          "sourceTopicCI95": [
+            0.0033003300330033004,
+            0.037415921424749664
+          ]
+        },
+        "firstResult": {
+          "difference": 0.07,
+          "exactP": 0.003801654409748773,
+          "holmP": 0.045619852916985275
+        }
+      },
+      {
+        "method": "colbert-union-hybrid",
+        "completeEvidence": {
+          "difference": 0.016666666666666666,
+          "wins": 6,
+          "losses": 1,
+          "exactP": 0.12500000000000006,
+          "holmP": 1,
+          "pairedCI95": [
+            0,
+            0.03333333333333333
+          ],
+          "sourceTopicCI95": [
+            0,
+            0.033132946149237834
+          ]
+        },
+        "firstResult": {
+          "difference": 0.043333333333333335,
+          "exactP": 0.06599403445579802,
+          "holmP": 0.3685700744390485
+        }
+      }
+    ],
+    "candidateControls": [
+      {
+        "name": "colbert-keyword-50",
+        "primary": {
+          "cases": 300,
+          "hitAt1": 0.8266666666666667,
+          "hitAt5": 0.9733333333333334,
+          "hitAt10": 0.98,
+          "mrrAt10": 0.8765925925925925,
+          "allEvidenceAt5": 0.9733333333333334,
+          "allEvidenceInContext": 0.9766666666666667,
+          "evidenceRecallInContext": 0.9766666666666667,
+          "meanContextChars": 5672.703333333333
+        },
+        "challenges": {
+          "cases": 30,
+          "hitAt1": 0.7666666666666667,
+          "hitAt5": 1,
+          "hitAt10": 1,
+          "mrrAt10": 0.8555555555555556,
+          "allEvidenceAt5": 0.9,
+          "allEvidenceInContext": 0.9333333333333333,
+          "evidenceRecallInContext": 0.9666666666666667,
+          "meanContextChars": 5959.133333333333
+        },
+        "candidateEvidenceCeiling": 296
+      },
+      {
+        "name": "colbert-mixed-50",
+        "primary": {
+          "cases": 300,
+          "hitAt1": 0.8266666666666667,
+          "hitAt5": 0.9766666666666667,
+          "hitAt10": 0.9833333333333333,
+          "mrrAt10": 0.8764259259259258,
+          "allEvidenceAt5": 0.9766666666666667,
+          "allEvidenceInContext": 0.9833333333333333,
+          "evidenceRecallInContext": 0.9833333333333333,
+          "meanContextChars": 5644.706666666667
+        },
+        "challenges": {
+          "cases": 30,
+          "hitAt1": 0.7666666666666667,
+          "hitAt5": 1,
+          "hitAt10": 1,
+          "mrrAt10": 0.8555555555555556,
+          "allEvidenceAt5": 0.9,
+          "allEvidenceInContext": 0.9333333333333333,
+          "evidenceRecallInContext": 0.9666666666666667,
+          "meanContextChars": 5948.233333333334
+        },
+        "candidateEvidenceCeiling": 298
+      },
+      {
+        "name": "colbert-keyword-100",
+        "primary": {
+          "cases": 300,
+          "hitAt1": 0.8266666666666667,
+          "hitAt5": 0.9766666666666667,
+          "hitAt10": 0.9833333333333333,
+          "mrrAt10": 0.8764259259259258,
+          "allEvidenceAt5": 0.9766666666666667,
+          "allEvidenceInContext": 0.98,
+          "evidenceRecallInContext": 0.98,
+          "meanContextChars": 5656.086666666667
+        },
+        "challenges": {
+          "cases": 30,
+          "hitAt1": 0.7666666666666667,
+          "hitAt5": 1,
+          "hitAt10": 1,
+          "mrrAt10": 0.8555555555555556,
+          "allEvidenceAt5": 0.9,
+          "allEvidenceInContext": 0.9333333333333333,
+          "evidenceRecallInContext": 0.9666666666666667,
+          "meanContextChars": 5936.433333333333
+        },
+        "candidateEvidenceCeiling": 297
+      },
+      {
+        "name": "colbert-mixed-100",
+        "primary": {
+          "cases": 300,
+          "hitAt1": 0.8266666666666667,
+          "hitAt5": 0.9766666666666667,
+          "hitAt10": 0.9833333333333333,
+          "mrrAt10": 0.8764259259259258,
+          "allEvidenceAt5": 0.9766666666666667,
+          "allEvidenceInContext": 0.9833333333333333,
+          "evidenceRecallInContext": 0.9833333333333333,
+          "meanContextChars": 5649.626666666667
+        },
+        "challenges": {
+          "cases": 30,
+          "hitAt1": 0.7666666666666667,
+          "hitAt5": 1,
+          "hitAt10": 1,
+          "mrrAt10": 0.8555555555555556,
+          "allEvidenceAt5": 0.9,
+          "allEvidenceInContext": 0.9333333333333333,
+          "evidenceRecallInContext": 0.9666666666666667,
+          "meanContextChars": 5936.433333333333
+        },
+        "candidateEvidenceCeiling": 299
+      }
+    ],
+    "earlierDevelopment": {
+      "questions": 65,
+      "development": 39,
+      "validation": 26,
+      "methods": [
+        {
+          "name": "mxbai-xsmall-q4-thread",
+          "overall": {
+            "cases": 65,
+            "hitAt1": 0.8153846153846154,
+            "hitAt5": 0.9846153846153847,
+            "hitAt10": 0.9846153846153847,
+            "mrrAt10": 0.9,
+            "allEvidenceAt5": 0.9538461538461539,
+            "allEvidenceInContext": 0.9538461538461539,
+            "evidenceRecallInContext": 0.9692307692307692,
+            "meanContextChars": 3307.5846153846155
+          },
+          "development": {
+            "cases": 39,
+            "hitAt1": 0.8205128205128205,
+            "hitAt5": 0.9743589743589743,
+            "hitAt10": 0.9743589743589743,
+            "mrrAt10": 0.8974358974358975,
+            "allEvidenceAt5": 0.9230769230769231,
+            "allEvidenceInContext": 0.9230769230769231,
+            "evidenceRecallInContext": 0.9487179487179487,
+            "meanContextChars": 3300.102564102564
+          },
+          "validation": {
+            "cases": 26,
+            "hitAt1": 0.8076923076923077,
+            "hitAt5": 1,
+            "hitAt10": 1,
+            "mrrAt10": 0.9038461538461539,
+            "allEvidenceAt5": 1,
+            "allEvidenceInContext": 1,
+            "evidenceRecallInContext": 1,
+            "meanContextChars": 3318.8076923076924
+          }
+        },
+        {
+          "name": "mxbai-xsmall-q8-thread",
+          "overall": {
+            "cases": 65,
+            "hitAt1": 0.7692307692307693,
+            "hitAt5": 0.9846153846153847,
+            "hitAt10": 0.9846153846153847,
+            "mrrAt10": 0.8743589743589744,
+            "allEvidenceAt5": 0.9538461538461539,
+            "allEvidenceInContext": 0.9538461538461539,
+            "evidenceRecallInContext": 0.9692307692307692,
+            "meanContextChars": 3458.8307692307694
+          },
+          "development": {
+            "cases": 39,
+            "hitAt1": 0.7692307692307693,
+            "hitAt5": 0.9743589743589743,
+            "hitAt10": 0.9743589743589743,
+            "mrrAt10": 0.8675213675213675,
+            "allEvidenceAt5": 0.9230769230769231,
+            "allEvidenceInContext": 0.9230769230769231,
+            "evidenceRecallInContext": 0.9487179487179487,
+            "meanContextChars": 3471.6666666666665
+          },
+          "validation": {
+            "cases": 26,
+            "hitAt1": 0.7692307692307693,
+            "hitAt5": 1,
+            "hitAt10": 1,
+            "mrrAt10": 0.8846153846153846,
+            "allEvidenceAt5": 1,
+            "allEvidenceInContext": 1,
+            "evidenceRecallInContext": 1,
+            "meanContextChars": 3439.576923076923
+          }
+        },
+        {
+          "name": "mxbai-xsmall-q4-t256-thread",
+          "overall": {
+            "cases": 65,
+            "hitAt1": 0.8153846153846154,
+            "hitAt5": 0.9846153846153847,
+            "hitAt10": 0.9846153846153847,
+            "mrrAt10": 0.9,
+            "allEvidenceAt5": 0.9538461538461539,
+            "allEvidenceInContext": 0.9538461538461539,
+            "evidenceRecallInContext": 0.9692307692307692,
+            "meanContextChars": 3322.3846153846152
+          },
+          "development": {
+            "cases": 39,
+            "hitAt1": 0.8205128205128205,
+            "hitAt5": 0.9743589743589743,
+            "hitAt10": 0.9743589743589743,
+            "mrrAt10": 0.8974358974358975,
+            "allEvidenceAt5": 0.9230769230769231,
+            "allEvidenceInContext": 0.9230769230769231,
+            "evidenceRecallInContext": 0.9487179487179487,
+            "meanContextChars": 3318.230769230769
+          },
+          "validation": {
+            "cases": 26,
+            "hitAt1": 0.8076923076923077,
+            "hitAt5": 1,
+            "hitAt10": 1,
+            "mrrAt10": 0.9038461538461539,
+            "allEvidenceAt5": 1,
+            "allEvidenceInContext": 1,
+            "evidenceRecallInContext": 1,
+            "meanContextChars": 3328.6153846153848
+          }
+        },
+        {
+          "name": "jina5-nano-q4-thread",
+          "overall": {
+            "cases": 65,
+            "hitAt1": 0.7846153846153846,
+            "hitAt5": 1,
+            "hitAt10": 1,
+            "mrrAt10": 0.885897435897436,
+            "allEvidenceAt5": 0.9538461538461539,
+            "allEvidenceInContext": 0.9538461538461539,
+            "evidenceRecallInContext": 0.9769230769230769,
+            "meanContextChars": 3384.892307692308
+          },
+          "development": {
+            "cases": 39,
+            "hitAt1": 0.7948717948717948,
+            "hitAt5": 1,
+            "hitAt10": 1,
+            "mrrAt10": 0.8867521367521366,
+            "allEvidenceAt5": 0.9230769230769231,
+            "allEvidenceInContext": 0.9230769230769231,
+            "evidenceRecallInContext": 0.9615384615384616,
+            "meanContextChars": 3482.2051282051284
+          },
+          "validation": {
+            "cases": 26,
+            "hitAt1": 0.7692307692307693,
+            "hitAt5": 1,
+            "hitAt10": 1,
+            "mrrAt10": 0.8846153846153846,
+            "allEvidenceAt5": 1,
+            "allEvidenceInContext": 1,
+            "evidenceRecallInContext": 1,
+            "meanContextChars": 3238.923076923077
+          }
+        },
+        {
+          "name": "jina5-nano-q8-thread",
+          "overall": {
+            "cases": 65,
+            "hitAt1": 0.8153846153846154,
+            "hitAt5": 1,
+            "hitAt10": 1,
+            "mrrAt10": 0.8992307692307693,
+            "allEvidenceAt5": 0.9692307692307692,
+            "allEvidenceInContext": 0.9692307692307692,
+            "evidenceRecallInContext": 0.9846153846153847,
+            "meanContextChars": 3407.076923076923
+          },
+          "development": {
+            "cases": 39,
+            "hitAt1": 0.8461538461538461,
+            "hitAt5": 1,
+            "hitAt10": 1,
+            "mrrAt10": 0.9089743589743591,
+            "allEvidenceAt5": 0.9487179487179487,
+            "allEvidenceInContext": 0.9487179487179487,
+            "evidenceRecallInContext": 0.9743589743589743,
+            "meanContextChars": 3497.6923076923076
+          },
+          "validation": {
+            "cases": 26,
+            "hitAt1": 0.7692307692307693,
+            "hitAt5": 1,
+            "hitAt10": 1,
+            "mrrAt10": 0.8846153846153846,
+            "allEvidenceAt5": 1,
+            "allEvidenceInContext": 1,
+            "evidenceRecallInContext": 1,
+            "meanContextChars": 3271.153846153846
+          }
+        },
+        {
+          "name": "mxbai-xsmall-q8-message",
+          "overall": {
+            "cases": 65,
+            "hitAt1": 0.49230769230769234,
+            "hitAt5": 0.9230769230769231,
+            "hitAt10": 0.9538461538461539,
+            "mrrAt10": 0.6676068376068376,
+            "allEvidenceAt5": 0.8769230769230769,
+            "allEvidenceInContext": 0.9076923076923077,
+            "evidenceRecallInContext": 0.9230769230769231,
+            "meanContextChars": 2403.0615384615385
+          },
+          "development": {
+            "cases": 39,
+            "hitAt1": 0.48717948717948717,
+            "hitAt5": 0.9230769230769231,
+            "hitAt10": 0.9230769230769231,
+            "mrrAt10": 0.6568376068376067,
+            "allEvidenceAt5": 0.8461538461538461,
+            "allEvidenceInContext": 0.8717948717948718,
+            "evidenceRecallInContext": 0.8974358974358975,
+            "meanContextChars": 2388.769230769231
+          },
+          "validation": {
+            "cases": 26,
+            "hitAt1": 0.5,
+            "hitAt5": 0.9230769230769231,
+            "hitAt10": 1,
+            "mrrAt10": 0.6837606837606838,
+            "allEvidenceAt5": 0.9230769230769231,
+            "allEvidenceInContext": 0.9615384615384616,
+            "evidenceRecallInContext": 0.9615384615384616,
+            "meanContextChars": 2424.5
+          }
+        },
+        {
+          "name": "browser-static-sse-v2-f32",
+          "overall": {
+            "cases": 65,
+            "hitAt1": 0.7230769230769231,
+            "hitAt5": 0.9692307692307692,
+            "hitAt10": 1,
+            "mrrAt10": 0.84,
+            "allEvidenceAt5": 0.9384615384615385,
+            "allEvidenceInContext": 0.9846153846153847,
+            "evidenceRecallInContext": 0.9923076923076923,
+            "meanContextChars": 5565.092307692307
+          },
+          "development": {
+            "cases": 39,
+            "hitAt1": 0.717948717948718,
+            "hitAt5": 0.9487179487179487,
+            "hitAt10": 1,
+            "mrrAt10": 0.8230769230769232,
+            "allEvidenceAt5": 0.8974358974358975,
+            "allEvidenceInContext": 0.9743589743589743,
+            "evidenceRecallInContext": 0.9871794871794872,
+            "meanContextChars": 5734.897435897436
+          },
+          "validation": {
+            "cases": 26,
+            "hitAt1": 0.7307692307692307,
+            "hitAt5": 1,
+            "hitAt10": 1,
+            "mrrAt10": 0.8653846153846154,
+            "allEvidenceAt5": 1,
+            "allEvidenceInContext": 1,
+            "evidenceRecallInContext": 1,
+            "meanContextChars": 5310.384615384615
+          }
+        },
+        {
+          "name": "browser-static-sse-v2-256",
+          "overall": {
+            "cases": 65,
+            "hitAt1": 0.6923076923076923,
+            "hitAt5": 0.9538461538461539,
+            "hitAt10": 0.9846153846153847,
+            "mrrAt10": 0.8171794871794872,
+            "allEvidenceAt5": 0.9230769230769231,
+            "allEvidenceInContext": 0.9846153846153847,
+            "evidenceRecallInContext": 0.9923076923076923,
+            "meanContextChars": 5563.076923076923
+          },
+          "development": {
+            "cases": 39,
+            "hitAt1": 0.6666666666666666,
+            "hitAt5": 0.9230769230769231,
+            "hitAt10": 0.9743589743589743,
+            "mrrAt10": 0.785042735042735,
+            "allEvidenceAt5": 0.8717948717948718,
+            "allEvidenceInContext": 0.9743589743589743,
+            "evidenceRecallInContext": 0.9871794871794872,
+            "meanContextChars": 5716.5641025641025
+          },
+          "validation": {
+            "cases": 26,
+            "hitAt1": 0.7307692307692307,
+            "hitAt5": 1,
+            "hitAt10": 1,
+            "mrrAt10": 0.8653846153846154,
+            "allEvidenceAt5": 1,
+            "allEvidenceInContext": 1,
+            "evidenceRecallInContext": 1,
+            "meanContextChars": 5332.846153846154
+          }
+        },
+        {
+          "name": "browser-static-sse-v2-f16",
+          "overall": {
+            "cases": 65,
+            "hitAt1": 0.7230769230769231,
+            "hitAt5": 0.9692307692307692,
+            "hitAt10": 1,
+            "mrrAt10": 0.84,
+            "allEvidenceAt5": 0.9384615384615385,
+            "allEvidenceInContext": 0.9846153846153847,
+            "evidenceRecallInContext": 0.9923076923076923,
+            "meanContextChars": 5565.092307692307
+          },
+          "development": {
+            "cases": 39,
+            "hitAt1": 0.717948717948718,
+            "hitAt5": 0.9487179487179487,
+            "hitAt10": 1,
+            "mrrAt10": 0.8230769230769232,
+            "allEvidenceAt5": 0.8974358974358975,
+            "allEvidenceInContext": 0.9743589743589743,
+            "evidenceRecallInContext": 0.9871794871794872,
+            "meanContextChars": 5734.897435897436
+          },
+          "validation": {
+            "cases": 26,
+            "hitAt1": 0.7307692307692307,
+            "hitAt5": 1,
+            "hitAt10": 1,
+            "mrrAt10": 0.8653846153846154,
+            "allEvidenceAt5": 1,
+            "allEvidenceInContext": 1,
+            "evidenceRecallInContext": 1,
+            "meanContextChars": 5310.384615384615
+          }
+        }
+      ]
+    }
+  },
+  "earlierCourseMaterial": {
+    "documents": 3350,
+    "passages": 4065,
+    "questions": 128,
+    "excludedQuestions": 43,
+    "scope": "Development course-material retrieval; only two discussion probes. Not comparable to the discussion benchmark.",
+    "bm25SixResults": {
+      "cases": 128,
+      "hitAt1": 0.3359375,
+      "hitAt5": 0.6015625,
+      "hitAt10": 0.6484375,
+      "mrrAt10": 0.44309895833333335
+    },
+    "bm25Wide": {
+      "cases": 128,
+      "hitAt1": 0.3359375,
+      "hitAt5": 0.6015625,
+      "hitAt10": 0.734375,
+      "mrrAt10": 0.4539000496031747
+    },
+    "models": [
+      {
+        "name": "jina5-nano-bf16",
+        "semantic": {
+          "cases": 128,
+          "hitAt1": 0.390625,
+          "hitAt5": 0.7578125,
+          "hitAt10": 0.828125,
+          "mrrAt10": 0.5453218005952382
+        },
+        "hybrid": {
+          "cases": 128,
+          "hitAt1": 0.375,
+          "hitAt5": 0.71875,
+          "hitAt10": 0.828125,
+          "mrrAt10": 0.517085193452381
+        }
+      },
+      {
+        "name": "jina5-small-bf16",
+        "semantic": {
+          "cases": 128,
+          "hitAt1": 0.359375,
+          "hitAt5": 0.7109375,
+          "hitAt10": 0.8203125,
+          "mrrAt10": 0.5092726934523811
+        },
+        "hybrid": {
+          "cases": 128,
+          "hitAt1": 0.3671875,
+          "hitAt5": 0.6953125,
+          "hitAt10": 0.828125,
+          "mrrAt10": 0.5128968253968256
+        }
+      },
+      {
+        "name": "harrier-270m-bf16",
+        "semantic": {
+          "cases": 128,
+          "hitAt1": 0.2734375,
+          "hitAt5": 0.53125,
+          "hitAt10": 0.65625,
+          "mrrAt10": 0.39500248015873024
+        },
+        "hybrid": {
+          "cases": 128,
+          "hitAt1": 0.296875,
+          "hitAt5": 0.6171875,
+          "hitAt10": 0.71875,
+          "mrrAt10": 0.4357483878968257
+        }
+      },
+      {
+        "name": "harrier-600m-bf16",
+        "semantic": {
+          "cases": 128,
+          "hitAt1": 0.3359375,
+          "hitAt5": 0.703125,
+          "hitAt10": 0.7890625,
+          "mrrAt10": 0.4880084325396827
+        },
+        "hybrid": {
+          "cases": 128,
+          "hitAt1": 0.3515625,
+          "hitAt5": 0.6953125,
+          "hitAt10": 0.796875,
+          "mrrAt10": 0.4961557539682541
+        }
+      },
+      {
+        "name": "qwen3-600m-bf16",
+        "semantic": {
+          "cases": 128,
+          "hitAt1": 0.3125,
+          "hitAt5": 0.5703125,
+          "hitAt10": 0.671875,
+          "mrrAt10": 0.4231646825396827
+        },
+        "hybrid": {
+          "cases": 128,
+          "hitAt1": 0.28125,
+          "hitAt5": 0.6171875,
+          "hitAt10": 0.7265625,
+          "mrrAt10": 0.42827380952380956
+        }
+      },
+      {
+        "name": "nemotron3-1b-bf16",
+        "semantic": {
+          "cases": 128,
+          "hitAt1": 0.453125,
+          "hitAt5": 0.765625,
+          "hitAt10": 0.859375,
+          "mrrAt10": 0.5910683283730159
+        },
+        "hybrid": {
+          "cases": 128,
+          "hitAt1": 0.390625,
+          "hitAt5": 0.75,
+          "hitAt10": 0.8203125,
+          "mrrAt10": 0.5340897817460318
+        }
+      },
+      {
+        "name": "gemma2-bf16",
+        "semantic": {
+          "cases": 128,
+          "hitAt1": 0.3203125,
+          "hitAt5": 0.6328125,
+          "hitAt10": 0.734375,
+          "mrrAt10": 0.44278893849206374
+        },
+        "hybrid": {
+          "cases": 128,
+          "hitAt1": 0.34375,
+          "hitAt5": 0.703125,
+          "hitAt10": 0.796875,
+          "mrrAt10": 0.48982824900793664
+        }
+      },
+      {
+        "name": "pplx-600m-bf16",
+        "semantic": {
+          "cases": 128,
+          "hitAt1": 0.34375,
+          "hitAt5": 0.65625,
+          "hitAt10": 0.7734375,
+          "mrrAt10": 0.48733258928571443
+        },
+        "hybrid": {
+          "cases": 128,
+          "hitAt1": 0.328125,
+          "hitAt5": 0.6953125,
+          "hitAt10": 0.7890625,
+          "mrrAt10": 0.4769469246031748
+        }
+      },
+      {
+        "name": "lfm25-350m-bf16",
+        "semantic": {
+          "cases": 128,
+          "hitAt1": 0.359375,
+          "hitAt5": 0.7109375,
+          "hitAt10": 0.8125,
+          "mrrAt10": 0.5063089037698414
+        },
+        "hybrid": {
+          "cases": 128,
+          "hitAt1": 0.375,
+          "hitAt5": 0.75,
+          "hitAt10": 0.8515625,
+          "mrrAt10": 0.5280288938492066
+        }
+      },
+      {
+        "name": "gemma1-q8",
+        "semantic": {
+          "cases": 128,
+          "hitAt1": 0.34375,
+          "hitAt5": 0.6640625,
+          "hitAt10": 0.734375,
+          "mrrAt10": 0.4770585317460319
+        },
+        "hybrid": {
+          "cases": 128,
+          "hitAt1": 0.3515625,
+          "hitAt5": 0.6875,
+          "hitAt10": 0.796875,
+          "mrrAt10": 0.4977740575396827
+        }
+      },
+      {
+        "name": "gemma1-q4",
+        "semantic": {
+          "cases": 128,
+          "hitAt1": 0.3203125,
+          "hitAt5": 0.65625,
+          "hitAt10": 0.7109375,
+          "mrrAt10": 0.45619419642857156
+        },
+        "hybrid": {
+          "cases": 128,
+          "hitAt1": 0.34375,
+          "hitAt5": 0.65625,
+          "hitAt10": 0.8125,
+          "mrrAt10": 0.48519035218253986
+        }
+      },
+      {
+        "name": "jina5-nano-q8",
+        "semantic": {
+          "cases": 128,
+          "hitAt1": 0.390625,
+          "hitAt5": 0.75,
+          "hitAt10": 0.828125,
+          "mrrAt10": 0.5446707589285716
+        },
+        "hybrid": {
+          "cases": 128,
+          "hitAt1": 0.375,
+          "hitAt5": 0.7265625,
+          "hitAt10": 0.8203125,
+          "mrrAt10": 0.5181268601190476
+        }
+      },
+      {
+        "name": "jina5-nano-q4",
+        "semantic": {
+          "cases": 128,
+          "hitAt1": 0.3984375,
+          "hitAt5": 0.765625,
+          "hitAt10": 0.8515625,
+          "mrrAt10": 0.5530350942460318
+        },
+        "hybrid": {
+          "cases": 128,
+          "hitAt1": 0.3828125,
+          "hitAt5": 0.734375,
+          "hitAt10": 0.8359375,
+          "mrrAt10": 0.5311011904761904
+        }
+      },
+      {
+        "name": "granite-small-r2-q8",
+        "semantic": {
+          "cases": 128,
+          "hitAt1": 0.3046875,
+          "hitAt5": 0.6484375,
+          "hitAt10": 0.734375,
+          "mrrAt10": 0.44972408234127004
+        },
+        "hybrid": {
+          "cases": 128,
+          "hitAt1": 0.3359375,
+          "hitAt5": 0.6640625,
+          "hitAt10": 0.8046875,
+          "mrrAt10": 0.4762121775793653
+        }
+      },
+      {
+        "name": "arctic-xs-q8",
+        "semantic": {
+          "cases": 128,
+          "hitAt1": 0.2421875,
+          "hitAt5": 0.5859375,
+          "hitAt10": 0.6875,
+          "mrrAt10": 0.3778180803571431
+        },
+        "hybrid": {
+          "cases": 128,
+          "hitAt1": 0.28125,
+          "hitAt5": 0.609375,
+          "hitAt10": 0.7734375,
+          "mrrAt10": 0.4307756696428574
+        }
+      },
+      {
+        "name": "minilm-l6-q8",
+        "semantic": {
+          "cases": 128,
+          "hitAt1": 0.2734375,
+          "hitAt5": 0.546875,
+          "hitAt10": 0.640625,
+          "mrrAt10": 0.39492807539682545
+        },
+        "hybrid": {
+          "cases": 128,
+          "hitAt1": 0.296875,
+          "hitAt5": 0.609375,
+          "hitAt10": 0.7109375,
+          "mrrAt10": 0.42293836805555557
+        }
+      }
+    ]
+  }
+}

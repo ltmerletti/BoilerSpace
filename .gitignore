@@ -1,6 +1,8 @@
 .verify-tmp/
 .chrome-profile/
 node_modules/
+__pycache__/
+*.pyc
 .freebuff/
 .DS_Store
 .env

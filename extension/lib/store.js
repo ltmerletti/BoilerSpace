@@ -17,6 +17,7 @@ export const KEYS = {
   chat: 'chat',
   chats: 'chats',
   ui: 'ui',
+  discussions: 'discussions',
 };
 
 export async function get(key, fallback = null) {

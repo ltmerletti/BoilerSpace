@@ -101,17 +101,17 @@ const FAKE_HOME = `<!doctype html><html><head><meta charset="utf-8"><title>Homep
 <style>
   body { margin: 0; font-family: Lato, Arial, sans-serif; background: #f1f2f3; color: #202122; }
   d2l-navigation { display: block; background: #fff; border-bottom: 1px solid #d3d9e3; }
-  d2l-navigation-main-header { display: flex; justify-content: space-between; align-items: center; height: 64px; padding: 0 24px; }
-  .d2l-navigation-s-header-right { display: flex; align-items: center; gap: 18px; height: 100%; }
+  d2l-labs-navigation-main-header { display: flex; justify-content: space-between; align-items: center; height: 64px; padding: 0 24px; }
+  .d2l-labs-navigation-header-right { display: flex; align-items: center; gap: 18px; height: 100%; }
   .icon { width: 24px; height: 24px; border-radius: 50%; background: #cdd5dc; }
   .links { background: #000; color: #fff; padding: 10px 24px; font-size: 14px; display: flex; gap: 28px; }
   main { padding: 28px 24px; } .card { background: #fff; border-radius: 8px; padding: 18px; max-width: 760px; margin-bottom: 16px; }
 </style>
 <script>localStorage.setItem('XSRF.Token', 'xsrf-123');</script></head>
-<body><d2l-navigation><d2l-navigation-main-header>
+<body><d2l-navigation><d2l-labs-navigation-main-header>
   <div slot="left"><strong>PURDUE</strong> Brightspace</div>
-  <div slot="right" class="d2l-navigation-s-header-right"><span class="icon"></span><span class="icon"></span><span class="icon"></span><span>Boiler Maker</span></div>
-</d2l-navigation-main-header><div class="links"><span>My Courses</span><span>Calendar</span><span>Resources</span></div></d2l-navigation>
+  <div slot="right" class="d2l-labs-navigation-header-right"><span class="icon"></span><span class="icon"></span><span class="icon"></span><span>Boiler Maker</span></div>
+</d2l-labs-navigation-main-header><div class="links"><span>My Courses</span><span>Calendar</span><span>Resources</span></div></d2l-navigation>
 <main><div class="card"><h2>My Courses</h2><p>CS 25200, Civics Knowledge Test, Scholarly Project Milestones</p></div><div class="card"><h2>Announcements</h2><p>Nothing new.</p></div></main>
 </body></html>`;
 
@@ -346,7 +346,7 @@ try {
   bs.on('pageerror', (err) => consoleErrors.push(`brightspace: ${err.message}`));
   await bs.setViewportSize({ width: 1280, height: 860 });
   await bs.goto('https://purdue.brightspace.com/d2l/home');
-  const navButton = bs.locator('.d2l-navigation-s-header-right .boilerspace-nav-item button');
+  const navButton = bs.locator('.boilerspace-nav-item button');
   await navButton.waitFor({ timeout: 15_000 });
   check('BoilerSpace button sits in the Brightspace navbar', (await navButton.textContent()).includes('BoilerSpace'));
   await bs.screenshot({ path: path.join(outDir, '7-brightspace-navbar.png'), clip: { x: 0, y: 0, width: 1280, height: 120 } });
@@ -515,6 +515,14 @@ try {
   await bs.goto('https://purdue.brightspace.com/d2l/lms/quizzing/user/attempt/quiz_start_frame_auto.d2l?ou=1600001');
   await sleep(2000);
   check('nothing is added on quiz attempt pages', (await bs.locator('#boilerspace-root, .boilerspace-nav-item').count()) === 0);
+
+  await worker.evaluate(() => chrome.storage.local.set({ drawerOpen: false }));
+  const legacy = await context.newPage();
+  await legacy.route('https://purdue.brightspace.com/d2l/legacy-navbar', route => route.fulfill({ contentType: 'text/html', body: FAKE_HOME.replaceAll('d2l-labs-navigation-main-header', 'd2l-navigation-main-header').replaceAll('d2l-labs-navigation-header-right', 'd2l-navigation-s-header-right') }));
+  await legacy.goto('https://purdue.brightspace.com/d2l/legacy-navbar');
+  await legacy.locator('.boilerspace-nav-item button').waitFor();
+  check('the older Brightspace header remains supported', await legacy.locator('.boilerspace-nav-item button').isVisible());
+  await legacy.close();
 
   check('no page errors', consoleErrors.length === 0, consoleErrors.join(' | '));
 } catch (error) {

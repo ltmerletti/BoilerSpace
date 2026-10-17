@@ -243,7 +243,9 @@
   function navbarSlot() {
     return (
       document.querySelector('.d2l-navigation-s-header-right') ??
+      document.querySelector('.d2l-labs-navigation-header-right') ??
       document.querySelector('d2l-navigation-main-header [slot="right"]') ??
+      document.querySelector('d2l-labs-navigation-main-header [slot="right"]') ??
       document.querySelector('d2l-navigation-main-header .d2l-navigation-header-right')
     );
   }

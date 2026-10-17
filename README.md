@@ -10,7 +10,7 @@ Understand a lecture. Plan your exam review. Find the clarification you missed.
 
 BoilerSpace brings your Purdue course material, syllabi, deadlines, and Ed and Piazza discussions into one browser side panel. Ask a question, let it look through the material, and follow the citations back to the source.
 
-[**Get started**](#get-started) · [See it in use](#see-it-in-use) · [Privacy](PRIVACY.md)
+[**Get started**](#get-started) · [See it in use](#see-it-in-use) · [Changelog](CHANGELOG.md) · [Privacy](PRIVACY.md)
 
 [![CI](https://github.com/ltmerletti/BoilerSpace/actions/workflows/ci.yml/badge.svg)](https://github.com/ltmerletti/BoilerSpace/actions/workflows/ci.yml)
 [![License: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)

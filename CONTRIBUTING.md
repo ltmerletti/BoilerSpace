@@ -4,7 +4,7 @@ Bug reports, fixes, and focused improvements are welcome. For a larger change, o
 
 ## Local setup
 
-The extension runs directly from `extension/`. There is no bundler or production dependency install. Load that directory using the [README instructions](README.md#install), reload the extension after edits, and refresh Brightspace.
+The extension runs directly from `extension/`. There is no bundler or production dependency install. Load that directory using the [README instructions](README.md#get-started), reload the extension after edits, and refresh Brightspace.
 
 Development checks use Node.js 22 or newer. The browser checks below use Playwright 1.58.2, the version used for the current live verification. Playwright is a development tool, not part of the extension.
 
@@ -99,3 +99,9 @@ For bugs, include the browser/version, extension commit or version, reproduction
 Pull requests should state what changed and the checks performed, including any checks that could not be run. Contributions to BoilerSpace's original code are submitted under the repository's GPLv3 license. No separate contributor agreement is required.
 
 Follow the [code of conduct](CODE_OF_CONDUCT.md). Report vulnerabilities through [SECURITY.md](SECURITY.md), rather than posting sensitive details in a public issue.
+
+## Changelog entries
+
+Add meaningful changes to [CHANGELOG.md](CHANGELOG.md). Start with what the student can do or what was getting in their way, then explain the reason for the change in one or two sentences. Link the implementation commit so a reader can inspect it. Keep separate commits distinct when they fix different problems.
+
+Group entries by date in West Lafayette time, newest first. Use **In progress** for work that has not reached main. Put test tooling and research under the day's expandable section so they remain available without crowding the product changes. Merge links can record when a group landed; do not repeat every change under the merge. Describe the actual scope of a fix and retain relevant limits instead of claiming that a feature is now flawless.

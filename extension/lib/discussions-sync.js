@@ -9,7 +9,7 @@ async function readSite(platform, args) {
   if (!origins || !(await chrome.permissions.contains({ origins }))) throw new Error(`Allow ${platform === 'ed' ? 'Ed' : 'Piazza'} access by connecting it in Settings.`);
   const tabs = await chrome.tabs.query({ url: origins });
   const url = platform === 'ed' ? 'https://edstem.org/us/' : args.remoteId ? `https://piazza.com/class/${args.remoteId}` : 'https://piazza.com/';
-  let tab = tabs.filter((t) => platform === 'ed' || (args.remoteId ? new URL(t.url).pathname === `/class/${args.remoteId}` : args.discover))
+  let tab = tabs.filter((t) => platform === 'ed' || (args.remoteId ? new URL(t.url).pathname.replace(/\/+$/, '') === `/class/${args.remoteId}` : args.discover))
     .sort((a, b) => Number(b.active ?? false) - Number(a.active ?? false) || (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0))[0];
   const created = !tab;
   if (!tab) {

@@ -41,7 +41,7 @@ test('a newly opened Firefox reader waits for the site URL after about:blank rep
   setup(async () => ({ courses: [{ remoteId: '1', name: 'CS 25200' }] }));
   let polls = 0, removed = false;
   chrome.tabs.query = async () => [];
-  chrome.tabs.create = async () => ({ id: 99 });
+  chrome.tabs.create = async options => { assert.equal(options.active, false, 'automatic readers never request focus'); return { id: 99 }; };
   chrome.tabs.update = async () => ({ id: 99, url: 'about:blank', status: 'complete' });
   chrome.tabs.get = async () => ({ status: 'complete', url: ++polls === 1 ? 'about:blank' : 'https://edstem.org/us/' });
   chrome.tabs.remove = async id => { assert.equal(id, 99); removed = true; };
@@ -50,6 +50,15 @@ test('a newly opened Firefox reader waits for the site URL after about:blank rep
   await handleDiscussionRequest({ action: 'connect', platform: 'ed' });
   assert.equal(polls, 2);
   assert.equal(removed, true);
+});
+
+test('Piazza reuses an existing class tab with a trailing slash and leaves it open', async () => {
+  setup(async () => ({ courses: [{ remoteId: 'example123', name: 'CS 25200' }] }));
+  chrome.tabs.query = async () => [{ id: 8, url: 'https://piazza.com/class/example123/?cid=12#discussion', active: false, status: 'complete' }];
+  chrome.tabs.create = async () => assert.fail('The existing class tab should be reused');
+  chrome.tabs.remove = async () => assert.fail('A user-owned class tab must stay open');
+  const result = await handleDiscussionRequest({ action: 'connect', platform: 'piazza', url: 'https://piazza.com/class/example123' });
+  assert.equal(result.sources[0].id, 'piazza:example123');
 });
 
 test('Ed connect discovers all active courses and refreshes them independently', async () => {

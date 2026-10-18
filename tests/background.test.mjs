@@ -24,7 +24,7 @@ test('Firefox keeps the native message promise pending until the shared handler 
   let listener, finish;
   const values = {};
   globalThis.chrome = {
-    runtime: { onMessage: { addListener: fn => { listener = fn; } } },
+    runtime: { id: 'test', getURL: file => `moz-extension://test/${file}`, onMessage: { addListener: fn => { listener = fn; } } },
     action: { onClicked: { addListener() {} } },
     permissions: {
       contains: () => new Promise(resolve => { finish = resolve; }),
@@ -39,7 +39,7 @@ test('Firefox keeps the native message promise pending until the shared handler 
   try {
     await import('../extension/background-firefox.js');
     assert.equal(listener({ type: 'unrelated' }, {}), false);
-    const response = listener({ type: 'boilerspace-syllabus-access' }, {});
+    const response = listener({ type: 'boilerspace-syllabus-access' }, { id: 'test', url: 'moz-extension://test/sidepanel.html' });
     assert.ok(response instanceof Promise, 'Firefox tracks the asynchronous response itself');
     while (!finish) await new Promise(resolve => setTimeout(resolve, 1));
     let settled = false;
@@ -52,6 +52,32 @@ test('Firefox keeps the native message promise pending until the shared handler 
     delete globalThis.chrome;
     delete globalThis.browser;
   }
+});
+
+test('background data writes and privileged readers reject untrusted senders', async () => {
+  const { handleMessage } = await import('../extension/lib/background-handlers.js');
+  let tabs = 0, writes = 0;
+  globalThis.chrome = {
+    runtime: { id: 'test', getURL: file => `moz-extension://test/${file}` },
+    tabs: { create: async () => { tabs++; throw new Error('Unexpected tab'); } },
+    storage: { local: { set: async () => { writes++; } } },
+  };
+  try {
+    for (const sender of [{}, { id: 'other', url: 'moz-extension://test/sidepanel.html' }, { id: 'test', url: 'https://untrusted.example/', tab: { id: 2 } }, { id: 'test', url: 'https://purdue.brightspace.com/d2l/home', tab: { id: 3 } }]) {
+      for (const type of ['boilerspace-save-syllabus', 'boilerspace-open-syllabus-access', 'boilerspace-discussions', 'boilerspace-gradescope']) {
+        assert.equal(handleMessage({ type, action: 'connect' }, sender, () => {}), false);
+      }
+    }
+    assert.equal(tabs, 0);
+    assert.equal(writes, 0);
+    const sender = { id: 'test', url: 'moz-extension://test/sidepanel.html' };
+    const request = message => new Promise(resolve => assert.equal(handleMessage({ type: 'boilerspace-syllabus', ...message }, sender, resolve), true));
+    assert.match((await request({ origin: 'https://untrusted.example', phase: 'links', courseId: 1 })).error, /Unexpected syllabus site/);
+    assert.match((await request({ phase: 'links', courseId: '../account' })).error, /Invalid syllabus course/);
+    assert.match((await request({ phase: 'page', href: 'https://untrusted.example/d2l/home' })).error, /Unexpected syllabus page/);
+    assert.match((await request({ phase: 'page', href: '/not-a-course' })).error, /Unexpected syllabus page/);
+    assert.equal(tabs, 0);
+  } finally { delete globalThis.chrome; }
 });
 
 test('revoking Ed site access clears its session credential', async () => {

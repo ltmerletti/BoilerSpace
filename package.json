@@ -1,6 +1,6 @@
 {
   "name": "boilerspace",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "description": "A planner and course assistant for Purdue Brightspace.",
   "license": "GPL-3.0-only",
   "author": "Luke Merletti",
@@ -17,10 +17,14 @@
   },
   "scripts": {
     "test": "node --test tests/*.test.mjs",
+    "build": "node scripts/build-release.mjs",
+    "lint:firefox": "node scripts/lint-release.mjs",
     "browser:live": "node scripts/live-browser.mjs",
     "icons": "node scripts/make-icons.mjs"
   },
   "devDependencies": {
-    "playwright": "1.58.2"
+    "addons-linter": "10.14.0",
+    "playwright": "1.58.2",
+    "puppeteer-core": "25.14.0"
   }
 }

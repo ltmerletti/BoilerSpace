@@ -10,7 +10,7 @@ const temp = mkdtempSync(path.join(tmpdir(), 'boilerspace-recovery-'));
 const extension = path.join(temp, 'extension'), profile = path.join(temp, 'profile');
 const out = process.env.VERIFY_OUT ?? '.verify-tmp/discussion-recovery';
 mkdirSync(out, { recursive: true });
-cpSync('extension', extension, { recursive: true });
+cpSync(process.env.VERIFY_EXTENSION ?? 'extension', extension, { recursive: true });
 const manifest = JSON.parse(readFileSync(path.join(extension, 'manifest.json')));
 manifest.host_permissions.push(...manifest.optional_host_permissions);
 manifest.optional_host_permissions = [];

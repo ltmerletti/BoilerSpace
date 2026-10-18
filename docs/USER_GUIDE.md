@@ -6,7 +6,7 @@
 
 Sign into Purdue Brightspace, then click **BoilerSpace** in the course navigation bar. The arrow at the edge of the panel opens or closes it. You can also use the extension's browser toolbar button. Chrome opens a side panel; Firefox and Zen open a sidebar.
 
-BoilerSpace currently supports Chrome 116+ and Firefox 128+, including compatible Zen releases. Use a current browser version. Other universities' Brightspace installations are not configured.
+BoilerSpace supports desktop Chrome 124+ and Firefox 140+, including compatible Zen releases. Use a current browser version. Private browsing and other universities' Brightspace installations are not supported.
 
 ## Connect your accounts
 

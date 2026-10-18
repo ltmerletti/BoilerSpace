@@ -8,6 +8,19 @@ The extension runs directly from `extension/`. There is no bundler or production
 
 Development checks use Node.js 22 or newer. The browser checks below use Playwright 1.58.2, the version used for the current live verification. Playwright is a development tool, not part of the extension.
 
+### Release packages
+
+Run `npm ci --ignore-scripts`, `npm run build`, then `npm run lint:firefox`. This produces separate Firefox and Chrome packages and a reproducible source archive in the ignored `dist/` directory. The Firefox package uses its event-page background and sidebar; Chrome uses its service worker and side panel. Build instructions, reviewer notes, listing copy and the submission gate are in [Release](docs/RELEASE.md).
+
+Browser suites accept `VERIFY_EXTENSION=dist/chrome` to check the built Chrome package; CI uses that path. The official Firefox package check installs the unmodified ZIP, opens the real embedded panel, syncs synthetic courses, reads a PDF, runs the bundled semantic worker, exercises Ask with a synthetic model and source citations, verifies permission recovery, and reloads the extension with saved chats. Run it with:
+
+```sh
+npx --no-install @puppeteer/browsers install firefox@stable --path .verify-tmp/browsers
+BOILERSPACE_FIXTURES_DIR=.verify-tmp/Brightspace-Bar/session-capture/tests/fixtures node scripts/verify-release-firefox.mjs
+```
+
+`FIREFOX_PATH` can select an existing official Firefox executable instead. The test always creates a disposable profile. On macOS it starts that profile through LaunchServices to avoid the upstream direct-launch profile-access failure. It does not attach to your personal Firefox or Zen session. Temporary installation through browser automation bypasses the store install prompt; the signed installation and its native consent prompt still need a release check after Mozilla signs the package.
+
 ### Unit tests
 
 Some Brightspace API tests use the public MIT-licensed fixtures from [Brightspace Bar](https://github.com/DavidChen-006/Brightspace-Bar). Keep that checkout inside the ignored test directory:

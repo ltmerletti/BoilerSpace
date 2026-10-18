@@ -14,6 +14,8 @@ The extension uses `chrome.storage.local` / the compatible Firefox extension sto
 
 This data is not placed in the browser's extension sync storage. Copies in other browser profiles or devices are separate. Treat an authenticated browser profile and its extension storage as sensitive.
 
+BoilerSpace does not run in private browsing. The Firefox package uses Firefox's built-in installation consent for authentication information, personal communications and website content. Those categories cover the service sign-ins, questions, discussion excerpts and course content described below; they do not authorize analytics or advertising.
+
 ## Requests to Purdue services
 
 | Service | What BoilerSpace uses it for |

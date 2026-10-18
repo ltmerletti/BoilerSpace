@@ -8,7 +8,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { fakeBrightspace, MODEL_OUTPUT, pdfWithPages, snapshotFixture, SYLLABUS_PAGES } from '../tests/helpers.mjs';
+import { fakeBrightspace, MODEL_OUTPUT, pdfWithPages, pdfWithJpxImage, snapshotFixture, SYLLABUS_PAGES } from '../tests/helpers.mjs';
 import { validateExtraction } from '../extension/lib/syllabus.js';
 
 async function showSources(answer) {
@@ -21,7 +21,7 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 const playwrightPath = process.argv[2] ?? path.join(root, '../course-companion/node_modules/playwright/index.mjs');
 const { chromium } = await import(pathToFileURL(playwrightPath).href);
 
-const extensionPath = path.join(root, 'extension');
+const extensionPath = process.env.VERIFY_EXTENSION ?? path.join(root, 'extension');
 const outDir = process.env.VERIFY_OUT ?? path.join(root, 'verification');
 mkdirSync(outDir, { recursive: true });
 const profile = mkdtempSync(path.join(process.env.VERIFY_TMP ?? tmpdir(), 'boilerspace-verify-'));
@@ -207,6 +207,14 @@ try {
     return extractText({ bytes: new Uint8Array(bytes), fileName: 'syllabus.pdf', contentType: 'application/pdf' });
   }, pdfBytes);
   check('pdf.js reads PDF text page by page', pdf.pages.length === 2 && /Late policy: 10% off per day/.test(pdf.pages[1].text), JSON.stringify(pdf.pages.map((p) => p.text)));
+  const pixels = await page.evaluate(async bytes => {
+    const picture = await (await import('./lib/extract.js')).pagePicture(new Uint8Array(bytes), 'page 1');
+    const image = await createImageBitmap(await (await fetch(`data:${picture.mediaType};base64,${picture.data}`)).blob());
+    const canvas = new OffscreenCanvas(image.width, image.height), ctx = canvas.getContext('2d');
+    ctx.drawImage(image, 0, 0);
+    return [Array.from(ctx.getImageData(image.width / 4, image.height / 2, 1, 1).data), Array.from(ctx.getImageData(image.width * 3 / 4, image.height / 2, 1, 1).data)];
+  }, [...pdfWithJpxImage()]);
+  check('JPEG2000 image pages render their pixels using bundled codecs', pixels[0][0] > 180 && pixels[0][2] < 70 && pixels[1][2] > 180 && pixels[1][0] < 70);
 
   await page.evaluate(async (data) => {
     await chrome.storage.local.clear();

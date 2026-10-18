@@ -1,6 +1,7 @@
 .verify-tmp/
 .chrome-profile/
 node_modules/
+dist/
 __pycache__/
 *.pyc
 .freebuff/

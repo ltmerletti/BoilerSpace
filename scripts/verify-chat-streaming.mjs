@@ -9,10 +9,11 @@ const profile = mkdtempSync(path.join(tmpdir(), 'boilerspace-stream-'));
 const out = process.env.VERIFY_OUT ?? '.verify-tmp/chat-streaming';
 mkdirSync(out, { recursive: true });
 const checks = [], errors = [];
+const extension = path.resolve(process.env.VERIFY_EXTENSION ?? 'extension');
 const check = (name, result) => { assert.ok(result, name); checks.push(name); console.log(`PASS  ${name}`); };
 let context;
 try {
-  context = await chromium.launchPersistentContext(profile, { headless: true, channel: 'chromium', viewport: { width: 400, height: 750 }, args: [`--disable-extensions-except=${path.resolve('extension')}`, `--load-extension=${path.resolve('extension')}`] });
+  context = await chromium.launchPersistentContext(profile, { headless: true, channel: 'chromium', viewport: { width: 400, height: 750 }, args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`] });
   await context.route('https://**/*', route => route.abort());
   let [worker] = context.serviceWorkers();
   worker ??= await context.waitForEvent('serviceworker');

@@ -70,7 +70,7 @@ original.addEventListener('click', async () => {
       if (!file.bytes) throw new Error('The original PDF could not be opened. The saved text is still available.');
       const pdfjs = await import('./vendor/pdfjs/pdf.min.mjs');
       pdfjs.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL('vendor/pdfjs/pdf.worker.min.mjs');
-      pdf = await pdfjs.getDocument({ data: file.bytes, isEvalSupported: false, cMapUrl: chrome.runtime.getURL('vendor/pdfjs/cmaps/'), cMapPacked: true, standardFontDataUrl: chrome.runtime.getURL('vendor/pdfjs/standard_fonts/') }).promise;
+      pdf = await pdfjs.getDocument({ data: file.bytes, isEvalSupported: false, wasmUrl: chrome.runtime.getURL('vendor/pdfjs/wasm/'), cMapUrl: chrome.runtime.getURL('vendor/pdfjs/cmaps/'), cMapPacked: true, standardFontDataUrl: chrome.runtime.getURL('vendor/pdfjs/standard_fonts/') }).promise;
     }
     showPdf = !showPdf;
     original.textContent = showPdf ? 'Show saved text' : 'Show original PDF';

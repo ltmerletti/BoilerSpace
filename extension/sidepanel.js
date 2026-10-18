@@ -27,6 +27,8 @@ const MAX_CHAT_MESSAGES = 40;
 const MAX_CHATS = 30;
 const MAX_THOUGHT_CHARS = 4000;
 const VIEW_NAMES = ['week', 'courses', 'ask', 'settings'];
+const THEMES = ['light', 'dark', 'system'];
+const systemColorScheme = matchMedia('(prefers-color-scheme: dark)');
 const QUIZ_ATTEMPT_PATH = '/d2l/lms/quizzing/user/attempt/';
 const HOST_ORIGINS = ['https://purdue.brightspace.com/*', 'https://genai.rcac.purdue.edu/*', 'https://purdue.simplesyllabus.com/*'];
 const PARAMS = new URLSearchParams(location.search);
@@ -47,6 +49,7 @@ const STANCE_SENTENCE = {
 
 const state = {
   view: 'week',
+  theme: 'system',
   courseId: null,
   snapshot: null,
   syncMeta: null,
@@ -175,6 +178,7 @@ async function loadChats(all) {
 
 async function loadState({ includeChat = false } = {}) {
   const all = await store.getAll();
+  applyTheme(all.theme ?? 'system');
   if (includeChat) {
     state.chats = await loadChats(all);
     const ui = all.ui ?? {};
@@ -1765,6 +1769,31 @@ function modelField() {
   );
 }
 
+function applyTheme(preference = state.theme) {
+  state.theme = THEMES.includes(preference) ? preference : 'system';
+  document.documentElement.dataset.theme = state.theme;
+  document.documentElement.dataset.colorScheme = state.theme === 'system' ? (systemColorScheme.matches ? 'dark' : 'light') : state.theme;
+  for (const input of document.querySelectorAll('.theme-options input')) input.checked = input.value === state.theme;
+}
+
+function themeSetting() {
+  return h('section', { class: 'settings-group' },
+    h('div', { class: 'theme-row' },
+      h('h2', { class: 'heading', id: 'theme-label' }, 'Theme'),
+      h('div', { class: 'theme-options', role: 'radiogroup', 'aria-labelledby': 'theme-label' }, THEMES.map(theme =>
+        h('label', { class: 'theme-option' },
+          h('input', { type: 'radio', name: 'theme', value: theme, checked: state.theme === theme, onchange: async () => {
+            applyTheme(theme);
+            try { await store.set(store.KEYS.theme, theme); }
+            catch (error) { setStatus(`Could not save theme: ${error.message}`); }
+          } }),
+          h('span', null, theme[0].toUpperCase() + theme.slice(1)),
+        ),
+      )),
+    ),
+  );
+}
+
 function settingsView() {
   const meta = state.syncMeta;
   const errors = meta?.errors ?? [];
@@ -1797,6 +1826,7 @@ function settingsView() {
     }),
     discussionsSettings(),
     h('p', { class: 'connections-note' }, 'Discussions update every 20 minutes while BoilerSpace is open.'),
+    themeSetting(),
     h('section', { class: 'settings-group' },
       h('div', { class: 'calendar-row' }, h('h2', { class: 'heading' }, 'Calendar'), h('button', { class: 'text-button', type: 'button', disabled: !state.snapshot, onclick: exportCalendar }, 'Export calendar (.ics)')),
     ),
@@ -1951,6 +1981,7 @@ async function attempt(fn) {
 }
 
 async function init() {
+  systemColorScheme.addEventListener('change', () => { if (state.theme === 'system') applyTheme(); });
   if (CONNECT_PAGE || ACCESS_PAGE || DISCUSSION_ACCESS) document.querySelector('.tabs').hidden = true;
   for (const button of document.querySelectorAll('.tabs button')) {
     button.addEventListener('click', () => {
@@ -1980,6 +2011,7 @@ async function init() {
 
   store.onChange(async (changes) => {
     const keys = Object.keys(changes);
+    if (changes.theme) applyTheme(changes.theme.newValue ?? 'system');
     if (changes.chats && !state.pending) {
       const chats = changes.chats.newValue ?? [];
       if (JSON.stringify(chats) !== JSON.stringify(state.chats)) {
@@ -1988,7 +2020,7 @@ async function init() {
         if (state.view === 'ask') render();
       }
     }
-    if (keys.every((k) => ['chat', 'chats', 'ui', 'drawerOpen', 'drawerWidth'].includes(k))) return;
+    if (keys.every((k) => ['chat', 'chats', 'ui', 'drawerOpen', 'drawerWidth', 'theme'].includes(k))) return;
     if (keys.every((k) => ['syncLock', 'syncProgress'].includes(k))) {
       if (changes.syncLock) state.syncLock = changes.syncLock.newValue ?? null;
       if (changes.syncProgress) state.progress = changes.syncProgress.newValue ?? null;

@@ -17,6 +17,7 @@ export const KEYS = {
   chat: 'chat',
   chats: 'chats',
   ui: 'ui',
+  theme: 'theme',
   discussions: 'discussions',
 };
 

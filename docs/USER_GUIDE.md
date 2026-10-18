@@ -48,6 +48,10 @@ Temporary network or loading failures get one retry after the other courses fini
 
 Clear syllabus dates are added to the agenda and calendar automatically. If syllabus dates conflict with Brightspace, the agenda uses Brightspace and keeps the discrepancy available to inspect.
 
+## Theme
+
+Choose **Light**, **Dark**, or **System** under **Settings → Theme**. System is the default and follows your system appearance as it changes. Your choice is saved for this browser profile and applies across all panel tabs and other open BoilerSpace panels.
+
 ## Discussion history and sync
 
 Discussion imports save progress in batches and resume after interruption. Settings shows the saved post count and whether the history check is complete. Later syncs check history pages and reread new or changed posts. Discussions refresh independently at most every 20 minutes while BoilerSpace is open, or through **Sync discussions now**.

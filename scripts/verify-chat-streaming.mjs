@@ -38,23 +38,29 @@ try {
       const body = JSON.parse(options.body);
       if (!body.stream) return new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'Course review' } }] }), { headers: { 'content-type': 'application/json' } });
       window.syntheticModelRequests++;
+      if (window.syntheticStopRequest) return new Promise((resolve, reject) => options.signal.addEventListener('abort', () => reject(new DOMException('Stopped', 'AbortError')), { once: true }));
       if (!window.syntheticRateLimits) {
         window.syntheticRateLimits++;
         return new Response(JSON.stringify({ detail: 'Rate limit exceeded. Please try again later.' }), { status: 400, headers: { 'content-type': 'application/json', 'retry-after': '0.01' } });
       }
       const turn = ++streamTurn;
       const isFinal = turn === 4;
+      if (turn === 1) await new Promise(resolve => { window.releaseStart = resolve; });
+      if (turn === 2) await new Promise(resolve => { window.releaseSecondTurn = resolve; });
+      if (turn === 3) await new Promise(resolve => { window.releaseThirdTurn = resolve; });
       const deltas = isFinal
         ? Array.from({ length: 130 }, (_, index) => ({ content: `\n\nParagraph ${index + 1}. These are the posted course dates and instructions, with context from the source.` }))
         : turn === 1
           ? [{ content: 'Let me find ' }, { content: 'the posted deadlines.' }]
           : turn === 2
             ? [{ content: 'I will check the upcoming course work.' }, { tool_calls: [{ index: 0, id: 'upcoming', type: 'function', function: { name: 'list_upcoming', arguments: '{"days":7}' } }] }]
-            : [{ content: 'I will check the saved assignments too.' }, { tool_calls: [{ index: 0, id: 'items', type: 'function', function: { name: 'list_items', arguments: '{}' } }] }];
+            : [{ reasoning_content: 'Checking the saved assignments.' }, { content: 'I will check the saved assignments too.' }, { tool_calls: [{ index: 0, id: 'items', type: 'function', function: { name: 'list_items', arguments: '{}' } }] }];
       const encoder = new TextEncoder();
       const stream = new ReadableStream({ async start(controller) {
         if (isFinal) await new Promise(resolve => { window.releaseFinal = resolve; });
-        for (const delta of deltas) {
+        for (const [index, delta] of deltas.entries()) {
+          if (turn === 2 && delta.tool_calls) await new Promise(resolve => { window.releaseToolCall = resolve; });
+          if (turn === 3 && index === 1) await new Promise(resolve => { window.releaseThirdText = resolve; });
           await new Promise(resolve => setTimeout(resolve, isFinal ? 55 : 200));
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta }] })}\n\n`));
         }
@@ -86,17 +92,34 @@ try {
   check('outside click dismisses the thinking popup', await page.locator('.thinking-options').evaluate(el => !el.matches(':popover-open')));
   await page.getByLabel('Question', { exact: true }).fill('Check the posted work.');
   await page.getByRole('button', { name: 'Send', exact: true }).click();
-  await page.locator('#pending .trace-commentary').first().waitFor({ state: 'attached' });
+  await page.waitForFunction(() => typeof window.releaseStart === 'function');
   check('a Purdue-style HTTP 400 rate limit retries before streaming the first narration', await page.evaluate(() => window.syntheticRateLimits === 1 && window.syntheticModelRequests >= 2));
+  check('a new question starts with the work log expanded', await page.locator('#pending > .trace').evaluate(el => el.open));
+  await page.evaluate(() => window.releaseStart());
+  await page.waitForFunction(() => typeof window.releaseSecondTurn === 'function');
+  check('interim narration appears once inside the expanded work log', await page.locator('#pending .trace-commentary').count() === 1 && await page.locator('#pending .trace-commentary').first().isVisible() && await page.locator('#pending > .live-commentary').count() === 0);
+  await page.locator('#pending > .trace > summary').click();
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('button', { name: 'Ask', exact: true }).click();
+  check('a full render preserves a manually closed research log', !(await page.locator('#pending > .trace').evaluate(el => el.open)));
+  await page.locator('#pending > .trace > summary').click();
+  await page.evaluate(() => window.releaseSecondTurn());
+  await page.waitForFunction(() => typeof window.releaseToolCall === 'function');
+  check('candidate writing automatically collapses the research log', !(await page.locator('#pending > .trace').evaluate(el => el.open)) && await page.locator('.streaming-answer').isVisible());
+  await page.evaluate(() => window.releaseToolCall());
+  await page.waitForFunction(() => typeof window.releaseThirdTurn === 'function');
+  check('a candidate followed by a tool becomes commentary and reopens research', await page.locator('#pending > .trace').evaluate(el => el.open) && await page.locator('#pending .trace-commentary').count() === 2 && await page.locator('.streaming-answer').count() === 0);
+  await page.locator('#pending > .trace > summary').click();
+  await page.evaluate(() => window.releaseThirdTurn());
+  await page.waitForFunction(() => typeof window.releaseThirdText === 'function');
+  check('more reasoning preserves a manually closed research log', !(await page.locator('#pending > .trace').evaluate(el => el.open)));
+  await page.evaluate(() => window.releaseThirdText());
   await page.waitForFunction(() => typeof window.releaseFinal === 'function');
-  check('interim narration stays visible while the model is using tools', await page.locator('#pending > .live-commentary').count() === 3 && await page.locator('#pending > .live-commentary').first().isVisible());
-  await page.locator('#pending .trace > summary').click();
-  check('opening activity reveals narration from a separate assistant turn', await page.locator('#pending .trace-commentary').first().innerText() === 'Let me find the posted deadlines.');
+  check('subsequent tools reopen the work log without standalone narration copies', await page.locator('#pending > .trace').evaluate(el => el.open) && await page.locator('#pending > .live-commentary').count() === 0);
   check('multiple narration rounds remain interleaved with their tools during generation', JSON.stringify(await page.locator('#pending .trace-steps > li').evaluateAll(elements => elements.map(element => element.dataset.tool ?? element.textContent))) === JSON.stringify(['Let me find the posted deadlines.', 'I will check the upcoming course work.', 'list_upcoming', 'I will check the saved assignments too.', 'list_items']));
-  await page.locator('#pending .trace > summary').click();
   await page.evaluate(() => window.releaseFinal());
   await page.waitForFunction(() => (document.querySelector('.streaming-answer')?.textContent.length ?? 0) > 700);
-  check('the first final-answer text folds all prior narration into the activity block', await page.locator('#pending > .live-commentary').count() === 0 && !(await page.locator('#pending .trace-commentary').first().isVisible()));
+  check('the first final-answer text folds all prior narration into the activity block', !(await page.locator('#pending > .trace').evaluate(el => el.open)) && await page.locator('#pending > .live-commentary').count() === 0 && !(await page.locator('#pending .trace-commentary').first().isVisible()));
   const heldClick = async locator => {
     await locator.scrollIntoViewIfNeeded();
     const element = await locator.elementHandle();
@@ -112,6 +135,9 @@ try {
   check('the activity block opens while tokens arrive', await page.locator('#pending .trace').evaluate(el => el.open));
   await heldClick(page.locator('#pending .tool-call > summary').first());
   check('tool details open while tokens arrive', await page.locator('#pending .tool-call').first().evaluate(el => el.open));
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('button', { name: 'Ask', exact: true }).click();
+  check('full renders preserve manual root and nested disclosure choices while writing', await page.locator('#pending > .trace').evaluate(el => el.open) && await page.locator('#pending .tool-call').first().evaluate(el => el.open));
   await heldClick(page.locator('#pending .tool-call > summary').first());
   check('tool details close while tokens arrive', !(await page.locator('#pending .tool-call').first().evaluate(el => el.open)));
   await heldClick(page.locator('#pending .trace > summary'));
@@ -138,6 +164,13 @@ try {
   const restored = page.locator('.message.assistant').last();
   await restored.locator('.trace > summary').click();
   check('narration remains in saved activity after reopening the panel', await restored.locator('.trace-commentary').count() === 3 && !(await restored.locator(':scope > p').allTextContents()).some(text => text.includes('I will check')));
+  await page.evaluate(() => { window.syntheticStopRequest = true; });
+  await page.getByLabel('Question', { exact: true }).fill('Another question.');
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  check('a consecutive question starts expanded regardless of the previous saved disclosure', await page.locator('#pending > .trace').evaluate(el => el.open));
+  await page.getByRole('button', { name: 'Stop', exact: true }).click();
+  await page.locator('#pending').waitFor({ state: 'detached' });
+  check('a stopped request saves a resumable message', await page.getByRole('button', { name: 'Continue', exact: true }).count() === 1);
   check('no browser page errors', errors.length === 0);
   await page.screenshot({ path: path.join(out, 'chat-streaming.png') });
   writeFileSync(path.join(out, 'results.json'), JSON.stringify({ checks, errors }, null, 2));

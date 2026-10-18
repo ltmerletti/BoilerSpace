@@ -1,3 +1,4 @@
+import { clearDiscussionAuth } from './discussion-auth.js';
 import { reportSyllabusAccess, SYLLABUS_SITE } from './syllabus-access.js';
 import { saveSyllabusEntryHere } from './syllabus-store.js';
 import { readXsrf } from './sync.js';
@@ -120,5 +121,10 @@ export function handleMessage(message, sender, sendResponse) {
 }
 
 export const onSiteAccessChanged = ({ origins }) => {
+  if (origins?.some(origin => DISCUSSION_SITES.ed.includes(origin))) {
+    chrome.permissions.contains({ origins: DISCUSSION_SITES.ed }).then(allowed => {
+      if (!allowed) return clearDiscussionAuth('ed');
+    }).catch(() => {});
+  }
   if (origins?.includes(SYLLABUS_SITE)) reportSyllabusAccess().catch(() => {});
 };

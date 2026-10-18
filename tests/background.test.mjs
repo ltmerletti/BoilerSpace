@@ -53,3 +53,18 @@ test('Firefox keeps the native message promise pending until the shared handler 
     delete globalThis.browser;
   }
 });
+
+test('revoking Ed site access clears its session credential', async () => {
+  const { onSiteAccessChanged } = await import('../extension/lib/background-handlers.js');
+  let removed;
+  const cleared = new Promise(resolve => { removed = resolve; });
+  globalThis.chrome = {
+    permissions: { contains: async () => false },
+    storage: { local: { get: async () => ({ discussionAuth: { ed: 'fixture' } }), remove: async key => { assert.equal(key, 'discussionAuth'); } },
+      session: { remove: async key => { assert.equal(key, 'discussionAuth'); removed(); } } },
+  };
+  try {
+    onSiteAccessChanged({ origins: ['https://edstem.org/*'] });
+    await cleared;
+  } finally { delete globalThis.chrome; }
+});

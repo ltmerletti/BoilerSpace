@@ -8,7 +8,17 @@ What changed, what prompted it, and what it means when you use BoilerSpace. Each
 
 This round focused on the interruptions that make an otherwise useful tool frustrating: controls that miss clicks, narration that disappears, imports that stop, and updates that draw attention away from studying.
 
-- **A clearer introduction to BoilerSpace.**The README starts with a question about a specific radiation slide, followed by a review outline built from lecture material and instructor guidance collected from Ed. The examples ask questions a student could bring to the course without already knowing which file or post contains the answer. Detailed setup instructions have their own guide, and screenshots show actual model answers.
+- **Choose the panel's appearance.** Settings now offers Light, Dark and System. The choice survives reopening the panel, updates other open panels, and follows live system appearance changes when System is selected.
+
+- **Keep reconnection within reach.** A compact reminder below the sync controls names Ed or Piazza when its sign-in needs attention. Reconnect from the reminder without finding the connection in Settings; it clears as soon as access is restored. Temporary update failures leave it hidden.
+
+- **Sync discussions without opening tabs.** Ed and Piazza refresh directly from the extension. A sign-in that cannot be restored keeps saved posts available and offers Reconnect in Settings. A sign-in page opens only after choosing Connect or Reconnect. Connections survive browser restarts and extension reloads. Ed renews its saved credential silently and can recover from an already-open signed-in page; Piazza uses the browser's existing sign-in cookies. Temporary renewal failures keep a working credential, and a post-level access denial does not disconnect the Ed account.
+
+- **Keep interrupted imports moving.** Coming back online retries affected discussion sources without restarting healthy ones. Piazza's overlapping pinned posts no longer stop an otherwise progressing history import.
+
+- **Keep research inside the work log.** Intermediate narration used to appear below a closed log, making it look like part of the answer. Research now starts expanded, stays in one ordered log, and collapses when answer text starts. Manual toggles survive streaming and rerenders; if the model returns to tools, the research log reopens.
+
+- **A clearer introduction to BoilerSpace.** The README starts with a question about a specific radiation slide, followed by a review outline built from lecture material and instructor guidance collected from Ed. The examples ask questions a student could bring to the course without already knowing which file or post contains the answer. Detailed setup instructions have their own guide, and screenshots show actual model answers. [Details](https://github.com/ltmerletti/BoilerSpace/pull/3)
 
 - **Open details while an answer is arriving.** Streaming tokens were replacing the element under the pointer before a click finished. The panel now updates it in place. Narration stays visible during lookups, then moves into the work log when the answer starts. The thinking control is lighter, and routine refreshes keep the cached view quiet. [Details](https://github.com/ltmerletti/BoilerSpace/commit/af6f892)
 

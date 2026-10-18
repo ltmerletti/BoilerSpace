@@ -1,21 +1,25 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { handleDiscussionRequest } from '../extension/lib/discussions-sync.js';
+import { createDiscussionSync } from '../extension/lib/discussions-sync.js';
 import { snapshotFixture } from './helpers.mjs';
+let handleDiscussionRequest;
 
 function setup(reader, granted = true) {
   const data = { snapshot: snapshotFixture() };
-  const calls = [];
+  const calls = [], session = {};
   globalThis.chrome = {
-    storage: { local: {
-      get: async (keys) => Object.fromEntries((Array.isArray(keys) ? keys : [keys]).filter((k) => k in data).map((k) => [k, structuredClone(data[k])])),
-      set: async (values) => Object.assign(data, structuredClone(values)),
+    storage: { session: { remove: async key => { delete session[key]; } }, local: {
+      remove: async key => { delete data[key]; },
+      get: async keys => Object.fromEntries((Array.isArray(keys) ? keys : [keys]).filter(key => key in data).map(key => [key, structuredClone(data[key])])),
+      set: async values => Object.assign(data, structuredClone(values)),
     } },
-    permissions: { contains: async () => granted },
-    tabs: { query: async () => [{ id: 1, url: 'https://edstem.org/us/', status: 'complete' }], get: async () => ({ status: 'complete', url: (await chrome.tabs.query({}))[0]?.url }) },
-    scripting: { executeScript: async ({ args }) => { calls.push(args[0]); return [{ result: await reader(args[0], data) }]; } },
   };
-  return { data, calls };
+  handleDiscussionRequest = createDiscussionSync(async args => {
+    if (!granted) throw new Error('Allow discussion site access by reconnecting in Settings.');
+    calls.push(args);
+    return reader(args, data);
+  });
+  return { data, calls, session };
 }
 
 const feed = (remoteId, offset = 0) => ({ name: 'CS 25200', errors: [], hasMore: offset === 0,
@@ -37,30 +41,6 @@ async function connect() {
   return sync(true);
 }
 
-test('a newly opened Firefox reader waits for the site URL after about:blank reports complete', async () => {
-  setup(async () => ({ courses: [{ remoteId: '1', name: 'CS 25200' }] }));
-  let polls = 0, removed = false;
-  chrome.tabs.query = async () => [];
-  chrome.tabs.create = async options => { assert.equal(options.active, false, 'automatic readers never request focus'); return { id: 99 }; };
-  chrome.tabs.update = async () => ({ id: 99, url: 'about:blank', status: 'complete' });
-  chrome.tabs.get = async () => ({ status: 'complete', url: ++polls === 1 ? 'about:blank' : 'https://edstem.org/us/' });
-  chrome.tabs.remove = async id => { assert.equal(id, 99); removed = true; };
-  const execute = chrome.scripting.executeScript;
-  chrome.scripting.executeScript = async args => { assert.ok(polls >= 2, 'the site has committed before injection'); return execute(args); };
-  await handleDiscussionRequest({ action: 'connect', platform: 'ed' });
-  assert.equal(polls, 2);
-  assert.equal(removed, true);
-});
-
-test('Piazza reuses an existing class tab with a trailing slash and leaves it open', async () => {
-  setup(async () => ({ courses: [{ remoteId: 'example123', name: 'CS 25200' }] }));
-  chrome.tabs.query = async () => [{ id: 8, url: 'https://piazza.com/class/example123/?cid=12#discussion', active: false, status: 'complete' }];
-  chrome.tabs.create = async () => assert.fail('The existing class tab should be reused');
-  chrome.tabs.remove = async () => assert.fail('A user-owned class tab must stay open');
-  const result = await handleDiscussionRequest({ action: 'connect', platform: 'piazza', url: 'https://piazza.com/class/example123' });
-  assert.equal(result.sources[0].id, 'piazza:example123');
-});
-
 test('Ed connect discovers all active courses and refreshes them independently', async () => {
   const { data } = setup(async ({ discover, remoteId, offset }) => discover ? { courses: [{ remoteId: '1', code: 'CS 25200', name: 'CS 25200' }, { remoteId: '2', code: 'MA 26500', name: 'MA 26500' }] } : remoteId === '2' ? Promise.reject(new Error('Temporary site error')) : feed(remoteId, offset));
   await connect();
@@ -75,15 +55,15 @@ test('discussion failure keeps the previous text and successful sources are not 
   const before = calls.length;
   await handleDiscussionRequest({ action: 'sync' });
   assert.equal(calls.length, before);
-  chrome.scripting.executeScript = async () => { throw new Error('Session expired'); };
+  handleDiscussionRequest = createDiscussionSync(async () => { throw new Error('Session expired'); });
   await handleDiscussionRequest({ action: 'sync', force: true });
   assert.equal(data.discussions.sources[0].status, 'error');
   assert.equal(data.discussions.sources[0].threads[0].text, 'Friday');
 });
 
-test('site access is checked before injecting any reader', async () => {
+test('site access is checked before reading discussion data', async () => {
   const { calls } = setup(async () => { throw new Error('Should not run'); }, false);
-  await assert.rejects(handleDiscussionRequest({ action: 'connect', platform: 'ed' }), /Allow Ed access/);
+  await assert.rejects(handleDiscussionRequest({ action: 'connect', platform: 'ed' }), /Allow discussion site access/);
   assert.equal(calls.length, 0);
 });
 
@@ -182,7 +162,6 @@ test('Piazza discovers courses without a pasted link and matches metadata return
   const { data } = setup(async ({ discover, offset }) => discover ? { courses: [{ remoteId: 'example', name: 'Piazza course' }] } : {
     name: 'CS252', errors: [], threads: [], seenIds: [], pageIds: [], versions: {}, nextOffset: offset, hasMore: false,
   });
-  chrome.tabs.query = async () => [{ id: 1, url: 'https://piazza.com/class/example', status: 'complete' }];
   await handleDiscussionRequest({ action: 'connect', platform: 'piazza' });
   assert.equal(data.discussions.sources[0].courseId, null);
   await sync(true);
@@ -195,12 +174,10 @@ test('a pasted Piazza link verifies signed-in class access before saving the con
     assert.equal(discover, true);
     return { courses: [{ remoteId: 'example', name: 'CS252' }] };
   });
-  chrome.tabs.query = async () => [{ id: 1, url: 'https://piazza.com/class/example', status: 'complete' }];
   await handleDiscussionRequest({ action: 'connect', platform: 'piazza', url: 'https://piazza.com/class/example' });
   assert.equal(data.discussions.sources[0].courseId, 1600001);
   assert.equal(calls.length, 1);
-  chrome.scripting.executeScript = async () => [{ result: { courses: [] } }];
-  chrome.tabs.query = async () => [{ id: 1, url: 'https://piazza.com/class/unavailable', status: 'complete' }];
+  handleDiscussionRequest = createDiscussionSync(async () => ({ courses: [] }));
   await assert.rejects(handleDiscussionRequest({ action: 'connect', platform: 'piazza', url: 'https://piazza.com/class/unavailable' }), /Sign into Piazza/);
   assert.equal(data.discussions.sources.length, 1, 'unverified classes are not silently connected');
 });
@@ -213,13 +190,52 @@ test('a server repeating the same history page stops with a recoverable error', 
   assert.equal(data.discussions.sources[0].threads.length, 1);
 });
 
-test('a failed temporary-tab navigation still closes the owned tab', async () => {
-  setup(async () => { throw new Error('Must not inject before navigation'); });
-  const removed = [];
-  chrome.tabs.query = async () => [];
-  chrome.tabs.create = async () => ({ id: 9 });
-  chrome.tabs.update = async () => { throw new Error('Navigation failed'); };
-  chrome.tabs.remove = async (id) => removed.push(id);
-  await assert.rejects(handleDiscussionRequest({ action: 'connect', platform: 'ed' }), /Navigation failed/);
-  assert.deepEqual(removed, [9]);
+test('equivalent pending scope requests share a single physical batch', async () => {
+  const fixture = setup(async ({ discover, remoteId, offset }) => discover ? { courses: [{ remoteId: '1' }, { remoteId: '2' }] } : feed(remoteId, offset));
+  await handleDiscussionRequest({ action: 'connect', platform: 'ed' });
+  const a = handleDiscussionRequest({ action: 'sync', sourceId: 'ed:1' });
+  const b = handleDiscussionRequest({ action: 'sync', sourceId: ['ed:1'], force: false });
+  assert.equal(a, b);
+  await a;
+  assert.equal(fixture.calls.filter(c => !c.discover).length, 1);
+  const c = handleDiscussionRequest({ action: 'sync', sourceId: ['ed:2', 'ed:1'] });
+  const d = handleDiscussionRequest({ action: 'sync', sourceId: ['ed:1', 'ed:2', 'ed:1'] });
+  assert.equal(c, d);
+  await c;
+});
+
+test('a page of previously seen pinned posts in a different order does not stop history import', async () => {
+  const pages = { 0: [3, 2, 1], 3: [8, 7, 6], 6: [1, 2, 3], 9: [4], 10: [] };
+  const fixture = setup(async ({ discover, remoteId, offset }) => {
+    if (discover) return { courses: [{ remoteId: '1' }] };
+    const ids = pages[offset];
+    assert.ok(ids, `unexpected offset ${offset}`);
+    return { name: 'Discussion course', errors: [], hasMore: ids.length > 0, nextOffset: offset + ids.length,
+      pageIds: ids.map(String), seenIds: ids.map(String), versions: Object.fromEntries(ids.map(id => [id, 'v1'])),
+      threads: ids.map(id => ({ users: [], thread: { id, course_id: Number(remoteId), number: id, title: `Post ${id}`, content: 'Instructor clarification' } })) };
+  });
+  const result = await connect();
+  assert.equal(result.sources[0].status, 'done');
+  assert.equal(result.sources[0].threads.length, 7);
+  assert.equal(result.sources[0].checkedCount, 7);
+  assert.deepEqual(fixture.calls.filter(call => !call.discover).map(call => call.offset), [0, 3, 6, 9, 10]);
+});
+
+test('clearing data while a batch is in flight does not restore cancelled posts', async () => {
+  const { data } = setup(async ({ discover, remoteId }, data) => {
+    if (discover) return { courses: [{ remoteId: '1' }] };
+    delete data.discussions;
+    return feed(remoteId);
+  });
+  await handleDiscussionRequest({ action: 'connect', platform: 'ed' });
+  await assert.rejects(sync(true), /saved data was cleared/);
+  assert.equal(data.discussions, undefined);
+});
+
+test('disconnecting the final Ed source clears its session credential', async () => {
+  const { session } = setup(async () => ({ courses: [{ remoteId: '1' }] }));
+  await handleDiscussionRequest({ action: 'connect', platform: 'ed' });
+  await chrome.storage.local.set({ discussionAuth: { ed: 'fixture-token' } });
+  await handleDiscussionRequest({ action: 'remove', sourceId: 'ed:1' });
+  assert.equal((await chrome.storage.local.get(['discussionAuth'])).discussionAuth, undefined);
 });

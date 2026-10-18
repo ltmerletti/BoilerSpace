@@ -27,6 +27,8 @@ const MAX_CHAT_MESSAGES = 40;
 const MAX_CHATS = 30;
 const MAX_THOUGHT_CHARS = 4000;
 const VIEW_NAMES = ['week', 'courses', 'ask', 'settings'];
+const THEMES = ['light', 'dark', 'system'];
+const systemColorScheme = matchMedia('(prefers-color-scheme: dark)');
 const QUIZ_ATTEMPT_PATH = '/d2l/lms/quizzing/user/attempt/';
 const HOST_ORIGINS = ['https://purdue.brightspace.com/*', 'https://genai.rcac.purdue.edu/*', 'https://purdue.simplesyllabus.com/*'];
 const PARAMS = new URLSearchParams(location.search);
@@ -47,6 +49,7 @@ const STANCE_SENTENCE = {
 
 const state = {
   view: 'week',
+  theme: 'system',
   courseId: null,
   snapshot: null,
   syncMeta: null,
@@ -175,6 +178,7 @@ async function loadChats(all) {
 
 async function loadState({ includeChat = false } = {}) {
   const all = await store.getAll();
+  applyTheme(all.theme ?? 'system');
   if (includeChat) {
     state.chats = await loadChats(all);
     const ui = all.ui ?? {};
@@ -260,20 +264,28 @@ async function refreshDiscussions(force = false) {
     if (force) discussionRetryQueued = true;
     return;
   }
-  if (!force && !state.discussions.sources.some(source => source.status === 'syncing' || !source.lastAttemptAt || Date.now() - Date.parse(source.lastAttemptAt) >= 20 * 60_000)) return;
   if (state.busy.discussions) {
     if (force) discussionRetryQueued = true;
     return;
   }
+  let sourceId;
+  if (force) discussionRecoveryQueued = false;
+  else if (discussionRecoveryQueued) {
+    discussionRecoveryQueued = false;
+    sourceId = state.discussions.sources.filter(source => source.status === 'error' || source.sync).map(source => source.id);
+    if (!sourceId.length) return;
+    force = true;
+  }
+  if (!force && !state.discussions.sources.some(source => source.status === 'syncing' || !source.lastAttemptAt || Date.now() - Date.parse(source.lastAttemptAt) >= 20 * 60_000)) return;
   state.busy.discussions = true;
   state.discussionError = '';
   render();
-  try { await syncDiscussionBatches({ force }); }
+  try { await syncDiscussionBatches({ force, sourceId }); }
   catch (error) { state.discussionError = error.message; }
   finally {
     state.busy.discussions = false;
     await loadState(); render();
-    if (discussionRefreshQueued || discussionRetryQueued) {
+    if (discussionRefreshQueued || discussionRetryQueued || discussionRecoveryQueued) {
       const retry = discussionRetryQueued;
       discussionRefreshQueued = false;
       discussionRetryQueued = false;
@@ -284,6 +296,7 @@ async function refreshDiscussions(force = false) {
 
 let discussionRefreshQueued = false;
 let discussionRetryQueued = false;
+let discussionRecoveryQueued = false;
 
 async function syncDiscussionBatches({ force = false, sourceId } = {}) {
   let result;
@@ -521,7 +534,7 @@ async function sendQuestion(question, { reuse = false, resume = null } = {}) {
   state.showChats = false;
   followAnswer = true;
   const keptTrace = (resume?.trace ?? []).map((entry) => ({ ...entry, active: false }));
-  state.pending = { chatId, trace: keptTrace, text: '', startedAt: Date.now(), open: false };
+  state.pending = { chatId, runId: crypto.randomUUID(), trace: keptTrace, text: '', startedAt: Date.now(), phase: 'research', disclosureEpoch: 0, open: true };
   state.abort = new AbortController();
   if (!reuse && !resume) await addMessage(chatId, { id: crypto.randomUUID(), role: 'user', content: text });
   render({ bottom: true });
@@ -546,7 +559,7 @@ async function sendQuestion(question, { reuse = false, resume = null } = {}) {
         updatePending();
       },
       onText: (partial) => {
-        state.pending.text = partial;
+        setPendingText(partial);
         updatePending();
       },
     });
@@ -556,7 +569,7 @@ async function sendQuestion(question, { reuse = false, resume = null } = {}) {
       if (error.code !== 'discussion-data-changed' || state.abort.signal.aborted) throw error;
       await loadState();
       state.pending.trace = keptTrace;
-      state.pending.text = '';
+      setPendingText('');
       updatePending();
       answer = await run();
     }
@@ -657,8 +670,7 @@ function exportCalendar() {
 }
 
 async function exportData() {
-  const all = await store.getAll();
-  for (const key of ['genai', 'syncLock', 'syncProgress', 'drawerOpen', 'drawerWidth', 'ui']) delete all[key];
+  const all = await store.getExportData();
   download(`boilerspace-data-${dayKey(new Date())}.json`, JSON.stringify(all, null, 2), 'application/json');
 }
 
@@ -680,6 +692,7 @@ async function saveBenchmarkData() {
 
 async function clearData() {
   if (!confirm('Delete all BoilerSpace data on this device? This also disconnects GenAI Studio.')) return;
+  await chrome.storage.session.remove('discussionAuth');
   await chrome.storage.local.clear();
   await loadState({ includeChat: true });
   state.view = 'settings';
@@ -1340,26 +1353,46 @@ function messageView(message, index) {
 
 function pendingView() {
   const p = state.pending;
+  const trace = traceView(p.trace, {
+    key: `trace-${p.chatId}-${p.runId}`,
+    live: true,
+    writing: p.phase === 'writing',
+    seconds: Math.floor((Date.now() - p.startedAt) / 1000),
+    open: p.open,
+    ontoggle: (e) => {
+      const el = e.currentTarget;
+      if (e.target === el && el.isConnected && state.pending === p && el.dataset.pendingEpoch === String(p.disclosureEpoch)) p.open = el.open;
+    },
+  });
+  trace.dataset.pendingEpoch = String(p.disclosureEpoch);
   return h(
     'div',
     { class: 'message assistant pending', id: 'pending', style: `--activity-delay:-${(Date.now() - p.startedAt) % 1200}ms` },
-    traceView(p.trace, {
-      key: `trace-${p.chatId}-pending`,
-      live: true,
-      writing: Boolean(p.text),
-      seconds: Math.floor((Date.now() - p.startedAt) / 1000),
-      open: p.open,
-      ontoggle: (e) => {
-        if (e.target === e.currentTarget && e.currentTarget.isConnected) p.open = e.currentTarget.open;
-      },
-    }),
-    !p.text && p.trace.filter(entry => entry.type === 'commentary').map(entry => h('div', { class: 'live-commentary' }, answerBody(entry.text))),
+    trace,
     p.text && h('div', { class: 'streaming-answer' }, answerBody(p.text)),
   );
 }
 
 let pendingFrame = null;
 let followAnswer = true;
+
+function setPendingText(text) {
+  const p = state.pending;
+  const phase = text ? 'writing' : 'research';
+  if (p.phase !== phase) {
+    p.phase = phase;
+    p.disclosureEpoch++;
+    p.open = phase === 'research';
+  }
+  p.text = text;
+}
+
+function rememberPendingDisclosure() {
+  const p = state.pending;
+  const trace = document.querySelector('#pending > .trace');
+  // Old DOM state must not override a phase change or a new question.
+  if (p && trace?.dataset.disclosure === `trace-${p.chatId}-${p.runId}` && trace.dataset.pendingEpoch === String(p.disclosureEpoch)) p.open = trace.open;
+}
 
 // Patch the live answer in place so pointer-down targets survive the next token.
 function patchPendingNode(current, next) {
@@ -1396,11 +1429,13 @@ function paintPending() {
   if (!el || !state.pending) return;
   const main = document.querySelector('.messages');
   if (!main) return;
+  rememberPendingDisclosure();
   const scroll = main.scrollTop;
   const disclosures = [...el.querySelectorAll('details[data-disclosure]')].map(details => ({ key: details.dataset.disclosure, open: details.open, scroll: details.querySelector('.thought-text')?.scrollTop }));
   const focusKey = el.contains(document.activeElement) && document.activeElement.dataset.focusKey;
   const next = pendingView();
   for (const details of next.querySelectorAll('details[data-disclosure]')) {
+    if (details.hasAttribute('data-pending-epoch')) continue;
     const previous = disclosures.find(item => item.key === details.dataset.disclosure);
     if (previous) details.open = previous.open;
   }
@@ -1656,9 +1691,11 @@ function discussionConnection(platform) {
   const connecting = state.busy.discussionConnect && state.discussionPlatform === platform;
   const reading = sources.some(source => source.status === 'syncing');
   const problem = sources.some(source => source.error);
+  const authProblem = sources.some(source => source.error && source.needsReconnect !== false);
   const posts = sources.reduce((total, source) => total + (source.threads?.length ?? 0), 0);
-  const status = connecting ? 'Connecting…' : connected ? `${plural(sources.length, 'course')} · ${reading ? 'Reading posts…' : problem ? 'Needs attention' : plural(posts, 'post')}` : platform === 'ed' ? 'Use your signed-in Ed account' : 'Connect your open Piazza classes';
-  const button = (!connected || problem) && h('button', { class: 'button secondary', type: 'button', disabled: state.busy.discussionConnect, onclick: () => openDiscussionAccess(platform, problem && platform === 'piazza' ? sources.find(source => source.error).url : null), 'aria-label': `${problem ? 'Reconnect' : 'Connect'} ${name}` }, connecting ? 'Connecting…' : problem ? 'Reconnect' : 'Connect');
+  const status = connecting ? 'Connecting…' : connected ? `${plural(sources.length, 'course')} · ${reading ? 'Reading posts…' : problem ? (authProblem ? 'Sign-in needed' : 'Update failed') : plural(posts, 'post')}` : platform === 'ed' ? 'Use your signed-in Ed account' : 'Use your signed-in Piazza account';
+  const retry = connected && problem && !authProblem;
+  const button = (!connected || problem) && h('button', { class: 'button secondary', type: 'button', disabled: state.busy.discussionConnect, onclick: () => retry ? refreshDiscussions(true) : openDiscussionAccess(platform, authProblem && platform === 'piazza' ? sources.find(source => source.error).url : null), 'aria-label': retry ? `Retry ${name} sync` : `${problem ? 'Reconnect' : 'Connect'} ${name}` }, connecting ? 'Connecting…' : retry ? 'Retry' : problem ? 'Reconnect' : 'Connect');
   const classLink = platform === 'piazza' && disclosure('piazza-link', 'Add a class by link',
     h('form', { class: 'class-link-form', onsubmit: event => { event.preventDefault(); openDiscussionAccess('piazza'); } },
       h('label', { class: 'field' }, 'Piazza class URL', h('input', { type: 'url', required: true, 'data-focus-key': 'piazza-url', value: state.piazzaUrl, placeholder: 'https://piazza.com/class/…', oninput: event => { state.piazzaUrl = event.target.value; } })),
@@ -1732,6 +1769,31 @@ function modelField() {
   );
 }
 
+function applyTheme(preference = state.theme) {
+  state.theme = THEMES.includes(preference) ? preference : 'system';
+  document.documentElement.dataset.theme = state.theme;
+  document.documentElement.dataset.colorScheme = state.theme === 'system' ? (systemColorScheme.matches ? 'dark' : 'light') : state.theme;
+  for (const input of document.querySelectorAll('.theme-options input')) input.checked = input.value === state.theme;
+}
+
+function themeSetting() {
+  return h('section', { class: 'settings-group' },
+    h('div', { class: 'theme-row' },
+      h('h2', { class: 'heading', id: 'theme-label' }, 'Theme'),
+      h('div', { class: 'theme-options', role: 'radiogroup', 'aria-labelledby': 'theme-label' }, THEMES.map(theme =>
+        h('label', { class: 'theme-option' },
+          h('input', { type: 'radio', name: 'theme', value: theme, checked: state.theme === theme, onchange: async () => {
+            applyTheme(theme);
+            try { await store.set(store.KEYS.theme, theme); }
+            catch (error) { setStatus(`Could not save theme: ${error.message}`); }
+          } }),
+          h('span', null, theme[0].toUpperCase() + theme.slice(1)),
+        ),
+      )),
+    ),
+  );
+}
+
 function settingsView() {
   const meta = state.syncMeta;
   const errors = meta?.errors ?? [];
@@ -1764,6 +1826,7 @@ function settingsView() {
     }),
     discussionsSettings(),
     h('p', { class: 'connections-note' }, 'Discussions update every 20 minutes while BoilerSpace is open.'),
+    themeSetting(),
     h('section', { class: 'settings-group' },
       h('div', { class: 'calendar-row' }, h('h2', { class: 'heading' }, 'Calendar'), h('button', { class: 'text-button', type: 'button', disabled: !state.snapshot, onclick: exportCalendar }, 'Export calendar (.ics)')),
     ),
@@ -1820,6 +1883,7 @@ const expandedSections = new Map();
 
 function render({ top = false, bottom = false } = {}) {
   const main = document.getElementById('view');
+  rememberPendingDisclosure();
   const scroller = main.querySelector('.messages') ?? main;
   const scroll = scroller.scrollTop;
   const atBottom = scroller.scrollHeight - scroll - scroller.clientHeight < 80;
@@ -1829,7 +1893,9 @@ function render({ top = false, bottom = false } = {}) {
   for (const details of main.querySelectorAll('details[data-disclosure]')) expandedSections.set(details.dataset.disclosure, details.open);
   const content = DISCUSSION_ACCESS ? discussionAccessView() : ACCESS_PAGE ? syllabusAccessPage() : CONNECT_PAGE ? connectPageView() : [syllabusAccessNotice(), state.view === 'settings' ? null : hostAccessNotice(), VIEWS[state.view]()];
   main.replaceChildren(h('div', { class: state.view === 'ask' && !CONNECT_PAGE ? 'view ask-view' : 'view' }, content));
-  for (const details of main.querySelectorAll('details[data-disclosure]')) details.open = expandedSections.get(details.dataset.disclosure) ?? false;
+  for (const details of main.querySelectorAll('details[data-disclosure]')) {
+    if (!details.hasAttribute('data-pending-epoch')) details.open = expandedSections.get(details.dataset.disclosure) ?? false;
+  }
   const focused = focusKey && [...main.querySelectorAll('[data-focus-key]')].find(element => element.dataset.focusKey === focusKey);
   if (focused) {
     focused.focus({ preventScroll: true });
@@ -1848,7 +1914,31 @@ function render({ top = false, bottom = false } = {}) {
   renderStatus();
 }
 
+function renderConnectionReminder() {
+  const reminder = document.getElementById('connection-reminder');
+  const platforms = ['ed', 'piazza'].filter(platform => state.discussions.sources.some(source =>
+    source.platform === platform && source.needsReconnect === true && source.status !== 'done'));
+  const show = platforms.length > 0 && !CONNECT_PAGE && !ACCESS_PAGE && !DISCUSSION_ACCESS;
+  reminder.hidden = !show;
+  const key = JSON.stringify([show && platforms, state.busy.discussionConnect, state.discussionPlatform]);
+  // Keep the buttons attached while streaming or unrelated sync progress arrives.
+  if (reminder.dataset.state === key) return;
+  reminder.dataset.state = key;
+  if (!show) { reminder.replaceChildren(); return; }
+  const names = platforms.map(discussionName);
+  reminder.replaceChildren(
+    h('span', null, `${names.join(' and ')} ${names.length === 1 ? 'needs' : 'need'} to reconnect`),
+    h('div', { class: 'reminder-actions' }, platforms.map(platform => h('button', {
+      type: 'button', class: 'text-button reminder-action',
+      'aria-label': `Reconnect ${discussionName(platform)} connection`,
+      disabled: state.busy.discussionConnect,
+      onclick: () => openDiscussionAccess(platform, platform === 'piazza' ? state.discussions.sources.find(source => source.platform === platform && source.needsReconnect)?.url : null),
+    }, state.busy.discussionConnect && state.discussionPlatform === platform ? 'Connecting…' : platforms.length === 1 ? 'Reconnect' : discussionName(platform)))),
+  );
+}
+
 function renderHeader() {
+  renderConnectionReminder();
   document.getElementById('sync-status').textContent = syncLine();
   const syncButton = document.getElementById('sync-button');
   syncButton.disabled = state.busy.sync;
@@ -1891,6 +1981,7 @@ async function attempt(fn) {
 }
 
 async function init() {
+  systemColorScheme.addEventListener('change', () => { if (state.theme === 'system') applyTheme(); });
   if (CONNECT_PAGE || ACCESS_PAGE || DISCUSSION_ACCESS) document.querySelector('.tabs').hidden = true;
   for (const button of document.querySelectorAll('.tabs button')) {
     button.addEventListener('click', () => {
@@ -1912,11 +2003,15 @@ async function init() {
   document.documentElement.removeAttribute('data-panel-loading');
 
   window.addEventListener('online', () => {
-    if (state.discussions.sources.some(source => source.status === 'error' || source.sync)) refreshDiscussions(true);
+    if (state.discussions.sources.some(source => source.status === 'error' || source.sync)) {
+      discussionRecoveryQueued = true;
+      refreshDiscussions();
+    }
   });
 
   store.onChange(async (changes) => {
     const keys = Object.keys(changes);
+    if (changes.theme) applyTheme(changes.theme.newValue ?? 'system');
     if (changes.chats && !state.pending) {
       const chats = changes.chats.newValue ?? [];
       if (JSON.stringify(chats) !== JSON.stringify(state.chats)) {
@@ -1925,7 +2020,7 @@ async function init() {
         if (state.view === 'ask') render();
       }
     }
-    if (keys.every((k) => ['chat', 'chats', 'ui', 'drawerOpen', 'drawerWidth'].includes(k))) return;
+    if (keys.every((k) => ['chat', 'chats', 'ui', 'drawerOpen', 'drawerWidth', 'theme'].includes(k))) return;
     if (keys.every((k) => ['syncLock', 'syncProgress'].includes(k))) {
       if (changes.syncLock) state.syncLock = changes.syncLock.newValue ?? null;
       if (changes.syncProgress) state.progress = changes.syncProgress.newValue ?? null;

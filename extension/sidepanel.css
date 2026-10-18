@@ -172,6 +172,38 @@ select:focus {
   text-overflow: ellipsis;
 }
 
+.connection-reminder {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 var(--gutter) 7px;
+  padding: 6px 9px;
+  border-radius: 4px;
+  background: var(--carnelian-wash);
+  color: var(--carnelian);
+  font-size: var(--text-meta);
+  line-height: 1.35;
+}
+
+.connection-reminder > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.reminder-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+}
+
+.connection-reminder .reminder-action {
+  color: inherit;
+  font-size: inherit;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .icon-button {
   flex: none;
   display: inline-grid;
@@ -1109,7 +1141,6 @@ a.cite:hover {
 .tool-preview dt { font-weight: 700; color: var(--ferrite-soft); }
 .tool-preview dd { margin: 2px 0 9px; }
 .trace-commentary { margin-left: 23px; color: var(--ferrite-soft); }
-.pending:has(.trace[open]) .live-commentary { display: none; }
 
 .tool-call code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -1693,6 +1724,58 @@ a.cite:hover {
   font-size: var(--text-meta);
   color: var(--tungsten);
 }
+.theme-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.theme-row .heading {
+  font-size: var(--text-meta);
+  color: var(--tungsten);
+}
+
+.theme-options {
+  display: flex;
+  flex: none;
+  padding: 3px;
+  border: 1px solid var(--mica);
+  border-radius: var(--radius);
+  background: var(--gypsum);
+}
+
+.theme-option {
+  position: relative;
+  cursor: pointer;
+}
+
+.theme-option input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+
+.theme-option span {
+  display: block;
+  padding: 4px 10px;
+  border-radius: 3px;
+  font-size: var(--text-ui);
+  color: var(--tungsten);
+}
+
+.theme-option input:checked + span {
+  background: var(--regolith);
+  color: var(--ferrite);
+  box-shadow: 0 1px 3px #00000014;
+}
+
+.theme-option input:focus-visible + span {
+  outline: 2px solid var(--celestine);
+  outline-offset: 1px;
+}
+
 .calendar-row {
   display: flex;
   justify-content: space-between;
@@ -1726,39 +1809,36 @@ a.cite:hover {
 
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-    --ferrite: #f2f2f5;
-    --ferrite-soft: #c6c6ce;
-    --tungsten: #a0a0ab;
-    --galena: #777783;
-    --chromite: #474751;
-    --mica: #37373f;
-    --gypsum: #2c2c33;
-    --regolith: #141417;
-    --sylvite: #202025;
-    --surface: #141417;
-    --celestine: #75b5ff;
-    --celestine-dark: #a0ccff;
-    --celestine-wash: #233248;
-    --cinnabar: #ff9b96;
-    --cinnabar-wash: #3c2728;
-    --olivine: #8acfaa;
-    --olivine-wash: #23362d;
-    --carnelian: #dfc481;
-    --carnelian-wash: #3b3425;
-    --shadow: 0 0 0 1px #ffffff06;
-  }
+:root[data-color-scheme="dark"] {
+  color-scheme: dark;
+  --ferrite: #f2f2f5;
+  --ferrite-soft: #c6c6ce;
+  --tungsten: #a0a0ab;
+  --galena: #777783;
+  --chromite: #474751;
+  --mica: #37373f;
+  --gypsum: #2c2c33;
+  --regolith: #141417;
+  --sylvite: #202025;
+  --surface: #141417;
+  --celestine: #75b5ff;
+  --celestine-dark: #a0ccff;
+  --celestine-wash: #233248;
+  --cinnabar: #ff9b96;
+  --cinnabar-wash: #3c2728;
+  --olivine: #8acfaa;
+  --olivine-wash: #23362d;
+  --carnelian: #dfc481;
+  --carnelian-wash: #3b3425;
+  --shadow: 0 0 0 1px #ffffff06;
+}
 
-  .service-ed {
-    color: #80c5b7;
-  }
+:root[data-color-scheme="dark"] .service-ed {
+  color: #80c5b7;
+}
 
-  .service-piazza {
-    color: #90b8dc;
-  }
-
+:root[data-color-scheme="dark"] .service-piazza {
+  color: #90b8dc;
 }
 
 @media (prefers-reduced-motion: reduce) {

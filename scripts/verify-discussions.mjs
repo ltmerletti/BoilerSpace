@@ -51,11 +51,13 @@ try {
   await context.route('https://us.edstem.org/api/**', (route) => {
     const request = route.request(), url = new URL(request.url());
     const headers = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'x-token' };
+    if (url.pathname.endsWith('/favicon.ico')) return route.fulfill({ status: 204 });
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
-    assert.equal(request.headers()['x-token'], 'fixture-ed-token');
+    assert.equal(request.headers()['x-token'], 'fixture-ed-token', `${request.method()} ${url.pathname} (${request.resourceType()})`);
     operations.push(`Ed ${request.method()} ${url.pathname}`);
     let data;
-    if (url.pathname === '/api/user') data = { user: { name: 'Do not persist this name' }, push_key: 'do-not-persist', courses: [
+    if (url.pathname === '/api/renew_token') data = { token: 'fixture-ed-token' };
+    else if (url.pathname === '/api/user') data = { user: { name: 'Do not persist this name' }, push_key: 'do-not-persist', courses: [
       { course: { id: 20, code: 'CS 25200', name: 'CS 25200', status: 'active' } },
       { course: { id: 21, code: 'MA 26500', name: 'MA 26500', status: 'active' } },
       { course: { id: 22, code: 'CS 18000', name: 'Archived course', status: 'archived' } },
@@ -82,8 +84,9 @@ try {
     if (!piazzaSignedIn) return route.fulfill({ status: 403, body: '{}' });
     assert.equal(request.headers()['csrf-token'], 'fixture-csrf');
     const { method, params } = request.postDataJSON();
-    assert.ok(['network.get_my_feed', 'content.get'].includes(method), 'only read methods are allowed');
+    assert.ok(['user.status', 'network.get_my_feed', 'content.get'].includes(method), 'only read methods are allowed');
     operations.push(`Piazza ${method}`);
+    if (method === 'user.status') return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ result: { networks: [{ id: 'example123', course_number: 'Earlier discussion course' }], name: 'Do not persist' } }) });
     if (method === 'content.get' && params.cid === '7' && !piazzaThrottled) {
       piazzaThrottled = true;
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ error: 'Sorry, too fast -- please wait a second and try again.' }) });
@@ -189,7 +192,7 @@ try {
   check('Ed discovers two active courses, excludes the archive, and links both Brightspace courses', saved.sources.length === 2 && saved.sources[0].courseId === 1600001 && saved.sources[1].courseId === 1600002);
   check('Ed imports more than 30 posts across short pages, with instructor replies and private posts excluded', saved.sources.every((s) => s.threads.length === (s.remoteId === '20' ? 35 : 33) && s.historyComplete && s.threads.every((t) => t.replies.some(reply => reply.role === 'instructor'))));
   check('Ed retains more than 100 replies in a busy thread', saved.sources[0].threads.find(thread => thread.id === '2000').replies.length === 105);
-  check('discussion storage excludes session tokens, user profiles and author names', !/fixture-ed-token|fixture-csrf|Secret Student|Secret Instructor|do-not-persist/.test(JSON.stringify(saved)));
+  check('saved discussion posts exclude credentials, user profiles and author names', !/fixture-ed-token|fixture-csrf|Secret Student|Secret Instructor|do-not-persist/.test(JSON.stringify(saved)));
   await panel.locator('[data-disclosure="piazza-link"] > summary').click();
   await panel.getByLabel('Piazza class URL', { exact: true }).fill('https://piazza.com/class/draft123');
   await panel.evaluate(() => chrome.storage.local.set({ changes: [] }));
@@ -201,7 +204,7 @@ try {
   await poll(async () => (await read()).sources.some(source => source.platform === 'piazza' && source.historyComplete), 'Piazza discovery and import without pasting a URL');
   saved = await read();
   const piazza = saved.sources.find((s) => s.platform === 'piazza');
-  check('Piazza follows all feed pages and reads instructor answers using the signed-in page CSRF token', piazza.threads.length === 3 && piazza.threads[0].replies[0].role === 'instructor');
+  check('Piazza follows all feed pages and reads instructor answers using direct authenticated API requests', piazza.threads.length === 3 && piazza.threads[0].replies[0].role === 'instructor');
   check('Piazza automatically backs off and retries a rate-limited post', piazzaThrottled && piazza.status === 'done');
   check('an older Piazza class stays separate from current Brightspace courses', piazza.courseId === null);
   check('Piazza citations link to the original numbered post', piazza.threads[0].url === 'https://piazza.com/class/example123?cid=5');
@@ -217,10 +220,19 @@ try {
   check('a changed post beyond the first page is reread on the next sync', detailReads() === beforeRefresh + 1);
   await edPage.close();
   await piazzaPage.close();
+  const siteTabsBefore = context.pages().filter(p => /^https:\/\/(edstem.org|piazza.com)/.test(p.url())).length;
+  let unexpectedTabs = 0;
+  const createdDuringSync = () => { unexpectedTabs++; };
+  context.on('page', createdDuringSync);
+  await panel.getByRole('button', { name: 'Sync discussions now', exact: true }).click();
+  await poll(() => panel.getByRole('button', { name: 'Sync discussions now', exact: true }).isEnabled(), 'direct refresh with all site tabs closed');
+  check('a full refresh with all site tabs closed creates no tabs', unexpectedTabs === 0);
+  context.off('page', createdDuringSync);
   piazzaSignedIn = false;
   await panel.getByRole('button', { name: 'Sync discussions now', exact: true }).click();
   await poll(async () => (await read()).sources.find((s) => s.platform === 'piazza').status === 'error', 'expired Piazza session');
   saved = await read();
+  check('expired sessions never open a site tab', context.pages().filter(p => /^https:\/\/(edstem.org|piazza.com)/.test(p.url())).length === siteTabsBefore);
   check('an expired discussion session preserves cached posts and does not fail Ed', saved.sources.find((s) => s.platform === 'piazza').threads.length === 3 && saved.sources.filter((s) => s.platform === 'ed').every((s) => s.status === 'done'));
   await panel.getByRole('button', { name: 'Reconnect Piazza', exact: true }).click();
   await panel.getByText(/Finish signing in to Piazza/).waitFor({ timeout: 30_000 });
@@ -229,7 +241,7 @@ try {
   await piazzaSignIn.reload();
   await poll(async () => (await read()).sources.every((s) => s.status === 'done'), 'automatic retry after Piazza sign-in');
   check('Piazza reconnect verifies class access and resumes the import after sign-in without another retry click', true);
-  check('background readers close only their own temporary site tabs', !context.pages().some((p) => /^https:\/\/(edstem.org|piazza.com)/.test(p.url())));
+  check('only explicit sign-in opens a site tab, which closes after connection', !context.pages().some((p) => /^https:\/\/(edstem.org|piazza.com)/.test(p.url())));
   await panel.getByRole('button', { name: 'Connect Purdue GenAI Studio', exact: true }).click();
   await poll(() => worker.evaluate(async () => Boolean((await chrome.storage.local.get('genai')).genai?.key)), 'one-click GenAI connection');
   check('GenAI connects from the same screen using the existing account key', (await worker.evaluate(async () => (await chrome.storage.local.get('genai')).genai)).created === false);
@@ -272,7 +284,7 @@ try {
   await embedded.close();
   await poll(async () => (await read()).sources.filter(source => source.platform === 'ed').length === 2 && (await read()).sources.filter(source => source.platform === 'ed').every(source => source.historyComplete), 'import continues after permission tab closes');
   check('embedded connection uses one permission handoff and the open panel continues the import after it closes', true);
-  check('site requests use only the observed read methods', operations.every((op) => !/POST|PATCH|DELETE/.test(op) || op.startsWith('Piazza')));
+  check('site requests use only read methods and Ed session renewal', operations.every((op) => !/POST|PATCH|DELETE/.test(op) || op.startsWith('Piazza') || op === 'Ed POST /api/renew_token'));
   check('every Ed and Piazza document, including sign-in tabs, is served by a fixture', siteDocuments.length > 0 && siteDocuments.every(document => document.fixture));
   check('no browser page errors', errors.length === 0);
   await panel.screenshot({ path: path.join(out, 'discussion-settings.png') });

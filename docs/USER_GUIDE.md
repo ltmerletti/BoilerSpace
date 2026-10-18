@@ -32,7 +32,7 @@ Choose a course, or leave **All my courses** selected. Name the lecture, file, p
 
 Ask can search syllabi, course files, announcements, and connected discussion history. It can also read questions from finished or closed quizzes when Brightspace makes them available. It excludes quiz scores and stays off active quiz attempt pages.
 
-During a lookup, intermediate narration appears above the answer. When the answer starts streaming, that narration moves into the expandable activity block. Expand a tool's **Details** to inspect its arguments and a short result preview. You can scroll back, stop generation, copy an answer, or retry it.
+During a lookup, the work log opens to show narration and tool calls in order. It collapses when answer text starts and reopens if the model returns to research. You can open or close it while text is streaming. Expand a tool's **Details** to inspect its arguments and a short result preview. You can scroll back, stop generation, copy an answer, or retry it.
 
 Citations open the original material. Overview PDFs may open in BoilerSpace's document reader at the cited page. **Show original PDF** loads the source through your signed-in session.
 
@@ -48,11 +48,19 @@ Temporary network or loading failures get one retry after the other courses fini
 
 Clear syllabus dates are added to the agenda and calendar automatically. If syllabus dates conflict with Brightspace, the agenda uses Brightspace and keeps the discrepancy available to inspect.
 
-## Discussion history and background tabs
+## Theme
+
+Choose **Light**, **Dark**, or **System** under **Settings → Theme**. System is the default and follows your system appearance as it changes. Your choice is saved for this browser profile and applies across all panel tabs and other open BoilerSpace panels.
+
+## Discussion history and sync
 
 Discussion imports save progress in batches and resume after interruption. Settings shows the saved post count and whether the history check is complete. Later syncs check history pages and reread new or changed posts. Discussions refresh independently at most every 20 minutes while BoilerSpace is open, or through **Sync discussions now**.
 
-The reader reuses an open class tab when possible. Otherwise it opens a temporary inactive tab, reads through your existing signed-in session, and closes that tab afterward. Automatic refresh does not request tab focus. A reconnect can open a visible sign-in tab.
+Discussion refreshes make requests directly from the extension. They do not open, navigate or close site tabs. If your sign-in cannot be renewed or restored, saved posts stay available and Settings shows **Reconnect**. Temporary update failures offer **Retry** and recover automatically on a later refresh. Only choosing **Connect** or **Reconnect** can open a visible sign-in page.
+
+A small reminder below the panel's sync controls, visible on every tab, appears when Ed or Piazza needs reconnection. Its buttons start reconnection directly. The reminder clears when access is restored and stays hidden for temporary update failures.
+
+Connections survive browser restarts and extension reloads. Ed renews its saved credential silently while you use BoilerSpace; an already-open signed-in Ed page can also repair the connection without navigation. Piazza reuses its existing browser sign-in cookies. Reconnect is needed when the site no longer accepts the saved sign-in and automatic recovery cannot restore it.
 
 Course previews show up to three posts from the past seven days. Ask searches the full saved history, including older posts and available replies. Private and deleted posts are excluded. Discussion attachments and images must be opened on the original site.
 

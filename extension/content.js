@@ -212,7 +212,7 @@
   const toPanel = (payload) => iframe?.contentWindow?.postMessage(JSON.stringify(payload), extensionOrigin);
 
   window.addEventListener('message', (event) => {
-    if (event.origin !== extensionOrigin || typeof event.data !== 'string') return;
+    if (event.origin !== extensionOrigin || event.source !== iframe?.contentWindow || typeof event.data !== 'string') return;
     let data;
     try {
       data = JSON.parse(event.data);

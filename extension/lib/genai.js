@@ -7,6 +7,7 @@ export const DEFAULT_MODEL = 'qwen3.8:27b';
 export const FALLBACK_MODEL = 'gpt-oss:120b';
 
 const REQUEST_TIMEOUT_MS = 180_000;
+const CONNECTION_TIMEOUT_MS = 30_000;
 const STREAM_IDLE_MS = 60_000;
 const SIGN_IN_TIMEOUT_MS = 5 * 60_000;
 const SIGN_IN_POLL_MS = 2000;
@@ -36,7 +37,7 @@ export async function getConnection() {
 const isChatModel = (id) => !/embed|arena|whisper|tts|rerank/i.test(id);
 
 async function fetchModelIds(key) {
-  const res = await fetch(`${GENAI_BASE}/api/models`, { headers: { Authorization: `Bearer ${key}` }, credentials: 'omit' });
+  const res = await fetch(`${GENAI_BASE}/api/models`, { headers: { Authorization: `Bearer ${key}` }, credentials: 'omit', signal: AbortSignal.timeout(CONNECTION_TIMEOUT_MS) });
   if (res.status === 401) throw new GenAIError('GenAI Studio rejected the saved key. Connect your account again.', { status: 401, code: 'not-linked' });
   if (!res.ok) throw new GenAIError(`GenAI Studio could not list models (HTTP ${res.status}).`, { status: res.status });
   return ((await res.json()).data ?? []).map((m) => m.id).filter(isChatModel).sort();
@@ -69,6 +70,7 @@ function webui(path, { method = 'GET' } = {}) {
   return fetch(GENAI_BASE + path, {
     method,
     credentials: 'include',
+    signal: AbortSignal.timeout(CONNECTION_TIMEOUT_MS),
     headers: sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {},
   });
 }

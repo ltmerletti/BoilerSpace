@@ -16,6 +16,22 @@ function scanUrl(href, origin) {
   return url.href;
 }
 
+const BRIGHTSPACE_ORIGIN = 'https://purdue.brightspace.com';
+
+function isBrightspaceSender(sender) {
+  if (sender.id !== chrome.runtime.id || !sender.tab?.id) return false;
+  try {
+    const url = new URL(sender.url);
+    return url.origin === BRIGHTSPACE_ORIGIN && url.pathname.startsWith('/d2l/');
+  } catch {
+    return false;
+  }
+}
+
+function isPanelSender(sender) {
+  return sender.id === chrome.runtime.id && sender.url?.startsWith(chrome.runtime.getURL(''));
+}
+
 async function markScanTab(tabId) {
   await chrome.scripting.executeScript({
     target: { tabId },
@@ -56,8 +72,10 @@ async function readInTab(url, courseId, phase) {
 }
 
 async function readSyllabusRequest(message) {
-  const origin = message.origin || 'https://purdue.brightspace.com';
+  const origin = BRIGHTSPACE_ORIGIN;
+  if (message.origin && message.origin !== origin) throw new Error('Unexpected syllabus site.');
   if (message.phase === 'links') {
+    if (!Number.isSafeInteger(message.courseId) || message.courseId <= 0) throw new Error('Invalid syllabus course.');
     const url = scanUrl(`/d2l/home/${message.courseId}`, origin);
     if (!url) return { hrefs: [] };
     const shot = await readInTab(url, message.courseId, 'links');
@@ -65,6 +83,7 @@ async function readSyllabusRequest(message) {
   }
   if (message.phase === 'page') {
     const launch = new URL(message.href, origin);
+    if (launch.origin !== origin || !launch.pathname.startsWith('/d2l/')) throw new Error('Unexpected syllabus page.');
     if (launch.searchParams.get('type') === 'lti' && !(await reportSyllabusAccess())) {
       throw new Error('BoilerSpace needs access to purdue.simplesyllabus.com to read this syllabus. Use Allow Simple Syllabus access in BoilerSpace.');
     }
@@ -88,8 +107,12 @@ function sharedSyllabusRequest(message) {
 
 // Content scripts cannot call the page's own XSRF helper, so they ask for it here.
 export function handleMessage(message, sender, sendResponse) {
+  // Only our panel can mutate extension data. Brightspace content scripts also
+  // need the rendered syllabus reader and the page's XSRF helper.
+  const fromPanel = isPanelSender(sender);
+  const fromBrightspace = isBrightspaceSender(sender);
+  if (!fromPanel && !(fromBrightspace && ['boilerspace-syllabus', 'boilerspace-syllabus-access', 'boilerspace-xsrf'].includes(message?.type))) return false;
   if (message?.type === 'boilerspace-gradescope') {
-    if (sender.id !== chrome.runtime.id || !sender.url?.startsWith(chrome.runtime.getURL(''))) return false;
     const run = message.action === 'open-access'
       ? chrome.tabs.create({ url: chrome.runtime.getURL('sidepanel.html?gradescope-access=1'), active: true }).then(() => null)
       : handleGradescopeRequest(message);
@@ -97,7 +120,6 @@ export function handleMessage(message, sender, sendResponse) {
     return true;
   }
   if (message?.type === 'boilerspace-discussions') {
-    if (sender.id !== chrome.runtime.id || !sender.url?.startsWith(chrome.runtime.getURL(''))) return false;
     const run = async () => {
       if (message.action !== 'open-access') return handleDiscussionRequest(message);
       if (!DISCUSSION_SITES[message.platform]) throw new Error('Unknown discussion site.');
@@ -125,7 +147,7 @@ export function handleMessage(message, sender, sendResponse) {
     sharedSyllabusRequest(message).then(sendResponse, (err) => sendResponse({ hrefs: [], text: '', error: err.message }));
     return true;
   }
-  if (message?.type !== 'boilerspace-xsrf' || !sender.tab?.id) return false;
+  if (message?.type !== 'boilerspace-xsrf' || !fromBrightspace) return false;
   readXsrf(sender.tab.id).then((token) => sendResponse({ token }), () => sendResponse({ token: null }));
   return true;
 }

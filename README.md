@@ -53,6 +53,8 @@ Assignments, quizzes, exams and syllabus dates come together in **Week**. Connec
 
 BoilerSpace works in **Chrome, Firefox and Zen**. Use your Purdue Brightspace account, and connect [GenAI Studio](https://genai.rcac.purdue.edu) for course answers.
 
+The Firefox Add-ons release is being prepared. The manual installation below is available now; temporary Firefox installs are removed when the browser quits.
+
 1. **[Download the source ZIP](https://github.com/ltmerletti/BoilerSpace/archive/refs/heads/main.zip)** and extract it.
 2. **Load the `extension` folder** using your browser's instructions below.
 3. **Open Brightspace**, click **BoilerSpace**, and connect Purdue GenAI Studio in **Settings**. Approve the requested access. Ed, Piazza and Gradescope are optional connections in the same place.

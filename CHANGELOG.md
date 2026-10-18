@@ -6,6 +6,10 @@ What changed, what prompted it, and what it means when you use BoilerSpace. Each
 
 ## October 18, 2026
 
+- **Prepare a consistent v1 install.** Firefox and Chrome now have separate release packages with the correct background and panel APIs. The Firefox package declares its data use in the browser's installation prompt. Reproducible ZIPs, source and checksums make the submitted build inspectable, and CI installs the actual Firefox archive to check course sync, document reading, local discussion search and cited answers.
+
+- **Tighten requests between the panel and browser.** Background readers accept requests only from the extension or the specific Brightspace content script that needs them. Syllabus requests stay within Purdue Brightspace. Account connection requests also have a time limit so an unavailable service cannot leave setup waiting indefinitely.
+
 - **Keep Gradescope answers linked to their sources.** If the model omits citations after reading Gradescope records, Ask requests one cited rewrite. The earlier draft stays in the work log; links still resolve only to records the tools returned.
 
 - **Bring Gradescope deadlines into your courses.** Connect your existing Gradescope sign-in in Settings to import current-term assignment names and published dates. Clear course matches link automatically; assignments appear in Week, course details, calendar exports and Ask with source links. Normal and late deadlines stay separate, and missing dates stay unknown. The reader excludes score columns, submitted answers and grading feedback. Routine refreshes use direct requests without opening site tabs. OCR is deferred.

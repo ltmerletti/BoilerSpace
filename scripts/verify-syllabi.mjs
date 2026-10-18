@@ -11,7 +11,7 @@ const { chromium } = await import(pathToFileURL(process.argv[2] ?? path.join(roo
 const profile = mkdtempSync(path.join(tmpdir(), 'boilerspace-syllabi-'));
 const outDir = process.env.VERIFY_OUT ?? path.join(tmpdir(), 'boilerspace-syllabi-verification');
 mkdirSync(outDir, { recursive: true });
-const extension = path.join(root, 'extension');
+const extension = process.env.VERIFY_EXTENSION ?? path.join(root, 'extension');
 const context = await chromium.launchPersistentContext(profile, { headless: false, viewport: { width: 1280, height: 860 }, args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`] });
 const check = (name, ok, detail = '') => { if (!ok) throw new Error(`${name}: ${detail}`); console.log(`PASS  ${name}`); };
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));

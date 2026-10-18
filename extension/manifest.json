@@ -1,11 +1,18 @@
 {
   "manifest_version": 3,
   "name": "BoilerSpace",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "description": "A planner and course assistant for Purdue Brightspace. Reads your courses, syllabi, assignments and quizzes.",
-  "minimum_chrome_version": "116",
+  "minimum_chrome_version": "124",
+  "incognito": "not_allowed",
   "browser_specific_settings": {
-    "gecko": { "id": "boilerspace@lukem.dev", "strict_min_version": "128.0" }
+    "gecko": {
+      "id": "boilerspace@lukem.dev",
+      "strict_min_version": "140.0",
+      "data_collection_permissions": {
+        "required": ["authenticationInfo", "personalCommunications", "websiteContent"]
+      }
+    }
   },
   "action": {
     "default_title": "Open BoilerSpace",

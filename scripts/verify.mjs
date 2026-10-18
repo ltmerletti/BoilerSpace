@@ -21,7 +21,7 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 const playwrightPath = process.argv[2] ?? path.join(root, '../course-companion/node_modules/playwright/index.mjs');
 const { chromium } = await import(pathToFileURL(playwrightPath).href);
 
-const extensionPath = path.join(root, 'extension');
+const extensionPath = process.env.VERIFY_EXTENSION ?? path.join(root, 'extension');
 const outDir = process.env.VERIFY_OUT ?? path.join(root, 'verification');
 mkdirSync(outDir, { recursive: true });
 const profile = mkdtempSync(path.join(process.env.VERIFY_TMP ?? tmpdir(), 'boilerspace-verify-'));

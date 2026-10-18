@@ -12,7 +12,7 @@ const temp = mkdtempSync(path.join(tmpdir(), 'boilerspace-discussions-'));
 const extension = path.join(temp, 'extension');
 const out = process.env.VERIFY_OUT ?? path.join(temp, 'screenshots');
 mkdirSync(out, { recursive: true });
-cpSync(path.join(root, 'extension'), extension, { recursive: true });
+cpSync(process.env.VERIFY_EXTENSION ?? path.join(root, 'extension'), extension, { recursive: true });
 const manifest = JSON.parse(readFileSync(path.join(extension, 'manifest.json')));
 // The fixture browser pre-grants hosts; the UI still calls the real permission API.
 manifest.host_permissions.push(...manifest.optional_host_permissions);

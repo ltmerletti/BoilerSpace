@@ -21,6 +21,7 @@ Bundled components retain their own licenses and copyright notices:
 - POTION retrieval 32M: MIT; see vendor/potion/LICENSE,
   vendor/potion/MODEL_CARD.md and vendor/potion/PROVENANCE.md.
 - Tokenizers.js 0.2.0: Apache License 2.0; see vendor/tokenizers/LICENSE.
+- LinkeDOM 0.18.13: ISC; see vendor/linkedom/LICENSE and NOTICE.md.
 
 Keep these notices and license files with copies of the extension.
 The software license does not grant rights to third-party course

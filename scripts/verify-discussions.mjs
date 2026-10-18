@@ -56,7 +56,8 @@ try {
     assert.equal(request.headers()['x-token'], 'fixture-ed-token', `${request.method()} ${url.pathname} (${request.resourceType()})`);
     operations.push(`Ed ${request.method()} ${url.pathname}`);
     let data;
-    if (url.pathname === '/api/user') data = { user: { name: 'Do not persist this name' }, push_key: 'do-not-persist', courses: [
+    if (url.pathname === '/api/renew_token') data = { token: 'fixture-ed-token' };
+    else if (url.pathname === '/api/user') data = { user: { name: 'Do not persist this name' }, push_key: 'do-not-persist', courses: [
       { course: { id: 20, code: 'CS 25200', name: 'CS 25200', status: 'active' } },
       { course: { id: 21, code: 'MA 26500', name: 'MA 26500', status: 'active' } },
       { course: { id: 22, code: 'CS 18000', name: 'Archived course', status: 'archived' } },
@@ -191,7 +192,7 @@ try {
   check('Ed discovers two active courses, excludes the archive, and links both Brightspace courses', saved.sources.length === 2 && saved.sources[0].courseId === 1600001 && saved.sources[1].courseId === 1600002);
   check('Ed imports more than 30 posts across short pages, with instructor replies and private posts excluded', saved.sources.every((s) => s.threads.length === (s.remoteId === '20' ? 35 : 33) && s.historyComplete && s.threads.every((t) => t.replies.some(reply => reply.role === 'instructor'))));
   check('Ed retains more than 100 replies in a busy thread', saved.sources[0].threads.find(thread => thread.id === '2000').replies.length === 105);
-  check('discussion storage excludes session tokens, user profiles and author names', !/fixture-ed-token|fixture-csrf|Secret Student|Secret Instructor|do-not-persist/.test(JSON.stringify(saved)));
+  check('saved discussion posts exclude credentials, user profiles and author names', !/fixture-ed-token|fixture-csrf|Secret Student|Secret Instructor|do-not-persist/.test(JSON.stringify(saved)));
   await panel.locator('[data-disclosure="piazza-link"] > summary').click();
   await panel.getByLabel('Piazza class URL', { exact: true }).fill('https://piazza.com/class/draft123');
   await panel.evaluate(() => chrome.storage.local.set({ changes: [] }));
@@ -283,7 +284,7 @@ try {
   await embedded.close();
   await poll(async () => (await read()).sources.filter(source => source.platform === 'ed').length === 2 && (await read()).sources.filter(source => source.platform === 'ed').every(source => source.historyComplete), 'import continues after permission tab closes');
   check('embedded connection uses one permission handoff and the open panel continues the import after it closes', true);
-  check('site requests use only the observed read methods', operations.every((op) => !/POST|PATCH|DELETE/.test(op) || op.startsWith('Piazza')));
+  check('site requests use only read methods and Ed session renewal', operations.every((op) => !/POST|PATCH|DELETE/.test(op) || op.startsWith('Piazza') || op === 'Ed POST /api/renew_token'));
   check('every Ed and Piazza document, including sign-in tabs, is served by a fixture', siteDocuments.length > 0 && siteDocuments.every(document => document.fixture));
   check('no browser page errors', errors.length === 0);
   await panel.screenshot({ path: path.join(out, 'discussion-settings.png') });

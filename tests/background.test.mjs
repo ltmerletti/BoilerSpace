@@ -60,7 +60,8 @@ test('revoking Ed site access clears its session credential', async () => {
   const cleared = new Promise(resolve => { removed = resolve; });
   globalThis.chrome = {
     permissions: { contains: async () => false },
-    storage: { session: { remove: async key => { assert.equal(key, 'discussionAuth'); removed(); } } },
+    storage: { local: { get: async () => ({ discussionAuth: { ed: 'fixture' } }), remove: async key => { assert.equal(key, 'discussionAuth'); } },
+      session: { remove: async key => { assert.equal(key, 'discussionAuth'); removed(); } } },
   };
   try {
     onSiteAccessChanged({ origins: ['https://edstem.org/*'] });

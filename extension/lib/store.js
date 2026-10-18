@@ -48,3 +48,10 @@ export function onChange(listener) {
     if (area === 'local') listener(changes);
   });
 }
+
+// Credentials and transient UI state never belong in a user data export.
+export async function getExportData() {
+  const data = await getAll();
+  for (const key of ['genai', 'discussionAuth', 'syncLock', 'syncProgress', 'drawerOpen', 'drawerWidth', 'ui']) delete data[key];
+  return data;
+}

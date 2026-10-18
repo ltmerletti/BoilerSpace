@@ -2,13 +2,17 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readDiscussionSite } from '../extension/lib/discussions-api.js';
 
-function site(platform, handler) {
+function site(platform, handler, renew = () => ({ status: 503, body: {} })) {
   const calls = [], delays = [];
   const original = Object.fromEntries(['chrome', 'fetch', 'setTimeout'].map((key) => [key, globalThis[key]]));
-  const session = { discussionAuth: { ed: 'fixture-token' } };
+  const session = {}, local = { discussionAuth: { ed: 'fixture-token', renewedAt: Date.now(), lastRenewAttemptAt: Date.now() } };
   globalThis.chrome = {
     permissions: { contains: async () => true },
-    storage: { session: {
+    storage: { local: {
+      get: async key => ({ [key]: structuredClone(local[key]) }),
+      set: async values => Object.assign(local, structuredClone(values)),
+      remove: async key => { delete local[key]; },
+    }, session: {
       get: async key => ({ [key]: session[key] }),
       set: async values => Object.assign(session, values),
       remove: async key => { delete session[key]; },
@@ -19,10 +23,10 @@ function site(platform, handler) {
   globalThis.fetch = async (url, options) => {
     calls.push({ url, options });
     if (url.startsWith('https://piazza.com/') && !url.includes('/logic/api')) return new Response('<meta name="csrf_token" content="fixture-csrf">');
-    const result = await handler(url, options);
+    const result = await (url.endsWith('/renew_token') ? renew(url, options) : handler(url, options));
     return new Response(JSON.stringify(result.body ?? result), { status: result.status ?? 200, headers: result.headers });
   };
-  return { calls, delays, session, restore: () => { for (const [key, value] of Object.entries(original)) { if (value === undefined) delete globalThis[key]; else globalThis[key] = value; } } };
+  return { calls, delays, session, local, restore: () => { for (const [key, value] of Object.entries(original)) { if (value === undefined) delete globalThis[key]; else globalThis[key] = value; } } };
 }
 const user = { courses: [{ course: { id: 1, name: 'CS 25200', status: 'active' } }] };
 
@@ -62,7 +66,7 @@ test('a failed post leaves the cursor at that post, preserving preceding success
     assert.equal(page.nextOffset, 1);
     assert.deepEqual(page.pageIds, ['1']);
     assert.equal(page.threads.length, 1);
-    assert.match(page.errors[0], /Post #2: Sign into Ed/);
+    assert.match(page.errors[0], /Post #2: Ed did not allow access/);
     assert.ok(!fixture.calls.some((c) => c.url.endsWith('/threads/3')));
   } finally { fixture.restore(); }
 });
@@ -145,7 +149,7 @@ test('Piazza preserves the connected course name without rendering its class pag
   } finally { fixture.restore(); }
 });
 
-test('routine Ed refresh uses session auth without touching tabs or injecting scripts', async () => {
+test('routine Ed refresh uses a remembered credential without touching tabs or injecting scripts', async () => {
   const fixture = site('ed', url => url.endsWith('/user') ? user : { threads: [] });
   chrome.tabs = new Proxy({}, { get() { assert.fail('Routine sync must not access tabs'); } });
   chrome.scripting = new Proxy({}, { get() { assert.fail('Routine sync must not inject'); } });
@@ -156,19 +160,20 @@ test('routine Ed refresh uses session auth without touching tabs or injecting sc
 test('missing or expired Ed authentication asks for reconnect without creating a tab', async () => {
   for (const missing of [true, false]) {
     const fixture = site('ed', () => ({ status: 401, body: {} }));
-    if (missing) delete fixture.session.discussionAuth;
-    chrome.tabs = new Proxy({}, { get() { assert.fail('Automatic auth recovery must not access tabs'); } });
+    if (missing) delete fixture.local.discussionAuth;
+    chrome.tabs = { query: async () => [], create: () => assert.fail('No automatic tab'), update: () => assert.fail('No navigation') };
     try {
       const result = await readDiscussionSite({ platform: 'ed', remoteId: '1' });
       assert.match(result.error, /reconnect in Settings/);
-      assert.equal(fixture.session.discussionAuth, undefined);
+      assert.equal(result.needsReconnect, true);
+      assert.equal(fixture.local.discussionAuth, undefined);
     } finally { fixture.restore(); }
   }
 });
 
-test('Ed connection captures an existing signed-in page only into session storage', async () => {
+test('Ed connection remembers the credential locally without returning it as course data', async () => {
   const fixture = site('ed', () => user);
-  delete fixture.session.discussionAuth;
+  delete fixture.local.discussionAuth;
   chrome.tabs = { query: async () => [{ id: 3, url: 'https://edstem.org/us/dashboard' }] };
   chrome.scripting = { executeScript: async ({ target, world }) => {
     assert.equal(target.tabId, 3); assert.equal(world, 'MAIN');
@@ -177,7 +182,7 @@ test('Ed connection captures an existing signed-in page only into session storag
   try {
     const result = await readDiscussionSite({ platform: 'ed', discover: true });
     assert.equal(result.courses.length, 1);
-    assert.equal(fixture.session.discussionAuth.ed, 'fixture-token');
+    assert.equal(fixture.local.discussionAuth.ed, 'fixture-token');
     assert.ok(!JSON.stringify(result).includes('fixture-token'));
   } finally { fixture.restore(); }
 });
@@ -192,7 +197,111 @@ test('a signed-out Piazza HTML page fails without calling APIs or opening tabs',
 test('revoked site access stops before reading credentials or making a request', async () => {
   const fixture = site('ed', () => assert.fail('No request without site access'));
   chrome.permissions.contains = async () => false;
-  chrome.storage.session.get = async () => assert.fail('No credential access without site access');
+  chrome.storage.local.get = async () => assert.fail('No credential access without site access');
   try { assert.match((await readDiscussionSite({ platform: 'ed', remoteId: '1' })).error, /Allow discussion site access/); }
   finally { fixture.restore(); }
+});
+
+
+test('Ed silently renews a remembered login without touching tabs', async () => {
+  const fixture = site('ed', (url, options) => {
+    assert.equal(options.headers['x-token'], 'renewed-token');
+    return url.endsWith('/user') ? user : { threads: [] };
+  }, (url, options) => {
+    assert.equal(options.method, 'POST');
+    assert.equal(options.headers['x-token'], 'fixture-token');
+    return { token: 'renewed-token' };
+  });
+  fixture.local.discussionAuth.renewedAt = Date.now() - 25 * 60 * 60_000;
+  fixture.local.discussionAuth.lastRenewAttemptAt = 0;
+  chrome.tabs = new Proxy({}, { get() { assert.fail('Renewal must not touch tabs'); } });
+  try {
+    assert.equal((await readDiscussionSite({ platform: 'ed', remoteId: '1' })).hasMore, false);
+    assert.equal(fixture.local.discussionAuth.ed, 'renewed-token');
+    const count = fixture.calls.filter(c => c.url.endsWith('/renew_token')).length;
+    await readDiscussionSite({ platform: 'ed', remoteId: '1' });
+    assert.equal(fixture.calls.filter(c => c.url.endsWith('/renew_token')).length, count, 'no renewal on every batch');
+  } finally { fixture.restore(); }
+});
+
+test('a renewal outage keeps using the valid credential and backs off', async () => {
+  const fixture = site('ed', url => url.endsWith('/user') ? user : { threads: [] });
+  fixture.local.discussionAuth.renewedAt = 0;
+  fixture.local.discussionAuth.lastRenewAttemptAt = 0;
+  try {
+    assert.equal((await readDiscussionSite({ platform: 'ed', remoteId: '1' })).hasMore, false);
+    assert.equal(fixture.local.discussionAuth.ed, 'fixture-token');
+    await readDiscussionSite({ platform: 'ed', remoteId: '1' });
+    assert.equal(fixture.calls.filter(c => c.url.endsWith('/renew_token')).length, 1);
+  } finally { fixture.restore(); }
+});
+
+test('an authentication rejection retries once with silent renewal', async () => {
+  const fixture = site('ed', (url, options) => options.headers['x-token'] === 'fixture-token'
+    ? { status: 401, body: {} } : url.endsWith('/user') ? user : { threads: [] }, () => ({ token: 'renewed-token' }));
+  try {
+    assert.equal((await readDiscussionSite({ platform: 'ed', remoteId: '1' })).hasMore, false);
+    assert.equal(fixture.local.discussionAuth.ed, 'renewed-token');
+  } finally { fixture.restore(); }
+});
+
+test('an already-open signed-in Ed page repairs a rejected credential without navigation', async () => {
+  const fixture = site('ed', (url, options) => options.headers['x-token'] === 'fixture-token'
+    ? { status: 401, body: {} } : url.endsWith('/user') ? user : { threads: [] });
+  chrome.tabs = { query: async () => [{ id: 8, active: true, url: 'https://edstem.org/us/dashboard' }] };
+  chrome.scripting = { executeScript: async () => [{ result: 'current-page-token' }] };
+  try {
+    assert.equal((await readDiscussionSite({ platform: 'ed', remoteId: '1' })).hasMore, false);
+    assert.equal(fixture.local.discussionAuth.ed, 'current-page-token');
+  } finally { fixture.restore(); }
+});
+
+test('a post-level access denial does not disconnect a valid Ed login', async () => {
+  const fixture = site('ed', url => url.endsWith('/user') ? user : { status: 403, body: {} });
+  try {
+    const result = await readDiscussionSite({ platform: 'ed', remoteId: '1' });
+    assert.match(result.error, /did not allow access/);
+    assert.equal(result.needsReconnect, false);
+    assert.equal(fixture.local.discussionAuth.ed, 'fixture-token');
+  } finally { fixture.restore(); }
+});
+
+test('existing session-only credentials migrate without another connection', async () => {
+  const fixture = site('ed', url => url.endsWith('/user') ? user : { threads: [] });
+  delete fixture.local.discussionAuth;
+  fixture.session.discussionAuth = { ed: 'fixture-token' };
+  try {
+    assert.equal((await readDiscussionSite({ platform: 'ed', remoteId: '1' })).hasMore, false);
+    assert.equal(fixture.local.discussionAuth.ed, 'fixture-token');
+    assert.equal(fixture.session.discussionAuth, undefined);
+  } finally { fixture.restore(); }
+});
+
+test('a renewal completing after disconnect cannot restore the removed credential', async () => {
+  const fixture = site('ed', url => url.endsWith('/user') ? user : { threads: [] }, () => {
+    delete fixture.local.discussionAuth;
+    return { token: 'late-renewed-token' };
+  });
+  fixture.local.discussionAuth.renewedAt = 0;
+  fixture.local.discussionAuth.lastRenewAttemptAt = 0;
+  try {
+    await readDiscussionSite({ platform: 'ed', remoteId: '1' });
+    assert.equal(fixture.local.discussionAuth, undefined);
+  } finally { fixture.restore(); }
+});
+
+test('slow authentication does not consume the post batch checkpoint', async () => {
+  const originalNow = Date.now;
+  let clock = originalNow();
+  const fixture = site('ed', url => {
+    if (url.endsWith('/user')) { clock += 25000; return user; }
+    if (url.includes('/courses/')) return { threads: [{ id: 31, updated_at: 'v1' }] };
+    return { thread: { id: 31 } };
+  });
+  Date.now = () => clock;
+  try {
+    const page = await readDiscussionSite({ platform: 'ed', remoteId: '1' });
+    assert.equal(page.nextOffset, 1);
+    assert.equal(page.threads.length, 1);
+  } finally { Date.now = originalNow; fixture.restore(); }
 });

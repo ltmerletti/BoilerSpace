@@ -28,7 +28,7 @@ Grade records and quiz scores are excluded from the assistant's model inputs. Bo
 
 ## Optional Ed and Piazza
 
-Ed and Piazza access is requested only when you choose to connect them. Refreshes make direct requests from the extension without opening site tabs. Connecting Ed reads its authentication token from an existing signed-in Ed page and keeps it in extension session storage, which is cleared when the browser session ends or the extension reloads. The token is also removed after an authentication failure, when Ed access is revoked, when its final course is disconnected, or when local data is cleared. It is not included in exports, conversations or model requests. BoilerSpace does not ask for discussion passwords.
+Ed and Piazza access is requested only when you choose to connect them. Refreshes make direct requests from the extension without opening site tabs. Connecting Ed reads its authentication token from an existing signed-in Ed page and keeps it in local extension storage so the connection survives browser restarts. BoilerSpace renews that credential through Ed's own renewal endpoint while in use. An already-open signed-in Ed page can supply a replacement when needed; recovery does not create or navigate tabs. The token is removed after an unrecoverable authentication failure, when Ed access is revoked, when its final course is disconnected, or when local data is cleared. It is not included in exports, conversations or model requests. BoilerSpace does not ask for discussion passwords.
 
 Piazza requests use its existing browser sign-in cookies. The extension fetches a page as text to obtain a CSRF token without executing that page's scripts, then reads course metadata through Piazza's API. Account profiles returned during discovery are discarded. Automatic Brightspace matching uses course codes, terms and title similarity locally, without sending course names to a model. An expired session shows **Reconnect**; automatic refresh does not open a sign-in page.
 
@@ -46,7 +46,7 @@ The normal GenAI Studio connection reuses an existing key, or creates one if the
 
 ## Exports and screenshots
 
-**Download data (JSON)** omits the saved GenAI Studio connection, including its API key. It can still contain course data, grades from the local snapshot, syllabus text, connected discussion posts, and conversations. It is not an anonymized export.
+**Download data (JSON)** omits the saved GenAI Studio connection and Ed authentication credential. It can still contain course data, grades from the local snapshot, syllabus text, connected discussion posts, and conversations. It is not an anonymized export.
 
 **Save benchmark data** omits grade records and the student's profile record and scrubs email addresses and phone numbers. It includes course material and previous questions, so it is not guaranteed anonymous. Instructor names, course identifiers, and other identifying text may remain.
 

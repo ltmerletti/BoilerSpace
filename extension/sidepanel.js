@@ -666,8 +666,7 @@ function exportCalendar() {
 }
 
 async function exportData() {
-  const all = await store.getAll();
-  for (const key of ['genai', 'syncLock', 'syncProgress', 'drawerOpen', 'drawerWidth', 'ui']) delete all[key];
+  const all = await store.getExportData();
   download(`boilerspace-data-${dayKey(new Date())}.json`, JSON.stringify(all, null, 2), 'application/json');
 }
 
@@ -1688,9 +1687,11 @@ function discussionConnection(platform) {
   const connecting = state.busy.discussionConnect && state.discussionPlatform === platform;
   const reading = sources.some(source => source.status === 'syncing');
   const problem = sources.some(source => source.error);
+  const authProblem = sources.some(source => source.error && source.needsReconnect !== false);
   const posts = sources.reduce((total, source) => total + (source.threads?.length ?? 0), 0);
-  const status = connecting ? 'Connecting…' : connected ? `${plural(sources.length, 'course')} · ${reading ? 'Reading posts…' : problem ? 'Needs attention' : plural(posts, 'post')}` : platform === 'ed' ? 'Use your signed-in Ed account' : 'Use your signed-in Piazza account';
-  const button = (!connected || problem) && h('button', { class: 'button secondary', type: 'button', disabled: state.busy.discussionConnect, onclick: () => openDiscussionAccess(platform, problem && platform === 'piazza' ? sources.find(source => source.error).url : null), 'aria-label': `${problem ? 'Reconnect' : 'Connect'} ${name}` }, connecting ? 'Connecting…' : problem ? 'Reconnect' : 'Connect');
+  const status = connecting ? 'Connecting…' : connected ? `${plural(sources.length, 'course')} · ${reading ? 'Reading posts…' : problem ? (authProblem ? 'Sign-in needed' : 'Update failed') : plural(posts, 'post')}` : platform === 'ed' ? 'Use your signed-in Ed account' : 'Use your signed-in Piazza account';
+  const retry = connected && problem && !authProblem;
+  const button = (!connected || problem) && h('button', { class: 'button secondary', type: 'button', disabled: state.busy.discussionConnect, onclick: () => retry ? refreshDiscussions(true) : openDiscussionAccess(platform, authProblem && platform === 'piazza' ? sources.find(source => source.error).url : null), 'aria-label': retry ? `Retry ${name} sync` : `${problem ? 'Reconnect' : 'Connect'} ${name}` }, connecting ? 'Connecting…' : retry ? 'Retry' : problem ? 'Reconnect' : 'Connect');
   const classLink = platform === 'piazza' && disclosure('piazza-link', 'Add a class by link',
     h('form', { class: 'class-link-form', onsubmit: event => { event.preventDefault(); openDiscussionAccess('piazza'); } },
       h('label', { class: 'field' }, 'Piazza class URL', h('input', { type: 'url', required: true, 'data-focus-key': 'piazza-url', value: state.piazzaUrl, placeholder: 'https://piazza.com/class/…', oninput: event => { state.piazzaUrl = event.target.value; } })),

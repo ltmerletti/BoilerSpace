@@ -9,6 +9,7 @@ function setup(reader, granted = true) {
   const calls = [], session = {};
   globalThis.chrome = {
     storage: { session: { remove: async key => { delete session[key]; } }, local: {
+      remove: async key => { delete data[key]; },
       get: async keys => Object.fromEntries((Array.isArray(keys) ? keys : [keys]).filter(key => key in data).map(key => [key, structuredClone(data[key])])),
       set: async values => Object.assign(data, structuredClone(values)),
     } },
@@ -234,7 +235,7 @@ test('clearing data while a batch is in flight does not restore cancelled posts'
 test('disconnecting the final Ed source clears its session credential', async () => {
   const { session } = setup(async () => ({ courses: [{ remoteId: '1' }] }));
   await handleDiscussionRequest({ action: 'connect', platform: 'ed' });
-  session.discussionAuth = { ed: 'fixture-token' };
+  await chrome.storage.local.set({ discussionAuth: { ed: 'fixture-token' } });
   await handleDiscussionRequest({ action: 'remove', sourceId: 'ed:1' });
-  assert.equal(session.discussionAuth, undefined);
+  assert.equal((await chrome.storage.local.get(['discussionAuth'])).discussionAuth, undefined);
 });

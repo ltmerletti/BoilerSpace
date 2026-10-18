@@ -106,7 +106,7 @@ async function perform({ action, platform, url, sourceId, courseId, force = fals
     const read = await readSite({ platform: source.platform, remoteId: source.remoteId, name: source.name, offset: source.sync.offset,
       // Reread older captures once, even if the site's version has not changed.
       knownVersions: Object.fromEntries((source.threads ?? []).filter((t) => t.captureVersion === DISCUSSION_CAPTURE_VERSION).map((t) => [t.id, t.remoteVersion])) });
-    if (read.error) throw new Error(read.error);
+    if (read.error) throw Object.assign(new Error(read.error), { needsReconnect: read.needsReconnect });
     if (!Array.isArray(read.pageIds) || !Array.isArray(read.seenIds) || !Number.isInteger(read.nextOffset) || read.nextOffset < source.sync.offset) throw new Error('The discussion reader returned an invalid page.');
     const signature = JSON.stringify(read.pageIds);
     const pageSignatures = new Set(source.sync.pageSignatures ?? []);
@@ -129,18 +129,20 @@ async function perform({ action, platform, url, sourceId, courseId, force = fals
     source.sync = { offset: read.nextOffset, seenIds: [...seen], pageIds: [...new Set([...source.sync.pageIds, ...read.pageIds])], pageSignatures: [...pageSignatures] };
     source.checkedCount = source.sync.pageIds.length;
     source.warning = null;
-    if (read.errors?.length) throw new Error(read.errors[0]);
+    if (read.errors?.length) throw Object.assign(new Error(read.errors[0]), { needsReconnect: read.needsReconnect });
     if (!read.hasMore) {
       source.threads = source.threads.filter((t) => seen.has(t.id));
       source.lastSyncedAt = new Date().toISOString();
       source.historyComplete = true;
       source.sync = null;
       source.status = 'done';
+      delete source.needsReconnect;
       delete source.hasMore;
     }
   } catch (error) {
     source.status = 'error';
     source.error = error.message;
+    source.needsReconnect = Boolean(error.needsReconnect);
   }
   await save();
   return { ...data, pending: sources.some(eligible) };

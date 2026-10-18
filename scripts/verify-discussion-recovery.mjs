@@ -45,7 +45,8 @@ async function launch() {
     if (expired) return route.fulfill({ status: 401, headers: { 'access-control-allow-origin': '*' }, body: '{}' });
     let body;
     if (url.hostname === 'us.edstem.org') {
-      if (url.pathname === '/api/user') body = { courses: [{ course: { id: 20, code: 'CS 25200', name: 'CS 25200', status: 'active' } }] };
+      if (url.pathname === '/api/renew_token') body = { token: 'synthetic-token' };
+      else if (url.pathname === '/api/user') body = { courses: [{ course: { id: 20, code: 'CS 25200', name: 'CS 25200', status: 'active' } }] };
       else if (url.pathname.endsWith('/courses/20/threads')) {
         const offset = Number(url.searchParams.get('offset'));
         body = { threads: Array.from({ length: count.ed }, (_, n) => ({ id: 2000 + n, number: n + 1, updated_at: revised && n === 0 ? 'v2' : 'v1', is_private: removed && n === 1, deleted_at: removed && n === 2 ? '2026-10-17' : null })).slice(offset, offset + 30) };
@@ -99,8 +100,10 @@ try {
   await panel.goto(sidepanel);
   await until(async () => (await read()).sources.every(source => source.status === 'error'), 'offline automatic resume');
   check('offline failures retain saved posts and the exact retry cursor', (await read()).sources[0].threads.length === 30 && (await read()).sources[0].sync.offset === 30);
+  await panel.getByRole('button', { name: 'Settings', exact: true }).click();
+  check('a network failure offers Retry instead of asking to reconnect', await panel.getByRole('button', { name: 'Retry Ed sync', exact: true }).isVisible() && await panel.getByRole('button', { name: 'Retry Piazza sync', exact: true }).isVisible());
   offline = false;
-  assert.equal((await connectEd()).ok, true);
+  check('Ed connection survives browser restart without reconnecting', await panel.evaluate(async () => !!(await chrome.storage.local.get('discussionAuth')).discussionAuth?.ed));
   const recoveryReaders = readerTabs.length;
   await panel.evaluate(() => window.dispatchEvent(new Event('online')));
   await until(async () => (await read()).sources.some(source => source.status !== 'error'), 'network recovery starts automatically', 5000);
@@ -137,6 +140,7 @@ try {
   await panel.getByRole('button', { name: 'Sync discussions now', exact: true }).click();
   await until(async () => (await read()).sources.every(source => source.status === 'error'), 'expired sessions');
   check('expired sessions preserve both saved histories with an actionable sign-in error', (await read()).sources.every(source => /Sign in/i.test(source.error) && source.threads.length > 0));
+  check('an unrecoverable sign-in failure offers Reconnect', await panel.getByRole('button', { name: 'Reconnect Ed', exact: true }).isVisible() && await panel.getByRole('button', { name: 'Reconnect Piazza', exact: true }).isVisible());
   check('expired authentication never opens a tab', readerTabs.length === beforeExpired);
   expired = false;
   assert.equal((await connectEd()).ok, true);

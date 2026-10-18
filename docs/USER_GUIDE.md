@@ -52,9 +52,9 @@ Clear syllabus dates are added to the agenda and calendar automatically. If syll
 
 Discussion imports save progress in batches and resume after interruption. Settings shows the saved post count and whether the history check is complete. Later syncs check history pages and reread new or changed posts. Discussions refresh independently at most every 20 minutes while BoilerSpace is open, or through **Sync discussions now**.
 
-Discussion refreshes make requests directly from the extension. They do not open, navigate or close site tabs. If your session expires, saved posts stay available and Settings shows **Reconnect**. Only choosing **Connect** or **Reconnect** can open a visible sign-in page.
+Discussion refreshes make requests directly from the extension. They do not open, navigate or close site tabs. If your sign-in cannot be renewed or restored, saved posts stay available and Settings shows **Reconnect**. Temporary update failures offer **Retry** and recover automatically on a later refresh. Only choosing **Connect** or **Reconnect** can open a visible sign-in page.
 
-Ed's connection credential is kept in extension session storage. After a browser restart or extension reload, you may need to reconnect Ed. Piazza reuses its existing browser sign-in cookies.
+Connections survive browser restarts and extension reloads. Ed renews its saved credential silently while you use BoilerSpace; an already-open signed-in Ed page can also repair the connection without navigation. Piazza reuses its existing browser sign-in cookies. Reconnect is needed when the site no longer accepts the saved sign-in and automatic recovery cannot restore it.
 
 Course previews show up to three posts from the past seven days. Ask searches the full saved history, including older posts and available replies. Private and deleted posts are excluded. Discussion attachments and images must be opened on the original site.
 

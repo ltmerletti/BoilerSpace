@@ -521,7 +521,7 @@ async function sendQuestion(question, { reuse = false, resume = null } = {}) {
   state.showChats = false;
   followAnswer = true;
   const keptTrace = (resume?.trace ?? []).map((entry) => ({ ...entry, active: false }));
-  state.pending = { chatId, trace: keptTrace, text: '', startedAt: Date.now(), open: false };
+  state.pending = { chatId, runId: crypto.randomUUID(), trace: keptTrace, text: '', startedAt: Date.now(), phase: 'research', disclosureEpoch: 0, open: true };
   state.abort = new AbortController();
   if (!reuse && !resume) await addMessage(chatId, { id: crypto.randomUUID(), role: 'user', content: text });
   render({ bottom: true });
@@ -546,7 +546,7 @@ async function sendQuestion(question, { reuse = false, resume = null } = {}) {
         updatePending();
       },
       onText: (partial) => {
-        state.pending.text = partial;
+        setPendingText(partial);
         updatePending();
       },
     });
@@ -556,7 +556,7 @@ async function sendQuestion(question, { reuse = false, resume = null } = {}) {
       if (error.code !== 'discussion-data-changed' || state.abort.signal.aborted) throw error;
       await loadState();
       state.pending.trace = keptTrace;
-      state.pending.text = '';
+      setPendingText('');
       updatePending();
       answer = await run();
     }
@@ -1340,26 +1340,46 @@ function messageView(message, index) {
 
 function pendingView() {
   const p = state.pending;
+  const trace = traceView(p.trace, {
+    key: `trace-${p.chatId}-${p.runId}`,
+    live: true,
+    writing: p.phase === 'writing',
+    seconds: Math.floor((Date.now() - p.startedAt) / 1000),
+    open: p.open,
+    ontoggle: (e) => {
+      const el = e.currentTarget;
+      if (e.target === el && el.isConnected && state.pending === p && el.dataset.pendingEpoch === String(p.disclosureEpoch)) p.open = el.open;
+    },
+  });
+  trace.dataset.pendingEpoch = String(p.disclosureEpoch);
   return h(
     'div',
     { class: 'message assistant pending', id: 'pending', style: `--activity-delay:-${(Date.now() - p.startedAt) % 1200}ms` },
-    traceView(p.trace, {
-      key: `trace-${p.chatId}-pending`,
-      live: true,
-      writing: Boolean(p.text),
-      seconds: Math.floor((Date.now() - p.startedAt) / 1000),
-      open: p.open,
-      ontoggle: (e) => {
-        if (e.target === e.currentTarget && e.currentTarget.isConnected) p.open = e.currentTarget.open;
-      },
-    }),
-    !p.text && p.trace.filter(entry => entry.type === 'commentary').map(entry => h('div', { class: 'live-commentary' }, answerBody(entry.text))),
+    trace,
     p.text && h('div', { class: 'streaming-answer' }, answerBody(p.text)),
   );
 }
 
 let pendingFrame = null;
 let followAnswer = true;
+
+function setPendingText(text) {
+  const p = state.pending;
+  const phase = text ? 'writing' : 'research';
+  if (p.phase !== phase) {
+    p.phase = phase;
+    p.disclosureEpoch++;
+    p.open = phase === 'research';
+  }
+  p.text = text;
+}
+
+function rememberPendingDisclosure() {
+  const p = state.pending;
+  const trace = document.querySelector('#pending > .trace');
+  // Old DOM state must not override a phase change or a new question.
+  if (p && trace?.dataset.disclosure === `trace-${p.chatId}-${p.runId}` && trace.dataset.pendingEpoch === String(p.disclosureEpoch)) p.open = trace.open;
+}
 
 // Patch the live answer in place so pointer-down targets survive the next token.
 function patchPendingNode(current, next) {
@@ -1396,11 +1416,13 @@ function paintPending() {
   if (!el || !state.pending) return;
   const main = document.querySelector('.messages');
   if (!main) return;
+  rememberPendingDisclosure();
   const scroll = main.scrollTop;
   const disclosures = [...el.querySelectorAll('details[data-disclosure]')].map(details => ({ key: details.dataset.disclosure, open: details.open, scroll: details.querySelector('.thought-text')?.scrollTop }));
   const focusKey = el.contains(document.activeElement) && document.activeElement.dataset.focusKey;
   const next = pendingView();
   for (const details of next.querySelectorAll('details[data-disclosure]')) {
+    if (details.hasAttribute('data-pending-epoch')) continue;
     const previous = disclosures.find(item => item.key === details.dataset.disclosure);
     if (previous) details.open = previous.open;
   }
@@ -1820,6 +1842,7 @@ const expandedSections = new Map();
 
 function render({ top = false, bottom = false } = {}) {
   const main = document.getElementById('view');
+  rememberPendingDisclosure();
   const scroller = main.querySelector('.messages') ?? main;
   const scroll = scroller.scrollTop;
   const atBottom = scroller.scrollHeight - scroll - scroller.clientHeight < 80;
@@ -1829,7 +1852,9 @@ function render({ top = false, bottom = false } = {}) {
   for (const details of main.querySelectorAll('details[data-disclosure]')) expandedSections.set(details.dataset.disclosure, details.open);
   const content = DISCUSSION_ACCESS ? discussionAccessView() : ACCESS_PAGE ? syllabusAccessPage() : CONNECT_PAGE ? connectPageView() : [syllabusAccessNotice(), state.view === 'settings' ? null : hostAccessNotice(), VIEWS[state.view]()];
   main.replaceChildren(h('div', { class: state.view === 'ask' && !CONNECT_PAGE ? 'view ask-view' : 'view' }, content));
-  for (const details of main.querySelectorAll('details[data-disclosure]')) details.open = expandedSections.get(details.dataset.disclosure) ?? false;
+  for (const details of main.querySelectorAll('details[data-disclosure]')) {
+    if (!details.hasAttribute('data-pending-epoch')) details.open = expandedSections.get(details.dataset.disclosure) ?? false;
+  }
   const focused = focusKey && [...main.querySelectorAll('[data-focus-key]')].find(element => element.dataset.focusKey === focusKey);
   if (focused) {
     focused.focus({ preventScroll: true });

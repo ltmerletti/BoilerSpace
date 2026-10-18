@@ -8,7 +8,9 @@ What changed, what prompted it, and what it means when you use BoilerSpace. Each
 
 This round focused on the interruptions that make an otherwise useful tool frustrating: controls that miss clicks, narration that disappears, imports that stop, and updates that draw attention away from studying.
 
-- **A clearer introduction to BoilerSpace.**The README starts with a question about a specific radiation slide, followed by a review outline built from lecture material and instructor guidance collected from Ed. The examples ask questions a student could bring to the course without already knowing which file or post contains the answer. Detailed setup instructions have their own guide, and screenshots show actual model answers.
+- **Keep research inside the work log.** Intermediate narration used to appear below a closed log, making it look like part of the answer. Research now starts expanded, stays in one ordered log, and collapses when answer text starts. Manual toggles survive streaming and rerenders; if the model returns to tools, the research log reopens.
+
+- **A clearer introduction to BoilerSpace.** The README starts with a question about a specific radiation slide, followed by a review outline built from lecture material and instructor guidance collected from Ed. The examples ask questions a student could bring to the course without already knowing which file or post contains the answer. Detailed setup instructions have their own guide, and screenshots show actual model answers. [Details](https://github.com/ltmerletti/BoilerSpace/pull/3)
 
 - **Open details while an answer is arriving.** Streaming tokens were replacing the element under the pointer before a click finished. The panel now updates it in place. Narration stays visible during lookups, then moves into the work log when the answer starts. The thinking control is lighter, and routine refreshes keep the cached view quiet. [Details](https://github.com/ltmerletti/BoilerSpace/commit/af6f892)
 

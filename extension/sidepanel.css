@@ -1109,7 +1109,6 @@ a.cite:hover {
 .tool-preview dt { font-weight: 700; color: var(--ferrite-soft); }
 .tool-preview dd { margin: 2px 0 9px; }
 .trace-commentary { margin-left: 23px; color: var(--ferrite-soft); }
-.pending:has(.trace[open]) .live-commentary { display: none; }
 
 .tool-call code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;

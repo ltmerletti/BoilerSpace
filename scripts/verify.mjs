@@ -291,7 +291,7 @@ try {
   for (let attempt = 0; !releaseToolResponse && attempt < 100; attempt++) await sleep(50);
   if (!releaseToolResponse) throw new Error('The fixture did not reach the tool-result review phase.');
   check('live activity changes from thinking to reviewing tool results', await page.locator('.pending .trace-current').innerText() === 'Reviewing results');
-  await page.locator('.pending .trace > summary').click();
+  check('research starts with the work log open', await page.locator('.pending .trace').evaluate(element => element.open));
   await page.locator('.pending .tool-call > summary').click();
   await page.locator('.pending .trace-reasoning > summary').click();
   await page.locator('.pending .tool-call > summary').focus();
@@ -347,7 +347,7 @@ try {
   await page.getByRole('button', { name: 'Send', exact: true }).click();
   for (let attempt = 0; !releaseHeldResponse && attempt < 240; attempt++) await sleep(50);
   if (!releaseHeldResponse) throw new Error('The pending response did not reach the fixture.');
-  check('real model requests show a compact live work indicator', await page.locator('.pending .trace.live').count() === 1 && !(await page.locator('.pending .trace').evaluate(element => element.open)));
+  check('pending requests show a single expanded research log', await page.locator('.pending .trace.live').count() === 1 && await page.locator('.pending .trace').evaluate(element => element.open) && await page.locator('.pending > .live-commentary').count() === 0);
   await page.getByRole('button', { name: 'Stop', exact: true }).click();
   await page.locator('.message.stopped').waitFor();
   releaseHeldResponse();

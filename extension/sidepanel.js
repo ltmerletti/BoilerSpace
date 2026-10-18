@@ -689,6 +689,7 @@ async function saveBenchmarkData() {
 
 async function clearData() {
   if (!confirm('Delete all BoilerSpace data on this device? This also disconnects GenAI Studio.')) return;
+  await chrome.storage.session.remove('discussionAuth');
   await chrome.storage.local.clear();
   await loadState({ includeChat: true });
   state.view = 'settings';
@@ -1688,7 +1689,7 @@ function discussionConnection(platform) {
   const reading = sources.some(source => source.status === 'syncing');
   const problem = sources.some(source => source.error);
   const posts = sources.reduce((total, source) => total + (source.threads?.length ?? 0), 0);
-  const status = connecting ? 'Connecting…' : connected ? `${plural(sources.length, 'course')} · ${reading ? 'Reading posts…' : problem ? 'Needs attention' : plural(posts, 'post')}` : platform === 'ed' ? 'Use your signed-in Ed account' : 'Connect your open Piazza classes';
+  const status = connecting ? 'Connecting…' : connected ? `${plural(sources.length, 'course')} · ${reading ? 'Reading posts…' : problem ? 'Needs attention' : plural(posts, 'post')}` : platform === 'ed' ? 'Use your signed-in Ed account' : 'Use your signed-in Piazza account';
   const button = (!connected || problem) && h('button', { class: 'button secondary', type: 'button', disabled: state.busy.discussionConnect, onclick: () => openDiscussionAccess(platform, problem && platform === 'piazza' ? sources.find(source => source.error).url : null), 'aria-label': `${problem ? 'Reconnect' : 'Connect'} ${name}` }, connecting ? 'Connecting…' : problem ? 'Reconnect' : 'Connect');
   const classLink = platform === 'piazza' && disclosure('piazza-link', 'Add a class by link',
     h('form', { class: 'class-link-form', onsubmit: event => { event.preventDefault(); openDiscussionAccess('piazza'); } },

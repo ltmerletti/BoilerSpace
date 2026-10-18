@@ -48,11 +48,13 @@ Temporary network or loading failures get one retry after the other courses fini
 
 Clear syllabus dates are added to the agenda and calendar automatically. If syllabus dates conflict with Brightspace, the agenda uses Brightspace and keeps the discrepancy available to inspect.
 
-## Discussion history and background tabs
+## Discussion history and sync
 
 Discussion imports save progress in batches and resume after interruption. Settings shows the saved post count and whether the history check is complete. Later syncs check history pages and reread new or changed posts. Discussions refresh independently at most every 20 minutes while BoilerSpace is open, or through **Sync discussions now**.
 
-The reader reuses an open class tab when possible and leaves it open. Otherwise it opens a temporary inactive tab, keeps it across import batches, and closes it when the refresh finishes or stops. Both Ed courses can share the same reader. Opening a temporary reader yourself makes it yours to keep. Automatic refresh does not request tab focus. A reconnect can open a visible sign-in tab.
+Discussion refreshes make requests directly from the extension. They do not open, navigate or close site tabs. If your session expires, saved posts stay available and Settings shows **Reconnect**. Only choosing **Connect** or **Reconnect** can open a visible sign-in page.
+
+Ed's connection credential is kept in extension session storage. After a browser restart or extension reload, you may need to reconnect Ed. Piazza reuses its existing browser sign-in cookies.
 
 Course previews show up to three posts from the past seven days. Ask searches the full saved history, including older posts and available replies. Private and deleted posts are excluded. Discussion attachments and images must be opened on the original site.
 

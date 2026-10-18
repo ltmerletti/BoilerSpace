@@ -8,7 +8,9 @@ What changed, what prompted it, and what it means when you use BoilerSpace. Each
 
 This round focused on the interruptions that make an otherwise useful tool frustrating: controls that miss clicks, narration that disappears, imports that stop, and updates that draw attention away from studying.
 
-- **Stop opening a reader for every import batch.** Ed and Piazza now keep an inactive reader across a refresh, then close it when finished. Existing tabs stay open, and opening a temporary reader yourself keeps it from being closed. Coming back online retries interrupted sources without restarting healthy ones. Piazza's overlapping pinned posts no longer stop an otherwise progressing import.
+- **Sync discussions without opening tabs.** Ed and Piazza refresh directly from the extension. An expired session keeps saved posts available and offers Reconnect in Settings. A sign-in page opens only after choosing Connect or Reconnect. Ed's credential stays in extension session storage; Piazza uses the browser's existing sign-in cookies.
+
+- **Keep interrupted imports moving.** Coming back online retries affected discussion sources without restarting healthy ones. Piazza's overlapping pinned posts no longer stop an otherwise progressing history import.
 
 - **Keep research inside the work log.** Intermediate narration used to appear below a closed log, making it look like part of the answer. Research now starts expanded, stays in one ordered log, and collapses when answer text starts. Manual toggles survive streaming and rerenders; if the model returns to tools, the research log reopens.
 

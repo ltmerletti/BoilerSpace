@@ -31,22 +31,13 @@ async function launch() {
   context = await chromium.launchPersistentContext(profile, { headless: true, channel: 'chromium', reducedMotion: 'reduce', args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`] });
   context.on('page', page => {
     page.on('pageerror', error => errors.push(error.message));
-    let reader;
-    page.on('framenavigated', frame => {
-      if (frame !== page.mainFrame() || reader) return;
-      const url = new URL(frame.url());
-      if (['edstem.org', 'piazza.com'].includes(url.hostname) && url.hash.startsWith('#boilerspace-reader=')) {
-        reader = { site: url.hostname, closed: false };
-        readerTabs.push(reader);
-      }
-    });
-    page.on('close', () => { if (reader) reader.closed = true; });
+    readerTabs.push(page);
   });
   await context.route('**/*', async route => {
     const req = route.request(), url = new URL(req.url());
     if (url.protocol === 'chrome-extension:' || url.protocol === 'data:' || url.protocol === 'about:') return route.continue();
     if (!['edstem.org', 'us.edstem.org', 'piazza.com'].includes(url.hostname)) return route.abort();
-    if (req.resourceType() === 'document') return route.fulfill({ contentType: 'text/html', body: url.hostname === 'edstem.org' ? '<script>localStorage.setItem("authToken:us", "synthetic-token")</script><h1>Ed fixture</h1>' : '<meta name="csrf_token" content="synthetic-csrf"><a href="/class/recovery123">MA 26500</a><h1 id="topbar_current_class_number">MA 26500</h1>' });
+    if (!url.pathname.startsWith('/api/') && !url.pathname.startsWith('/logic/api')) return route.fulfill({ contentType: 'text/html', body: url.hostname === 'edstem.org' ? '<script>localStorage.setItem("authToken:us", "synthetic-token")</script><h1>Ed fixture</h1>' : '<meta name="csrf_token" content="synthetic-csrf"><a href="/class/recovery123">MA 26500</a><h1 id="topbar_current_class_number">MA 26500</h1>' });
     if (url.pathname === '/favicon.ico') return route.fulfill({ status: 204 });
     operations.push({ site: url.hostname, path: url.pathname, at: Date.now() });
     if (offline) return route.abort('internetdisconnected');
@@ -68,7 +59,8 @@ async function launch() {
     const payload = req.postDataJSON();
     if (!payload) throw new Error(`Unexpected fixture request: ${req.method()} ${url.origin}${url.pathname} (${req.resourceType()})`);
     const { method, params } = payload;
-    if (method === 'network.get_my_feed') {
+    if (method === 'user.status') body = { result: { networks: [{ id: 'recovery123', course_number: 'MA 26500' }] } };
+    else if (method === 'network.get_my_feed') {
       const feed = Array.from({ length: count.piazza }, (_, n) => ({ nr: n + 1, version: 1 })).slice(params.offset, params.offset + 30);
       body = { error: null, result: { feed, more: params.offset + feed.length < count.piazza } };
     } else {
@@ -82,10 +74,17 @@ async function launch() {
   panel = await context.newPage(); await panel.goto(base);
   return base.replace('document.html', 'sidepanel.html');
 }
+async function connectEd() {
+  const login = await context.newPage();
+  await login.goto('https://edstem.org/us/');
+  const result = await request('connect', { platform: 'ed' });
+  await login.close();
+  return result;
+}
 try {
   let sidepanel = await launch();
   await panel.evaluate(snapshot => chrome.storage.local.set({ snapshot, syncMeta: { lastSuccessAt: new Date().toISOString() } }), snapshotFixture());
-  const connectedEd = await request('connect', { platform: 'ed' });
+  const connectedEd = await connectEd();
   assert.equal(connectedEd.ok, true, connectedEd.error);
   assert.equal((await request('connect', { platform: 'piazza' })).ok, true);
   await request('sync', { force: true, sourceId: 'ed:20' });
@@ -101,6 +100,7 @@ try {
   await until(async () => (await read()).sources.every(source => source.status === 'error'), 'offline automatic resume');
   check('offline failures retain saved posts and the exact retry cursor', (await read()).sources[0].threads.length === 30 && (await read()).sources[0].sync.offset === 30);
   offline = false;
+  assert.equal((await connectEd()).ok, true);
   const recoveryReaders = readerTabs.length;
   await panel.evaluate(() => window.dispatchEvent(new Event('online')));
   await until(async () => (await read()).sources.some(source => source.status !== 'error'), 'network recovery starts automatically', 5000);
@@ -108,7 +108,7 @@ try {
   await panel.getByRole('button', { name: 'Settings', exact: true }).click();
   await until(() => panel.getByRole('button', { name: 'Sync discussions now', exact: true }).isEnabled(), 'recovery cleanup finishes');
   const resumedReaders = readerTabs.slice(recoveryReaders);
-  check('a multi-batch recovery uses one reader per site and closes each once', ['edstem.org', 'piazza.com'].every(site => resumedReaders.filter(reader => reader.site === site).length === 1) && resumedReaders.every(reader => reader.closed));
+  check('a multi-batch recovery creates no tabs', resumedReaders.length === 0);
   const complete = await read();
   check('network recovery automatically finishes both histories without a manual retry', complete.sources.find(source => source.platform === 'ed').threads.length === count.ed && complete.sources.find(source => source.platform === 'piazza').threads.length === count.piazza && complete.sources.every(source => source.historyComplete && !source.sync));
   const piazzaAttempt = complete.sources.find(source => source.platform === 'piazza').lastAttemptAt;
@@ -132,14 +132,17 @@ try {
   await until(async () => (await read()).sources[0].threads.length === count.ed - 2, 'edited and removed posts');
   check('a later sweep updates old text and removes deleted or newly private posts', (await read()).sources[0].threads.find(thread => thread.id === '2000').text.includes('Friday') && !(await read()).sources[0].threads.some(thread => ['2001', '2002'].includes(thread.id)) && detailReads() === before + 1);
   await until(() => panel.getByRole('button', { name: 'Sync discussions now', exact: true }).isEnabled(), 'completed sweep');
+  const beforeExpired = readerTabs.length;
   expired = true;
   await panel.getByRole('button', { name: 'Sync discussions now', exact: true }).click();
   await until(async () => (await read()).sources.every(source => source.status === 'error'), 'expired sessions');
   check('expired sessions preserve both saved histories with an actionable sign-in error', (await read()).sources.every(source => /Sign in/i.test(source.error) && source.threads.length > 0));
+  check('expired authentication never opens a tab', readerTabs.length === beforeExpired);
   expired = false;
+  assert.equal((await connectEd()).ok, true);
   await panel.evaluate(() => window.dispatchEvent(new Event('online')));
   await until(async () => (await read()).sources.every(source => source.status === 'done'), 'session recovery');
-  check('recovery leaves no temporary discussion tabs open', !context.pages().some(page => /^https:\/\/(edstem.org|piazza.com)/.test(page.url())));
+  check('routine sync leaves no discussion tabs open', !context.pages().some(page => /^https:\/\/(edstem.org|piazza.com)/.test(page.url())));
   check('no browser page errors', errors.length === 0);
   writeFileSync(path.join(out, 'results.json'), JSON.stringify({ at: new Date().toISOString(), checks, operations: operations.length }, null, 2));
 } catch (error) {

@@ -54,17 +54,16 @@ test('Firefox keeps the native message promise pending until the shared handler 
   }
 });
 
-test('Firefox registers reader lifecycle wake-up events before importing reader code', () => {
-  const listeners = {};
-  const event = name => ({ addListener: fn => { listeners[name] = fn; } });
-  const chrome = {
-    runtime: { id: 'test', getURL: file => `moz-extension://test/${file}`, onMessage: event('message') },
-    action: { onClicked: event('action') },
-    permissions: { onAdded: event('added'), onRemoved: event('removed') },
-    tabs: { onActivated: event('activated'), onUpdated: event('updated'), onRemoved: event('closed') },
-    alarms: { onAlarm: event('alarm') },
-    storage: { onChanged: event('storage') },
+test('revoking Ed site access clears its session credential', async () => {
+  const { onSiteAccessChanged } = await import('../extension/lib/background-handlers.js');
+  let removed;
+  const cleared = new Promise(resolve => { removed = resolve; });
+  globalThis.chrome = {
+    permissions: { contains: async () => false },
+    storage: { session: { remove: async key => { assert.equal(key, 'discussionAuth'); removed(); } } },
   };
-  runInNewContext(readFileSync(new URL('../extension/background-firefox.js', import.meta.url), 'utf8'), { chrome, browser: { runtime: chrome.runtime }, URL });
-  for (const key of ['message', 'activated', 'updated', 'closed', 'alarm', 'storage']) assert.equal(typeof listeners[key], 'function', key);
+  try {
+    onSiteAccessChanged({ origins: ['https://edstem.org/*'] });
+    await cleared;
+  } finally { delete globalThis.chrome; }
 });

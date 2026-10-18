@@ -83,8 +83,9 @@ try {
     if (!piazzaSignedIn) return route.fulfill({ status: 403, body: '{}' });
     assert.equal(request.headers()['csrf-token'], 'fixture-csrf');
     const { method, params } = request.postDataJSON();
-    assert.ok(['network.get_my_feed', 'content.get'].includes(method), 'only read methods are allowed');
+    assert.ok(['user.status', 'network.get_my_feed', 'content.get'].includes(method), 'only read methods are allowed');
     operations.push(`Piazza ${method}`);
+    if (method === 'user.status') return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ result: { networks: [{ id: 'example123', course_number: 'Earlier discussion course' }], name: 'Do not persist' } }) });
     if (method === 'content.get' && params.cid === '7' && !piazzaThrottled) {
       piazzaThrottled = true;
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ error: 'Sorry, too fast -- please wait a second and try again.' }) });
@@ -202,7 +203,7 @@ try {
   await poll(async () => (await read()).sources.some(source => source.platform === 'piazza' && source.historyComplete), 'Piazza discovery and import without pasting a URL');
   saved = await read();
   const piazza = saved.sources.find((s) => s.platform === 'piazza');
-  check('Piazza follows all feed pages and reads instructor answers using the signed-in page CSRF token', piazza.threads.length === 3 && piazza.threads[0].replies[0].role === 'instructor');
+  check('Piazza follows all feed pages and reads instructor answers using direct authenticated API requests', piazza.threads.length === 3 && piazza.threads[0].replies[0].role === 'instructor');
   check('Piazza automatically backs off and retries a rate-limited post', piazzaThrottled && piazza.status === 'done');
   check('an older Piazza class stays separate from current Brightspace courses', piazza.courseId === null);
   check('Piazza citations link to the original numbered post', piazza.threads[0].url === 'https://piazza.com/class/example123?cid=5');
@@ -218,10 +219,19 @@ try {
   check('a changed post beyond the first page is reread on the next sync', detailReads() === beforeRefresh + 1);
   await edPage.close();
   await piazzaPage.close();
+  const siteTabsBefore = context.pages().filter(p => /^https:\/\/(edstem.org|piazza.com)/.test(p.url())).length;
+  let unexpectedTabs = 0;
+  const createdDuringSync = () => { unexpectedTabs++; };
+  context.on('page', createdDuringSync);
+  await panel.getByRole('button', { name: 'Sync discussions now', exact: true }).click();
+  await poll(() => panel.getByRole('button', { name: 'Sync discussions now', exact: true }).isEnabled(), 'direct refresh with all site tabs closed');
+  check('a full refresh with all site tabs closed creates no tabs', unexpectedTabs === 0);
+  context.off('page', createdDuringSync);
   piazzaSignedIn = false;
   await panel.getByRole('button', { name: 'Sync discussions now', exact: true }).click();
   await poll(async () => (await read()).sources.find((s) => s.platform === 'piazza').status === 'error', 'expired Piazza session');
   saved = await read();
+  check('expired sessions never open a site tab', context.pages().filter(p => /^https:\/\/(edstem.org|piazza.com)/.test(p.url())).length === siteTabsBefore);
   check('an expired discussion session preserves cached posts and does not fail Ed', saved.sources.find((s) => s.platform === 'piazza').threads.length === 3 && saved.sources.filter((s) => s.platform === 'ed').every((s) => s.status === 'done'));
   await panel.getByRole('button', { name: 'Reconnect Piazza', exact: true }).click();
   await panel.getByText(/Finish signing in to Piazza/).waitFor({ timeout: 30_000 });
@@ -230,7 +240,7 @@ try {
   await piazzaSignIn.reload();
   await poll(async () => (await read()).sources.every((s) => s.status === 'done'), 'automatic retry after Piazza sign-in');
   check('Piazza reconnect verifies class access and resumes the import after sign-in without another retry click', true);
-  check('background readers close only their own temporary site tabs', !context.pages().some((p) => /^https:\/\/(edstem.org|piazza.com)/.test(p.url())));
+  check('only explicit sign-in opens a site tab, which closes after connection', !context.pages().some((p) => /^https:\/\/(edstem.org|piazza.com)/.test(p.url())));
   await panel.getByRole('button', { name: 'Connect Purdue GenAI Studio', exact: true }).click();
   await poll(() => worker.evaluate(async () => Boolean((await chrome.storage.local.get('genai')).genai?.key)), 'one-click GenAI connection');
   check('GenAI connects from the same screen using the existing account key', (await worker.evaluate(async () => (await chrome.storage.local.get('genai')).genai)).created === false);

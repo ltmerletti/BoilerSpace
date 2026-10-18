@@ -1,31 +1,24 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { handleDiscussionRequest } from '../extension/lib/discussions-sync.js';
+import { createDiscussionSync } from '../extension/lib/discussions-sync.js';
 import { snapshotFixture } from './helpers.mjs';
-import { checkDiscussionReaderTab, sweepDiscussionReaders } from '../extension/lib/discussion-readers.js';
+let handleDiscussionRequest;
 
 function setup(reader, granted = true) {
   const data = { snapshot: snapshotFixture() };
-  const calls = [], session = {}, ownedTabs = new Map(), tabCalls = [];
-  let nextId = 100;
+  const calls = [], session = {};
   globalThis.chrome = {
-    runtime: { getURL: file => `chrome-extension://fixture/${file}` },
-    alarms: { create: async () => {}, clear: async () => {} },
-    storage: { session: { get: async key => ({ [key]: structuredClone(session[key]) }), set: async values => Object.assign(session, structuredClone(values)) }, local: {
-      get: async (keys) => Object.fromEntries((Array.isArray(keys) ? keys : [keys]).filter((k) => k in data).map((k) => [k, structuredClone(data[k])])),
-      set: async (values) => Object.assign(data, structuredClone(values)),
+    storage: { session: { remove: async key => { delete session[key]; } }, local: {
+      get: async keys => Object.fromEntries((Array.isArray(keys) ? keys : [keys]).filter(key => key in data).map(key => [key, structuredClone(data[key])])),
+      set: async values => Object.assign(data, structuredClone(values)),
     } },
-    permissions: { contains: async () => granted },
-    tabs: {
-      query: async () => [{ id: 1, url: 'https://edstem.org/us/', status: 'complete' }, ...ownedTabs.values()],
-      get: async id => ownedTabs.get(id) ?? (await chrome.tabs.query({})).find(tab => tab.id === id) ?? Promise.reject(new Error('No tab')),
-      create: async options => { tabCalls.push(['create', options]); const tab = { id: nextId++, status: 'complete', ...options }; ownedTabs.set(tab.id, tab); return tab; },
-      update: async (id, options) => { tabCalls.push(['update', id, options]); const tab = { ...ownedTabs.get(id), ...options }; ownedTabs.set(id, tab); return tab; },
-      remove: async id => { tabCalls.push(['remove', id]); ownedTabs.delete(id); },
-    },
-    scripting: { executeScript: async ({ args }) => { calls.push(args[0]); return [{ result: await reader(args[0], data) }]; } },
   };
-  return { data, calls, session, ownedTabs, tabCalls };
+  handleDiscussionRequest = createDiscussionSync(async args => {
+    if (!granted) throw new Error('Allow discussion site access by reconnecting in Settings.');
+    calls.push(args);
+    return reader(args, data);
+  });
+  return { data, calls, session };
 }
 
 const feed = (remoteId, offset = 0) => ({ name: 'CS 25200', errors: [], hasMore: offset === 0,
@@ -47,30 +40,6 @@ async function connect() {
   return sync(true);
 }
 
-test('a newly opened Firefox reader waits for the site URL after about:blank reports complete', async () => {
-  setup(async () => ({ courses: [{ remoteId: '1', name: 'CS 25200' }] }));
-  let polls = 0, removed = false, targetUrl;
-  chrome.tabs.query = async () => [];
-  chrome.tabs.create = async options => { assert.equal(options.active, false); return { id: 99 }; };
-  chrome.tabs.update = async (id, options) => { targetUrl = options.url; return { id }; };
-  chrome.tabs.get = async () => ({ id: 99, status: 'complete', active: false, url: !targetUrl || ++polls <= 2 ? 'about:blank' : targetUrl, pendingUrl: targetUrl && polls <= 2 ? targetUrl : undefined });
-  chrome.tabs.remove = async id => { assert.equal(id, 99); removed = true; };
-  const execute = chrome.scripting.executeScript;
-  chrome.scripting.executeScript = async args => { assert.ok(polls >= 3, 'the site has committed before injection'); return execute(args); };
-  await handleDiscussionRequest({ action: 'connect', platform: 'ed' });
-  assert.ok(polls >= 3);
-  assert.equal(removed, true);
-});
-
-test('Piazza reuses an existing class tab with a trailing slash and leaves it open', async () => {
-  setup(async () => ({ courses: [{ remoteId: 'example123', name: 'CS 25200' }] }));
-  chrome.tabs.query = async () => [{ id: 8, url: 'https://piazza.com/class/example123/?cid=12#discussion', active: false, status: 'complete' }];
-  chrome.tabs.create = async () => assert.fail('The existing class tab should be reused');
-  chrome.tabs.remove = async () => assert.fail('A user-owned class tab must stay open');
-  const result = await handleDiscussionRequest({ action: 'connect', platform: 'piazza', url: 'https://piazza.com/class/example123' });
-  assert.equal(result.sources[0].id, 'piazza:example123');
-});
-
 test('Ed connect discovers all active courses and refreshes them independently', async () => {
   const { data } = setup(async ({ discover, remoteId, offset }) => discover ? { courses: [{ remoteId: '1', code: 'CS 25200', name: 'CS 25200' }, { remoteId: '2', code: 'MA 26500', name: 'MA 26500' }] } : remoteId === '2' ? Promise.reject(new Error('Temporary site error')) : feed(remoteId, offset));
   await connect();
@@ -85,15 +54,15 @@ test('discussion failure keeps the previous text and successful sources are not 
   const before = calls.length;
   await handleDiscussionRequest({ action: 'sync' });
   assert.equal(calls.length, before);
-  chrome.scripting.executeScript = async () => { throw new Error('Session expired'); };
+  handleDiscussionRequest = createDiscussionSync(async () => { throw new Error('Session expired'); });
   await handleDiscussionRequest({ action: 'sync', force: true });
   assert.equal(data.discussions.sources[0].status, 'error');
   assert.equal(data.discussions.sources[0].threads[0].text, 'Friday');
 });
 
-test('site access is checked before injecting any reader', async () => {
+test('site access is checked before reading discussion data', async () => {
   const { calls } = setup(async () => { throw new Error('Should not run'); }, false);
-  await assert.rejects(handleDiscussionRequest({ action: 'connect', platform: 'ed' }), /Allow Ed access/);
+  await assert.rejects(handleDiscussionRequest({ action: 'connect', platform: 'ed' }), /Allow discussion site access/);
   assert.equal(calls.length, 0);
 });
 
@@ -192,7 +161,6 @@ test('Piazza discovers courses without a pasted link and matches metadata return
   const { data } = setup(async ({ discover, offset }) => discover ? { courses: [{ remoteId: 'example', name: 'Piazza course' }] } : {
     name: 'CS252', errors: [], threads: [], seenIds: [], pageIds: [], versions: {}, nextOffset: offset, hasMore: false,
   });
-  chrome.tabs.query = async () => [{ id: 1, url: 'https://piazza.com/class/example', status: 'complete' }];
   await handleDiscussionRequest({ action: 'connect', platform: 'piazza' });
   assert.equal(data.discussions.sources[0].courseId, null);
   await sync(true);
@@ -205,12 +173,10 @@ test('a pasted Piazza link verifies signed-in class access before saving the con
     assert.equal(discover, true);
     return { courses: [{ remoteId: 'example', name: 'CS252' }] };
   });
-  chrome.tabs.query = async () => [{ id: 1, url: 'https://piazza.com/class/example', status: 'complete' }];
   await handleDiscussionRequest({ action: 'connect', platform: 'piazza', url: 'https://piazza.com/class/example' });
   assert.equal(data.discussions.sources[0].courseId, 1600001);
   assert.equal(calls.length, 1);
-  chrome.scripting.executeScript = async () => [{ result: { courses: [] } }];
-  chrome.tabs.query = async () => [{ id: 1, url: 'https://piazza.com/class/unavailable', status: 'complete' }];
+  handleDiscussionRequest = createDiscussionSync(async () => ({ courses: [] }));
   await assert.rejects(handleDiscussionRequest({ action: 'connect', platform: 'piazza', url: 'https://piazza.com/class/unavailable' }), /Sign into Piazza/);
   assert.equal(data.discussions.sources.length, 1, 'unverified classes are not silently connected');
 });
@@ -221,27 +187,6 @@ test('a server repeating the same history page stops with a recoverable error', 
   assert.equal(data.discussions.sources[0].status, 'error');
   assert.match(data.discussions.sources[0].error, /stopped advancing/);
   assert.equal(data.discussions.sources[0].threads.length, 1);
-});
-
-test('a failed temporary-tab creation does not inject or leave a reader lease', async () => {
-  const fixture = setup(async () => { throw new Error('Must not inject after creation fails'); });
-  chrome.tabs.query = async () => [];
-  chrome.tabs.create = async () => { throw new Error('Navigation failed'); };
-  await assert.rejects(handleDiscussionRequest({ action: 'connect', platform: 'ed' }), /Navigation failed/);
-  assert.deepEqual(fixture.session.discussionReaders, {});
-});
-
-test('multiple Ed courses share one inactive reader across all batches and close it once', async () => {
-  const fixture = setup(async ({ discover, remoteId, offset }) => discover ? { courses: [{ remoteId: '1' }, { remoteId: '2' }] } : feed(remoteId, offset));
-  await handleDiscussionRequest({ action: 'connect', platform: 'ed' });
-  chrome.tabs.query = async () => [...fixture.ownedTabs.values()];
-  await sync(true);
-  assert.equal(fixture.tabCalls.filter(c => c[0] === 'create').length, 1);
-  assert.equal(fixture.tabCalls.filter(c => c[0] === 'update').length, 1);
-  assert.equal(fixture.tabCalls.filter(c => c[0] === 'remove').length, 1);
-  assert.equal(fixture.calls.filter(c => !c.discover).length, 4);
-  assert.ok(fixture.tabCalls.filter(c => c[0] === 'create').every(c => c[1].active === false));
-  assert.deepEqual(fixture.session.discussionReaders, {});
 });
 
 test('equivalent pending scope requests share a single physical batch', async () => {
@@ -256,121 +201,6 @@ test('equivalent pending scope requests share a single physical batch', async ()
   const d = handleDiscussionRequest({ action: 'sync', sourceId: ['ed:1', 'ed:2', 'ed:1'] });
   assert.equal(c, d);
   await c;
-});
-
-test('a suspended worker recovers an owned tab created before its ID was saved', async () => {
-  const fixture = setup(async ({ discover, remoteId, offset }) => discover ? { courses: [{ remoteId: '1' }] } : feed(remoteId, offset));
-  await handleDiscussionRequest({ action: 'connect', platform: 'ed' });
-  const generation = fixture.data.discussions.generation;
-  const url = 'https://edstem.org/us/#boilerspace-reader=interrupted';
-  fixture.ownedTabs.set(99, { id: 99, url, active: false, status: 'complete' });
-  fixture.session.discussionReaders = { ed: { generation, url, expiresAt: Date.now() + 60000 } };
-  chrome.tabs.query = async () => [...fixture.ownedTabs.values()];
-  const restarted = await import(`../extension/lib/discussion-readers.js?restart=${crypto.randomUUID()}`);
-  await restarted.sweepDiscussionReaders();
-  await sync(true);
-  assert.equal(fixture.tabCalls.filter(c => c[0] === 'create').length, 0);
-  assert.equal(fixture.tabCalls.filter(c => c[0] === 'update').length, 0);
-  assert.deepEqual(fixture.tabCalls.filter(c => c[0] === 'remove'), [['remove', 99]]);
-});
-
-test('reader cleanup preserves activated, navigated and unrelated user tabs', async () => {
-  for (const takeover of ['activated', 'navigated']) {
-    const fixture = setup(async ({ discover, remoteId, offset }) => discover ? { courses: [{ remoteId: '1' }] } : feed(remoteId, offset));
-    await handleDiscussionRequest({ action: 'connect', platform: 'ed' });
-    chrome.tabs.query = async () => [...fixture.ownedTabs.values()];
-    await handleDiscussionRequest({ action: 'sync', force: true });
-    const entry = fixture.session.discussionReaders.ed;
-    const tab = fixture.ownedTabs.get(entry.tabId);
-    if (takeover === 'activated') tab.active = true;
-    else tab.url = 'https://example.com/my-page';
-    await checkDiscussionReaderTab(tab.id, takeover === 'activated');
-    await sweepDiscussionReaders();
-    assert.equal(fixture.ownedTabs.has(tab.id), true, takeover);
-    assert.equal(fixture.tabCalls.filter(c => c[0] === 'remove').length, 0, takeover);
-    assert.deepEqual(fixture.session.discussionReaders, {});
-  }
-});
-
-test('expired, cancelled and identity-mismatched reader leases clean up safely', async () => {
-  for (const reason of ['expired', 'cleared', 'different-tab']) {
-    const fixture = setup(async ({ discover, remoteId, offset }) => discover ? { courses: [{ remoteId: '1' }] } : feed(remoteId, offset));
-    await handleDiscussionRequest({ action: 'connect', platform: 'ed' });
-    chrome.tabs.query = async () => [...fixture.ownedTabs.values()];
-    await handleDiscussionRequest({ action: 'sync', force: true });
-    const entry = fixture.session.discussionReaders.ed;
-    if (reason === 'expired') entry.expiresAt = Date.now() - 1;
-    if (reason === 'cleared') delete fixture.data.discussions;
-    if (reason === 'different-tab') fixture.ownedTabs.get(entry.tabId).url = 'https://edstem.org/us/#my-own-tab';
-    await sweepDiscussionReaders();
-    assert.equal(fixture.tabCalls.filter(c => c[0] === 'remove').length, reason === 'different-tab' ? 0 : 1, reason);
-    assert.deepEqual(fixture.session.discussionReaders, {});
-  }
-});
-
-test('failed reads and clearing data close an owned reader without restoring cancelled data', async () => {
-  for (const cancelled of [false, true]) {
-    const fixture = setup(async ({ discover, remoteId }, data) => {
-      if (discover) return { courses: [{ remoteId: '1' }] };
-      if (cancelled) { delete data.discussions; return feed(remoteId); }
-      throw new Error('Session expired');
-    });
-    await handleDiscussionRequest({ action: 'connect', platform: 'ed' });
-    chrome.tabs.query = async () => [...fixture.ownedTabs.values()];
-    if (cancelled) await assert.rejects(sync(true), /saved data was cleared/);
-    else assert.equal((await sync(true)).sources[0].status, 'error');
-    assert.equal(fixture.tabCalls.filter(c => c[0] === 'remove').length, 1);
-    assert.deepEqual(fixture.session.discussionReaders, {});
-  }
-});
-
-test('initial site redirects settle into a stable identity, but later navigation is preserved', async () => {
-  const { settleDiscussionReader } = await import('../extension/lib/discussion-readers.js');
-  const fixture = setup(async ({ discover, remoteId, offset }) => discover ? { courses: [{ remoteId: '1' }] } : feed(remoteId, offset));
-  await handleDiscussionRequest({ action: 'connect', platform: 'ed' });
-  chrome.tabs.query = async () => [...fixture.ownedTabs.values()];
-  const update = chrome.tabs.update;
-  chrome.tabs.update = async (id, options) => update(id, { ...options, url: 'https://edstem.org/us/dashboard' });
-  await handleDiscussionRequest({ action: 'sync', force: true });
-  const entry = fixture.session.discussionReaders.ed;
-  assert.equal(entry.url, 'https://edstem.org/us/dashboard');
-  assert.equal(entry.opening, false);
-  const tab = fixture.ownedTabs.get(entry.tabId);
-  tab.url = 'https://edstem.org/us/courses/1/discussion';
-  await checkDiscussionReaderTab(tab.id);
-  await settleDiscussionReader('ed', tab.id);
-  assert.deepEqual(fixture.session.discussionReaders, {});
-  assert.equal(fixture.ownedTabs.has(tab.id), true);
-});
-
-test('a worker resumes an about:blank reader whose ID was saved before navigation', async () => {
-  const fixture = setup(async ({ discover, remoteId, offset }) => discover ? { courses: [{ remoteId: '1' }] } : feed(remoteId, offset));
-  await handleDiscussionRequest({ action: 'connect', platform: 'ed' });
-  fixture.ownedTabs.set(99, { id: 99, active: false, status: 'complete' });
-  fixture.session.discussionReaders = { ed: { tabId: 99, staging: true, opening: true, generation: fixture.data.discussions.generation,
-    url: 'https://edstem.org/us/dashboard#boilerspace-reader=staged', expiresAt: Date.now() + 60000 } };
-  chrome.tabs.query = async () => [...fixture.ownedTabs.values()];
-  const restarted = await import(`../extension/lib/discussion-readers.js?staged=${crypto.randomUUID()}`);
-  await restarted.sweepDiscussionReaders();
-  await sync(true);
-  assert.equal(fixture.tabCalls.filter(c => c[0] === 'create').length, 0);
-  assert.equal(fixture.tabCalls.filter(c => c[0] === 'update').length, 1);
-  assert.deepEqual(fixture.tabCalls.filter(c => c[0] === 'remove'), [['remove', 99]]);
-});
-
-test('a site clearing the reader marker does not orphan the same owned page', async () => {
-  const fixture = setup(async ({ discover, remoteId, offset }) => discover ? { courses: [{ remoteId: '1' }] } : feed(remoteId, offset));
-  await handleDiscussionRequest({ action: 'connect', platform: 'ed' });
-  chrome.tabs.query = async () => [...fixture.ownedTabs.values()];
-  await handleDiscussionRequest({ action: 'sync', force: true });
-  const entry = fixture.session.discussionReaders.ed;
-  fixture.ownedTabs.get(entry.tabId).url = entry.url.split('#')[0] + '#';
-  await checkDiscussionReaderTab(entry.tabId);
-  assert.ok(fixture.session.discussionReaders.ed);
-  await sync();
-  assert.equal(fixture.tabCalls.filter(c => c[0] === 'create').length, 1);
-  assert.equal(fixture.tabCalls.filter(c => c[0] === 'remove').length, 1);
-  assert.deepEqual(fixture.session.discussionReaders, {});
 });
 
 test('a page of previously seen pinned posts in a different order does not stop history import', async () => {
@@ -388,4 +218,23 @@ test('a page of previously seen pinned posts in a different order does not stop 
   assert.equal(result.sources[0].threads.length, 7);
   assert.equal(result.sources[0].checkedCount, 7);
   assert.deepEqual(fixture.calls.filter(call => !call.discover).map(call => call.offset), [0, 3, 6, 9, 10]);
+});
+
+test('clearing data while a batch is in flight does not restore cancelled posts', async () => {
+  const { data } = setup(async ({ discover, remoteId }, data) => {
+    if (discover) return { courses: [{ remoteId: '1' }] };
+    delete data.discussions;
+    return feed(remoteId);
+  });
+  await handleDiscussionRequest({ action: 'connect', platform: 'ed' });
+  await assert.rejects(sync(true), /saved data was cleared/);
+  assert.equal(data.discussions, undefined);
+});
+
+test('disconnecting the final Ed source clears its session credential', async () => {
+  const { session } = setup(async () => ({ courses: [{ remoteId: '1' }] }));
+  await handleDiscussionRequest({ action: 'connect', platform: 'ed' });
+  session.discussionAuth = { ed: 'fixture-token' };
+  await handleDiscussionRequest({ action: 'remove', sourceId: 'ed:1' });
+  assert.equal(session.discussionAuth, undefined);
 });

@@ -1,21 +1,28 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readDiscussionSite } from '../extension/lib/discussions-page.js';
+import { readDiscussionSite } from '../extension/lib/discussions-api.js';
 
 function site(platform, handler) {
   const calls = [], delays = [];
-  const original = Object.fromEntries(['location', 'localStorage', 'document', 'window', 'fetch', 'setTimeout'].map((key) => [key, globalThis[key]]));
-  globalThis.location = { hostname: platform === 'ed' ? 'edstem.org' : 'piazza.com', pathname: '/class/example' };
-  globalThis.localStorage = { getItem: () => 'fixture-token' };
-  globalThis.document = { querySelector: () => ({ content: 'fixture-csrf' }), getElementById: () => ({ textContent: 'Discussion course' }) };
-  globalThis.window = {};
+  const original = Object.fromEntries(['chrome', 'fetch', 'setTimeout'].map((key) => [key, globalThis[key]]));
+  const session = { discussionAuth: { ed: 'fixture-token' } };
+  globalThis.chrome = {
+    permissions: { contains: async () => true },
+    storage: { session: {
+      get: async key => ({ [key]: session[key] }),
+      set: async values => Object.assign(session, values),
+      remove: async key => { delete session[key]; },
+    } },
+    tabs: { query: async () => [] },
+  };
   globalThis.setTimeout = (callback, ms) => { delays.push(ms); callback(); return 0; };
   globalThis.fetch = async (url, options) => {
     calls.push({ url, options });
+    if (url.startsWith('https://piazza.com/') && !url.includes('/logic/api')) return new Response('<meta name="csrf_token" content="fixture-csrf">');
     const result = await handler(url, options);
     return new Response(JSON.stringify(result.body ?? result), { status: result.status ?? 200, headers: result.headers });
   };
-  return { calls, delays, restore: () => { for (const [key, value] of Object.entries(original)) { if (value === undefined) delete globalThis[key]; else globalThis[key] = value; } } };
+  return { calls, delays, session, restore: () => { for (const [key, value] of Object.entries(original)) { if (value === undefined) delete globalThis[key]; else globalThis[key] = value; } } };
 }
 const user = { courses: [{ course: { id: 1, name: 'CS 25200', status: 'active' } }] };
 
@@ -96,21 +103,22 @@ test('an empty Ed history page ends pagination without issuing detail requests',
   } finally { fixture.restore(); }
 });
 
-test('Piazza discovers visible class links and the current class without fetching private account data', async () => {
-  const fixture = site('piazza', () => { throw new Error('Discovery should not issue an API call.'); });
-  document.querySelectorAll = () => [
-    { href: 'https://piazza.com/class/course250', textContent: 'CS250' },
-    { href: 'https://piazza.com/class/course251', textContent: 'CS251' },
-    { href: 'https://piazza.com.evil.test/class/other', textContent: 'Wrong origin' },
-  ];
+test('Piazza discovery returns only course metadata from the signed-in account', async () => {
+  const fixture = site('piazza', (url, options) => {
+    assert.equal(JSON.parse(options.body).method, 'user.status');
+    return { result: { name: 'Do not persist', email: 'private@example.test', networks: [
+      { id: 'course250', course_number: 'CS250', name: 'Architecture', profs: ['private'] },
+      { id: 'course251', course_number: 'CS251' },
+    ] } };
+  });
   try {
     const result = await readDiscussionSite({ platform: 'piazza', discover: true });
-    assert.deepEqual(result.courses.map(course => course.remoteId), ['course250', 'course251', 'example']);
-    assert.equal(fixture.calls.length, 0);
+    assert.deepEqual(result.courses, [{ remoteId: 'course250', name: 'CS250' }, { remoteId: 'course251', name: 'CS251' }]);
+    assert.ok(!JSON.stringify(result).includes('private'));
   } finally { fixture.restore(); }
 });
 
-test('slow background tabs checkpoint a partial feed rather than leaving a long batch uncommitted', async () => {
+test('long API batches checkpoint a partial feed rather than leaving a long batch uncommitted', async () => {
   const originalNow = Date.now;
   let clock = 0;
   const fixture = site('ed', url => {
@@ -129,11 +137,62 @@ test('slow background tabs checkpoint a partial feed rather than leaving a long 
   } finally { Date.now = originalNow; fixture.restore(); }
 });
 
-test('Piazza preserves the visible class name on a trailing-slash class URL', async () => {
+test('Piazza preserves the connected course name without rendering its class page', async () => {
   const fixture = site('piazza', () => ({ result: { feed: [], more: false } }));
-  location.pathname = '/class/example/';
   try {
-    const page = await readDiscussionSite({ platform: 'piazza', remoteId: 'example' });
+    const page = await readDiscussionSite({ platform: 'piazza', remoteId: 'example', name: 'Discussion course' });
     assert.equal(page.name, 'Discussion course');
   } finally { fixture.restore(); }
+});
+
+test('routine Ed refresh uses session auth without touching tabs or injecting scripts', async () => {
+  const fixture = site('ed', url => url.endsWith('/user') ? user : { threads: [] });
+  chrome.tabs = new Proxy({}, { get() { assert.fail('Routine sync must not access tabs'); } });
+  chrome.scripting = new Proxy({}, { get() { assert.fail('Routine sync must not inject'); } });
+  try { assert.equal((await readDiscussionSite({ platform: 'ed', remoteId: '1' })).hasMore, false); }
+  finally { fixture.restore(); }
+});
+
+test('missing or expired Ed authentication asks for reconnect without creating a tab', async () => {
+  for (const missing of [true, false]) {
+    const fixture = site('ed', () => ({ status: 401, body: {} }));
+    if (missing) delete fixture.session.discussionAuth;
+    chrome.tabs = new Proxy({}, { get() { assert.fail('Automatic auth recovery must not access tabs'); } });
+    try {
+      const result = await readDiscussionSite({ platform: 'ed', remoteId: '1' });
+      assert.match(result.error, /reconnect in Settings/);
+      assert.equal(fixture.session.discussionAuth, undefined);
+    } finally { fixture.restore(); }
+  }
+});
+
+test('Ed connection captures an existing signed-in page only into session storage', async () => {
+  const fixture = site('ed', () => user);
+  delete fixture.session.discussionAuth;
+  chrome.tabs = { query: async () => [{ id: 3, url: 'https://edstem.org/us/dashboard' }] };
+  chrome.scripting = { executeScript: async ({ target, world }) => {
+    assert.equal(target.tabId, 3); assert.equal(world, 'MAIN');
+    return [{ result: 'fixture-token' }];
+  } };
+  try {
+    const result = await readDiscussionSite({ platform: 'ed', discover: true });
+    assert.equal(result.courses.length, 1);
+    assert.equal(fixture.session.discussionAuth.ed, 'fixture-token');
+    assert.ok(!JSON.stringify(result).includes('fixture-token'));
+  } finally { fixture.restore(); }
+});
+
+test('a signed-out Piazza HTML page fails without calling APIs or opening tabs', async () => {
+  const fixture = site('piazza', () => assert.fail('No API request without CSRF'));
+  globalThis.fetch = async () => new Response('<h1>Sign in</h1>');
+  try { assert.match((await readDiscussionSite({ platform: 'piazza', remoteId: 'example' })).error, /reconnect in Settings/); }
+  finally { fixture.restore(); }
+});
+
+test('revoked site access stops before reading credentials or making a request', async () => {
+  const fixture = site('ed', () => assert.fail('No request without site access'));
+  chrome.permissions.contains = async () => false;
+  chrome.storage.session.get = async () => assert.fail('No credential access without site access');
+  try { assert.match((await readDiscussionSite({ platform: 'ed', remoteId: '1' })).error, /Allow discussion site access/); }
+  finally { fixture.restore(); }
 });

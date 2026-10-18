@@ -128,3 +128,12 @@ test('slow background tabs checkpoint a partial feed rather than leaving a long 
     assert.deepEqual(page.pageIds, ['1', '2', '3']);
   } finally { Date.now = originalNow; fixture.restore(); }
 });
+
+test('Piazza preserves the visible class name on a trailing-slash class URL', async () => {
+  const fixture = site('piazza', () => ({ result: { feed: [], more: false } }));
+  location.pathname = '/class/example/';
+  try {
+    const page = await readDiscussionSite({ platform: 'piazza', remoteId: 'example' });
+    assert.equal(page.name, 'Discussion course');
+  } finally { fixture.restore(); }
+});

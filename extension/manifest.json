@@ -20,7 +20,7 @@
     "open_at_install": false
   },
   "background": { "service_worker": "background.js", "scripts": ["background-firefox.js"], "type": "module" },
-  "permissions": ["storage", "unlimitedStorage", "scripting", "sidePanel"],
+  "permissions": ["alarms", "storage", "unlimitedStorage", "scripting", "sidePanel"],
   "host_permissions": ["https://purdue.brightspace.com/*", "https://genai.rcac.purdue.edu/*", "https://purdue.simplesyllabus.com/*"],
   "optional_host_permissions": ["https://edstem.org/*", "https://us.edstem.org/*", "https://piazza.com/*"],
   "content_scripts": [

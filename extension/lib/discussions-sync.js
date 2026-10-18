@@ -1,22 +1,13 @@
-import { DISCUSSION_BATCH_SIZE, DISCUSSION_CAPTURE_VERSION, DISCUSSION_SITES, reconcileDiscussionCourse, normalizeEdThread, normalizePiazzaThread, parseDiscussionUrl } from './discussions.js';
+import { DISCUSSION_BATCH_SIZE, DISCUSSION_CAPTURE_VERSION, reconcileDiscussionCourse, normalizeEdThread, normalizePiazzaThread, parseDiscussionUrl } from './discussions.js';
 import { readDiscussionSite } from './discussions-page.js';
+import { acquireDiscussionReader, discussionReaderKey, releaseDiscussionReader, retainDiscussionReaders, settleDiscussionReader } from './discussion-readers.js';
 
 let queue = Promise.resolve();
 const pending = new Map();
 
 async function readSite(platform, args) {
-  const origins = DISCUSSION_SITES[platform];
-  if (!origins || !(await chrome.permissions.contains({ origins }))) throw new Error(`Allow ${platform === 'ed' ? 'Ed' : 'Piazza'} access by connecting it in Settings.`);
-  const tabs = await chrome.tabs.query({ url: origins });
-  const url = platform === 'ed' ? 'https://edstem.org/us/' : args.remoteId ? `https://piazza.com/class/${args.remoteId}` : 'https://piazza.com/';
-  let tab = tabs.filter((t) => platform === 'ed' || (args.remoteId ? new URL(t.url).pathname.replace(/\/+$/, '') === `/class/${args.remoteId}` : args.discover))
-    .sort((a, b) => Number(b.active ?? false) - Number(a.active ?? false) || (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0))[0];
-  const created = !tab;
-  if (!tab) {
-    tab = await chrome.tabs.create({ url: 'about:blank', active: false });
-  }
+  const { tab, key } = await acquireDiscussionReader(platform, args);
   try {
-    if (created) await chrome.tabs.update(tab.id, { url });
     let ready = false;
     for (let i = 0; i < 120; i++) {
       const current = await chrome.tabs.get(tab.id);
@@ -28,19 +19,40 @@ async function readSite(platform, args) {
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
     if (!ready) throw new Error('The discussion page took too long to load. Sign in and retry.');
+    await settleDiscussionReader(key, tab.id);
     const [result] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, world: 'MAIN', func: readDiscussionSite, args: [{ platform, limit: DISCUSSION_BATCH_SIZE, ...args }] });
     if (result?.result?.error) throw new Error(result.result.error);
     if (!result?.result) throw new Error('The discussion site did not return data. Sign in and retry.');
     return result.result;
+  } catch (error) {
+    await releaseDiscussionReader(key);
+    throw error;
   } finally {
-    if (created) await chrome.tabs.remove(tab.id).catch(() => {});
+    if (args.discover) await releaseDiscussionReader(key);
   }
 }
 
+const eligible = source => source.status === 'syncing' || !source.lastAttemptAt || Date.now() - Date.parse(source.lastAttemptAt) >= 20 * 60_000;
+const selected = (source, sourceId) => !sourceId || (Array.isArray(sourceId) ? sourceId.includes(source.id) : source.id === sourceId);
+
 export function handleDiscussionRequest(message) {
-  const key = JSON.stringify([message.action, message.platform, message.url, message.sourceId, message.courseId, message.force]);
+  const sourceIds = message.sourceId ? [...new Set(Array.isArray(message.sourceId) ? message.sourceId : [message.sourceId])].sort() : null;
+  const key = JSON.stringify([message.action, message.platform, message.url, sourceIds, message.courseId, Boolean(message.force)]);
   if (pending.has(key)) return pending.get(key);
-  const task = queue.catch(() => {}).then(() => perform(message)).finally(() => pending.delete(key));
+  const task = queue.catch(() => {}).then(async () => {
+    try {
+      const result = await perform(message);
+      if (message.action === 'sync' || message.action === 'remove') {
+        const keep = result.sources.filter(source => source.status === 'syncing' || (message.action === 'sync' && selected(source, message.sourceId) && eligible(source)))
+          .map(source => discussionReaderKey(source.platform, source.remoteId));
+        await retainDiscussionReaders(keep, result.generation);
+      }
+      return result;
+    } catch (error) {
+      await retainDiscussionReaders([], null);
+      throw error;
+    }
+  }).finally(() => pending.delete(key));
   queue = task;
   pending.set(key, task);
   return task;
@@ -76,19 +88,19 @@ async function perform({ action, platform, url, sourceId, courseId, force = fals
   if (action === 'connect') {
     let discovered;
     if (platform === 'ed') {
-      const result = await readSite('ed', { discover: true });
+      const result = await readSite('ed', { discover: true, generation: data.generation });
       discovered = result.courses.map((c) => ({ ...parseDiscussionUrl(`https://edstem.org/us/courses/${c.remoteId}/discussion`), name: c.name, code: c.code }));
       if (!discovered.length) throw new Error('No active Ed courses were found in your account.');
     } else {
       if (url) {
         const source = parseDiscussionUrl(url);
         if (source.platform !== 'piazza') throw new Error('Enter a Piazza class URL.');
-        const result = await readSite('piazza', { remoteId: source.remoteId, discover: true });
+        const result = await readSite('piazza', { remoteId: source.remoteId, discover: true, generation: data.generation });
         const course = result.courses.find(course => course.remoteId === source.remoteId);
         if (!course) throw new Error('Sign into Piazza and open this class in this browser, then retry.');
         discovered = [{ ...source, name: course.name }];
       } else {
-        const result = await readSite('piazza', { discover: true });
+        const result = await readSite('piazza', { discover: true, generation: data.generation });
         discovered = result.courses.map(course => ({ ...parseDiscussionUrl(`https://piazza.com/class/${course.remoteId}`), name: course.name }));
         if (!discovered.length) throw new Error('Open a Piazza class in this browser to connect it, or add its class link.');
       }
@@ -103,7 +115,7 @@ async function perform({ action, platform, url, sourceId, courseId, force = fals
     return { ...data, connectedIds: discovered.map((s) => s.id) };
   } else if (action !== 'sync') throw new Error('Unknown discussion action.');
 
-  const sources = data.sources.filter((s) => !sourceId || (Array.isArray(sourceId) ? sourceId.includes(s.id) : s.id === sourceId));
+  const sources = data.sources.filter(source => selected(source, sourceId));
   const previousLinks = sources.map(source => [source.courseId, source.linkOrigin]);
   for (const source of sources) reconcileDiscussionCourse(source, all.snapshot?.courses ?? []);
   if (sources.some((source, index) => source.courseId !== previousLinks[index][0] || source.linkOrigin !== previousLinks[index][1])) await save();
@@ -116,7 +128,6 @@ async function perform({ action, platform, url, sourceId, courseId, force = fals
     }
     await save();
   }
-  const eligible = (s) => s.status === 'syncing' || !s.lastAttemptAt || Date.now() - Date.parse(s.lastAttemptAt) >= 20 * 60_000;
   const source = sources.find(eligible);
   if (!source) return { ...data, pending: false };
   source.sync ??= { offset: 0, seenIds: [], pageIds: [] };
@@ -125,12 +136,16 @@ async function perform({ action, platform, url, sourceId, courseId, force = fals
   source.lastAttemptAt = new Date().toISOString();
   await save();
   try {
-    const read = await readSite(source.platform, { remoteId: source.remoteId, offset: source.sync.offset,
+    const read = await readSite(source.platform, { remoteId: source.remoteId, generation: data.generation, offset: source.sync.offset,
       // Reread older captures once, even if the site's version has not changed.
       knownVersions: Object.fromEntries((source.threads ?? []).filter((t) => t.captureVersion === DISCUSSION_CAPTURE_VERSION).map((t) => [t.id, t.remoteVersion])) });
     if (!Array.isArray(read.pageIds) || !Array.isArray(read.seenIds) || !Number.isInteger(read.nextOffset) || read.nextOffset < source.sync.offset) throw new Error('The discussion reader returned an invalid page.');
-    const previousPages = new Set(source.sync.pageIds);
-    if (read.hasMore && !read.errors?.length && (!read.pageIds.length || read.pageIds.every((id) => previousPages.has(id)))) throw new Error('Discussion pagination stopped advancing. Your saved posts are kept; retry the import.');
+    const signature = JSON.stringify(read.pageIds);
+    const pageSignatures = new Set(source.sync.pageSignatures ?? []);
+    // Pinned posts can reappear in later pages. Only an identical ordered page
+    // (or an empty page claiming more results) indicates a pagination loop.
+    if (read.hasMore && !read.errors?.length && (!read.pageIds.length || pageSignatures.has(signature))) throw new Error('Discussion pagination stopped advancing. Your saved posts are kept; retry the import.');
+    if (read.pageIds.length) pageSignatures.add(signature);
     const normalize = source.platform === 'ed' ? normalizeEdThread : normalizePiazzaThread;
     const threads = new Map((source.threads ?? []).map((t) => [t.id, t]));
     const seen = new Set([...source.sync.seenIds, ...read.seenIds]);
@@ -143,7 +158,7 @@ async function perform({ action, platform, url, sourceId, courseId, force = fals
     source.name = read.name || source.name;
     reconcileDiscussionCourse(source, all.snapshot?.courses ?? []);
     source.threads = [...threads.values()].sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''));
-    source.sync = { offset: read.nextOffset, seenIds: [...seen], pageIds: [...new Set([...source.sync.pageIds, ...read.pageIds])] };
+    source.sync = { offset: read.nextOffset, seenIds: [...seen], pageIds: [...new Set([...source.sync.pageIds, ...read.pageIds])], pageSignatures: [...pageSignatures] };
     source.checkedCount = source.sync.pageIds.length;
     source.warning = null;
     if (read.errors?.length) throw new Error(read.errors[0]);
@@ -156,6 +171,7 @@ async function perform({ action, platform, url, sourceId, courseId, force = fals
       delete source.hasMore;
     }
   } catch (error) {
+    await releaseDiscussionReader(discussionReaderKey(source.platform, source.remoteId));
     source.status = 'error';
     source.error = error.message;
   }

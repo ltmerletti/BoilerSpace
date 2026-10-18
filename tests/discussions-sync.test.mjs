@@ -2,20 +2,30 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { handleDiscussionRequest } from '../extension/lib/discussions-sync.js';
 import { snapshotFixture } from './helpers.mjs';
+import { checkDiscussionReaderTab, sweepDiscussionReaders } from '../extension/lib/discussion-readers.js';
 
 function setup(reader, granted = true) {
   const data = { snapshot: snapshotFixture() };
-  const calls = [];
+  const calls = [], session = {}, ownedTabs = new Map(), tabCalls = [];
+  let nextId = 100;
   globalThis.chrome = {
-    storage: { local: {
+    runtime: { getURL: file => `chrome-extension://fixture/${file}` },
+    alarms: { create: async () => {}, clear: async () => {} },
+    storage: { session: { get: async key => ({ [key]: structuredClone(session[key]) }), set: async values => Object.assign(session, structuredClone(values)) }, local: {
       get: async (keys) => Object.fromEntries((Array.isArray(keys) ? keys : [keys]).filter((k) => k in data).map((k) => [k, structuredClone(data[k])])),
       set: async (values) => Object.assign(data, structuredClone(values)),
     } },
     permissions: { contains: async () => granted },
-    tabs: { query: async () => [{ id: 1, url: 'https://edstem.org/us/', status: 'complete' }], get: async () => ({ status: 'complete', url: (await chrome.tabs.query({}))[0]?.url }) },
+    tabs: {
+      query: async () => [{ id: 1, url: 'https://edstem.org/us/', status: 'complete' }, ...ownedTabs.values()],
+      get: async id => ownedTabs.get(id) ?? (await chrome.tabs.query({})).find(tab => tab.id === id) ?? Promise.reject(new Error('No tab')),
+      create: async options => { tabCalls.push(['create', options]); const tab = { id: nextId++, status: 'complete', ...options }; ownedTabs.set(tab.id, tab); return tab; },
+      update: async (id, options) => { tabCalls.push(['update', id, options]); const tab = { ...ownedTabs.get(id), ...options }; ownedTabs.set(id, tab); return tab; },
+      remove: async id => { tabCalls.push(['remove', id]); ownedTabs.delete(id); },
+    },
     scripting: { executeScript: async ({ args }) => { calls.push(args[0]); return [{ result: await reader(args[0], data) }]; } },
   };
-  return { data, calls };
+  return { data, calls, session, ownedTabs, tabCalls };
 }
 
 const feed = (remoteId, offset = 0) => ({ name: 'CS 25200', errors: [], hasMore: offset === 0,
@@ -39,16 +49,16 @@ async function connect() {
 
 test('a newly opened Firefox reader waits for the site URL after about:blank reports complete', async () => {
   setup(async () => ({ courses: [{ remoteId: '1', name: 'CS 25200' }] }));
-  let polls = 0, removed = false;
+  let polls = 0, removed = false, targetUrl;
   chrome.tabs.query = async () => [];
-  chrome.tabs.create = async options => { assert.equal(options.active, false, 'automatic readers never request focus'); return { id: 99 }; };
-  chrome.tabs.update = async () => ({ id: 99, url: 'about:blank', status: 'complete' });
-  chrome.tabs.get = async () => ({ status: 'complete', url: ++polls === 1 ? 'about:blank' : 'https://edstem.org/us/' });
+  chrome.tabs.create = async options => { assert.equal(options.active, false); return { id: 99 }; };
+  chrome.tabs.update = async (id, options) => { targetUrl = options.url; return { id }; };
+  chrome.tabs.get = async () => ({ id: 99, status: 'complete', active: false, url: !targetUrl || ++polls <= 2 ? 'about:blank' : targetUrl, pendingUrl: targetUrl && polls <= 2 ? targetUrl : undefined });
   chrome.tabs.remove = async id => { assert.equal(id, 99); removed = true; };
   const execute = chrome.scripting.executeScript;
-  chrome.scripting.executeScript = async args => { assert.ok(polls >= 2, 'the site has committed before injection'); return execute(args); };
+  chrome.scripting.executeScript = async args => { assert.ok(polls >= 3, 'the site has committed before injection'); return execute(args); };
   await handleDiscussionRequest({ action: 'connect', platform: 'ed' });
-  assert.equal(polls, 2);
+  assert.ok(polls >= 3);
   assert.equal(removed, true);
 });
 
@@ -213,13 +223,169 @@ test('a server repeating the same history page stops with a recoverable error', 
   assert.equal(data.discussions.sources[0].threads.length, 1);
 });
 
-test('a failed temporary-tab navigation still closes the owned tab', async () => {
-  setup(async () => { throw new Error('Must not inject before navigation'); });
-  const removed = [];
+test('a failed temporary-tab creation does not inject or leave a reader lease', async () => {
+  const fixture = setup(async () => { throw new Error('Must not inject after creation fails'); });
   chrome.tabs.query = async () => [];
-  chrome.tabs.create = async () => ({ id: 9 });
-  chrome.tabs.update = async () => { throw new Error('Navigation failed'); };
-  chrome.tabs.remove = async (id) => removed.push(id);
+  chrome.tabs.create = async () => { throw new Error('Navigation failed'); };
   await assert.rejects(handleDiscussionRequest({ action: 'connect', platform: 'ed' }), /Navigation failed/);
-  assert.deepEqual(removed, [9]);
+  assert.deepEqual(fixture.session.discussionReaders, {});
+});
+
+test('multiple Ed courses share one inactive reader across all batches and close it once', async () => {
+  const fixture = setup(async ({ discover, remoteId, offset }) => discover ? { courses: [{ remoteId: '1' }, { remoteId: '2' }] } : feed(remoteId, offset));
+  await handleDiscussionRequest({ action: 'connect', platform: 'ed' });
+  chrome.tabs.query = async () => [...fixture.ownedTabs.values()];
+  await sync(true);
+  assert.equal(fixture.tabCalls.filter(c => c[0] === 'create').length, 1);
+  assert.equal(fixture.tabCalls.filter(c => c[0] === 'update').length, 1);
+  assert.equal(fixture.tabCalls.filter(c => c[0] === 'remove').length, 1);
+  assert.equal(fixture.calls.filter(c => !c.discover).length, 4);
+  assert.ok(fixture.tabCalls.filter(c => c[0] === 'create').every(c => c[1].active === false));
+  assert.deepEqual(fixture.session.discussionReaders, {});
+});
+
+test('equivalent pending scope requests share a single physical batch', async () => {
+  const fixture = setup(async ({ discover, remoteId, offset }) => discover ? { courses: [{ remoteId: '1' }, { remoteId: '2' }] } : feed(remoteId, offset));
+  await handleDiscussionRequest({ action: 'connect', platform: 'ed' });
+  const a = handleDiscussionRequest({ action: 'sync', sourceId: 'ed:1' });
+  const b = handleDiscussionRequest({ action: 'sync', sourceId: ['ed:1'], force: false });
+  assert.equal(a, b);
+  await a;
+  assert.equal(fixture.calls.filter(c => !c.discover).length, 1);
+  const c = handleDiscussionRequest({ action: 'sync', sourceId: ['ed:2', 'ed:1'] });
+  const d = handleDiscussionRequest({ action: 'sync', sourceId: ['ed:1', 'ed:2', 'ed:1'] });
+  assert.equal(c, d);
+  await c;
+});
+
+test('a suspended worker recovers an owned tab created before its ID was saved', async () => {
+  const fixture = setup(async ({ discover, remoteId, offset }) => discover ? { courses: [{ remoteId: '1' }] } : feed(remoteId, offset));
+  await handleDiscussionRequest({ action: 'connect', platform: 'ed' });
+  const generation = fixture.data.discussions.generation;
+  const url = 'https://edstem.org/us/#boilerspace-reader=interrupted';
+  fixture.ownedTabs.set(99, { id: 99, url, active: false, status: 'complete' });
+  fixture.session.discussionReaders = { ed: { generation, url, expiresAt: Date.now() + 60000 } };
+  chrome.tabs.query = async () => [...fixture.ownedTabs.values()];
+  const restarted = await import(`../extension/lib/discussion-readers.js?restart=${crypto.randomUUID()}`);
+  await restarted.sweepDiscussionReaders();
+  await sync(true);
+  assert.equal(fixture.tabCalls.filter(c => c[0] === 'create').length, 0);
+  assert.equal(fixture.tabCalls.filter(c => c[0] === 'update').length, 0);
+  assert.deepEqual(fixture.tabCalls.filter(c => c[0] === 'remove'), [['remove', 99]]);
+});
+
+test('reader cleanup preserves activated, navigated and unrelated user tabs', async () => {
+  for (const takeover of ['activated', 'navigated']) {
+    const fixture = setup(async ({ discover, remoteId, offset }) => discover ? { courses: [{ remoteId: '1' }] } : feed(remoteId, offset));
+    await handleDiscussionRequest({ action: 'connect', platform: 'ed' });
+    chrome.tabs.query = async () => [...fixture.ownedTabs.values()];
+    await handleDiscussionRequest({ action: 'sync', force: true });
+    const entry = fixture.session.discussionReaders.ed;
+    const tab = fixture.ownedTabs.get(entry.tabId);
+    if (takeover === 'activated') tab.active = true;
+    else tab.url = 'https://example.com/my-page';
+    await checkDiscussionReaderTab(tab.id, takeover === 'activated');
+    await sweepDiscussionReaders();
+    assert.equal(fixture.ownedTabs.has(tab.id), true, takeover);
+    assert.equal(fixture.tabCalls.filter(c => c[0] === 'remove').length, 0, takeover);
+    assert.deepEqual(fixture.session.discussionReaders, {});
+  }
+});
+
+test('expired, cancelled and identity-mismatched reader leases clean up safely', async () => {
+  for (const reason of ['expired', 'cleared', 'different-tab']) {
+    const fixture = setup(async ({ discover, remoteId, offset }) => discover ? { courses: [{ remoteId: '1' }] } : feed(remoteId, offset));
+    await handleDiscussionRequest({ action: 'connect', platform: 'ed' });
+    chrome.tabs.query = async () => [...fixture.ownedTabs.values()];
+    await handleDiscussionRequest({ action: 'sync', force: true });
+    const entry = fixture.session.discussionReaders.ed;
+    if (reason === 'expired') entry.expiresAt = Date.now() - 1;
+    if (reason === 'cleared') delete fixture.data.discussions;
+    if (reason === 'different-tab') fixture.ownedTabs.get(entry.tabId).url = 'https://edstem.org/us/#my-own-tab';
+    await sweepDiscussionReaders();
+    assert.equal(fixture.tabCalls.filter(c => c[0] === 'remove').length, reason === 'different-tab' ? 0 : 1, reason);
+    assert.deepEqual(fixture.session.discussionReaders, {});
+  }
+});
+
+test('failed reads and clearing data close an owned reader without restoring cancelled data', async () => {
+  for (const cancelled of [false, true]) {
+    const fixture = setup(async ({ discover, remoteId }, data) => {
+      if (discover) return { courses: [{ remoteId: '1' }] };
+      if (cancelled) { delete data.discussions; return feed(remoteId); }
+      throw new Error('Session expired');
+    });
+    await handleDiscussionRequest({ action: 'connect', platform: 'ed' });
+    chrome.tabs.query = async () => [...fixture.ownedTabs.values()];
+    if (cancelled) await assert.rejects(sync(true), /saved data was cleared/);
+    else assert.equal((await sync(true)).sources[0].status, 'error');
+    assert.equal(fixture.tabCalls.filter(c => c[0] === 'remove').length, 1);
+    assert.deepEqual(fixture.session.discussionReaders, {});
+  }
+});
+
+test('initial site redirects settle into a stable identity, but later navigation is preserved', async () => {
+  const { settleDiscussionReader } = await import('../extension/lib/discussion-readers.js');
+  const fixture = setup(async ({ discover, remoteId, offset }) => discover ? { courses: [{ remoteId: '1' }] } : feed(remoteId, offset));
+  await handleDiscussionRequest({ action: 'connect', platform: 'ed' });
+  chrome.tabs.query = async () => [...fixture.ownedTabs.values()];
+  const update = chrome.tabs.update;
+  chrome.tabs.update = async (id, options) => update(id, { ...options, url: 'https://edstem.org/us/dashboard' });
+  await handleDiscussionRequest({ action: 'sync', force: true });
+  const entry = fixture.session.discussionReaders.ed;
+  assert.equal(entry.url, 'https://edstem.org/us/dashboard');
+  assert.equal(entry.opening, false);
+  const tab = fixture.ownedTabs.get(entry.tabId);
+  tab.url = 'https://edstem.org/us/courses/1/discussion';
+  await checkDiscussionReaderTab(tab.id);
+  await settleDiscussionReader('ed', tab.id);
+  assert.deepEqual(fixture.session.discussionReaders, {});
+  assert.equal(fixture.ownedTabs.has(tab.id), true);
+});
+
+test('a worker resumes an about:blank reader whose ID was saved before navigation', async () => {
+  const fixture = setup(async ({ discover, remoteId, offset }) => discover ? { courses: [{ remoteId: '1' }] } : feed(remoteId, offset));
+  await handleDiscussionRequest({ action: 'connect', platform: 'ed' });
+  fixture.ownedTabs.set(99, { id: 99, active: false, status: 'complete' });
+  fixture.session.discussionReaders = { ed: { tabId: 99, staging: true, opening: true, generation: fixture.data.discussions.generation,
+    url: 'https://edstem.org/us/dashboard#boilerspace-reader=staged', expiresAt: Date.now() + 60000 } };
+  chrome.tabs.query = async () => [...fixture.ownedTabs.values()];
+  const restarted = await import(`../extension/lib/discussion-readers.js?staged=${crypto.randomUUID()}`);
+  await restarted.sweepDiscussionReaders();
+  await sync(true);
+  assert.equal(fixture.tabCalls.filter(c => c[0] === 'create').length, 0);
+  assert.equal(fixture.tabCalls.filter(c => c[0] === 'update').length, 1);
+  assert.deepEqual(fixture.tabCalls.filter(c => c[0] === 'remove'), [['remove', 99]]);
+});
+
+test('a site clearing the reader marker does not orphan the same owned page', async () => {
+  const fixture = setup(async ({ discover, remoteId, offset }) => discover ? { courses: [{ remoteId: '1' }] } : feed(remoteId, offset));
+  await handleDiscussionRequest({ action: 'connect', platform: 'ed' });
+  chrome.tabs.query = async () => [...fixture.ownedTabs.values()];
+  await handleDiscussionRequest({ action: 'sync', force: true });
+  const entry = fixture.session.discussionReaders.ed;
+  fixture.ownedTabs.get(entry.tabId).url = entry.url.split('#')[0] + '#';
+  await checkDiscussionReaderTab(entry.tabId);
+  assert.ok(fixture.session.discussionReaders.ed);
+  await sync();
+  assert.equal(fixture.tabCalls.filter(c => c[0] === 'create').length, 1);
+  assert.equal(fixture.tabCalls.filter(c => c[0] === 'remove').length, 1);
+  assert.deepEqual(fixture.session.discussionReaders, {});
+});
+
+test('a page of previously seen pinned posts in a different order does not stop history import', async () => {
+  const pages = { 0: [3, 2, 1], 3: [8, 7, 6], 6: [1, 2, 3], 9: [4], 10: [] };
+  const fixture = setup(async ({ discover, remoteId, offset }) => {
+    if (discover) return { courses: [{ remoteId: '1' }] };
+    const ids = pages[offset];
+    assert.ok(ids, `unexpected offset ${offset}`);
+    return { name: 'Discussion course', errors: [], hasMore: ids.length > 0, nextOffset: offset + ids.length,
+      pageIds: ids.map(String), seenIds: ids.map(String), versions: Object.fromEntries(ids.map(id => [id, 'v1'])),
+      threads: ids.map(id => ({ users: [], thread: { id, course_id: Number(remoteId), number: id, title: `Post ${id}`, content: 'Instructor clarification' } })) };
+  });
+  const result = await connect();
+  assert.equal(result.sources[0].status, 'done');
+  assert.equal(result.sources[0].threads.length, 7);
+  assert.equal(result.sources[0].checkedCount, 7);
+  assert.deepEqual(fixture.calls.filter(call => !call.discover).map(call => call.offset), [0, 3, 6, 9, 10]);
 });

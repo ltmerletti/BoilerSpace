@@ -15,7 +15,7 @@ const manifest = JSON.parse(readFileSync(path.join(extension, 'manifest.json')))
 manifest.host_permissions.push(...manifest.optional_host_permissions);
 manifest.optional_host_permissions = [];
 writeFileSync(path.join(extension, 'manifest.json'), JSON.stringify(manifest));
-const checks = [], operations = [], errors = [];
+const checks = [], operations = [], errors = [], readerTabs = [];
 let context, panel, offline = false, expired = false, revised = false, removed = false;
 let holdAt = null, held, release;
 const count = { ed: 135, piazza: 65 };
@@ -29,12 +29,25 @@ const read = () => panel.evaluate(async () => (await chrome.storage.local.get('d
 const request = (action, args = {}) => panel.evaluate(message => chrome.runtime.sendMessage({ type: 'boilerspace-discussions', ...message }), { action, ...args });
 async function launch() {
   context = await chromium.launchPersistentContext(profile, { headless: true, channel: 'chromium', reducedMotion: 'reduce', args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`] });
-  context.on('page', page => page.on('pageerror', error => errors.push(error.message)));
+  context.on('page', page => {
+    page.on('pageerror', error => errors.push(error.message));
+    let reader;
+    page.on('framenavigated', frame => {
+      if (frame !== page.mainFrame() || reader) return;
+      const url = new URL(frame.url());
+      if (['edstem.org', 'piazza.com'].includes(url.hostname) && url.hash.startsWith('#boilerspace-reader=')) {
+        reader = { site: url.hostname, closed: false };
+        readerTabs.push(reader);
+      }
+    });
+    page.on('close', () => { if (reader) reader.closed = true; });
+  });
   await context.route('**/*', async route => {
     const req = route.request(), url = new URL(req.url());
     if (url.protocol === 'chrome-extension:' || url.protocol === 'data:' || url.protocol === 'about:') return route.continue();
     if (!['edstem.org', 'us.edstem.org', 'piazza.com'].includes(url.hostname)) return route.abort();
     if (req.resourceType() === 'document') return route.fulfill({ contentType: 'text/html', body: url.hostname === 'edstem.org' ? '<script>localStorage.setItem("authToken:us", "synthetic-token")</script><h1>Ed fixture</h1>' : '<meta name="csrf_token" content="synthetic-csrf"><a href="/class/recovery123">MA 26500</a><h1 id="topbar_current_class_number">MA 26500</h1>' });
+    if (url.pathname === '/favicon.ico') return route.fulfill({ status: 204 });
     operations.push({ site: url.hostname, path: url.pathname, at: Date.now() });
     if (offline) return route.abort('internetdisconnected');
     if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'x-token' } });
@@ -52,7 +65,9 @@ async function launch() {
       } else throw new Error(`Unexpected Ed route: ${url.pathname}`);
       return route.fulfill({ contentType: 'application/json', headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'x-token' }, body: JSON.stringify(body) }).catch(() => {});
     }
-    const { method, params } = req.postDataJSON();
+    const payload = req.postDataJSON();
+    if (!payload) throw new Error(`Unexpected fixture request: ${req.method()} ${url.origin}${url.pathname} (${req.resourceType()})`);
+    const { method, params } = payload;
     if (method === 'network.get_my_feed') {
       const feed = Array.from({ length: count.piazza }, (_, n) => ({ nr: n + 1, version: 1 })).slice(params.offset, params.offset + 30);
       body = { error: null, result: { feed, more: params.offset + feed.length < count.piazza } };
@@ -70,7 +85,8 @@ async function launch() {
 try {
   let sidepanel = await launch();
   await panel.evaluate(snapshot => chrome.storage.local.set({ snapshot, syncMeta: { lastSuccessAt: new Date().toISOString() } }), snapshotFixture());
-  assert.equal((await request('connect', { platform: 'ed' })).ok, true);
+  const connectedEd = await request('connect', { platform: 'ed' });
+  assert.equal(connectedEd.ok, true, connectedEd.error);
   assert.equal((await request('connect', { platform: 'piazza' })).ok, true);
   await request('sync', { force: true, sourceId: 'ed:20' });
   check('a completed batch saves thirty posts and its resume cursor', (await read()).sources[0].threads.length === 30 && (await read()).sources[0].sync.offset === 30);
@@ -85,11 +101,29 @@ try {
   await until(async () => (await read()).sources.every(source => source.status === 'error'), 'offline automatic resume');
   check('offline failures retain saved posts and the exact retry cursor', (await read()).sources[0].threads.length === 30 && (await read()).sources[0].sync.offset === 30);
   offline = false;
+  const recoveryReaders = readerTabs.length;
   await panel.evaluate(() => window.dispatchEvent(new Event('online')));
   await until(async () => (await read()).sources.some(source => source.status !== 'error'), 'network recovery starts automatically', 5000);
   await until(async () => (await read()).sources.every(source => source.status === 'done'), 'automatic recovery after network returns');
+  await panel.getByRole('button', { name: 'Settings', exact: true }).click();
+  await until(() => panel.getByRole('button', { name: 'Sync discussions now', exact: true }).isEnabled(), 'recovery cleanup finishes');
+  const resumedReaders = readerTabs.slice(recoveryReaders);
+  check('a multi-batch recovery uses one reader per site and closes each once', ['edstem.org', 'piazza.com'].every(site => resumedReaders.filter(reader => reader.site === site).length === 1) && resumedReaders.every(reader => reader.closed));
   const complete = await read();
   check('network recovery automatically finishes both histories without a manual retry', complete.sources.find(source => source.platform === 'ed').threads.length === count.ed && complete.sources.find(source => source.platform === 'piazza').threads.length === count.piazza && complete.sources.every(source => source.historyComplete && !source.sync));
+  const piazzaAttempt = complete.sources.find(source => source.platform === 'piazza').lastAttemptAt;
+  const piazzaRequests = operations.filter(op => op.site === 'piazza.com').length;
+  await panel.evaluate(async () => {
+    const { discussions } = await chrome.storage.local.get('discussions');
+    const source = discussions.sources.find(source => source.platform === 'ed');
+    source.status = 'error'; source.error = 'Synthetic offline interruption';
+    await chrome.storage.local.set({ discussions });
+  });
+  await panel.waitForTimeout(100);
+  await panel.evaluate(() => window.dispatchEvent(new Event('online')));
+  await until(async () => (await read()).sources.every(source => source.status === 'done'), 'targeted online recovery');
+  await until(() => panel.getByRole('button', { name: 'Sync discussions now', exact: true }).isEnabled(), 'targeted recovery finishes');
+  check('network recovery retries the affected source without rereading a completed Piazza history', (await read()).sources.find(source => source.platform === 'piazza').lastAttemptAt === piazzaAttempt && operations.filter(op => op.site === 'piazza.com').length === piazzaRequests);
   const detailReads = () => operations.filter(op => /\/threads\//.test(op.path)).length;
   const before = detailReads();
   revised = true; removed = true;

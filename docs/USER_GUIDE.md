@@ -32,7 +32,7 @@ Choose a course, or leave **All my courses** selected. Name the lecture, file, p
 
 Ask can search syllabi, course files, announcements, and connected discussion history. It can also read questions from finished or closed quizzes when Brightspace makes them available. It excludes quiz scores and stays off active quiz attempt pages.
 
-During a lookup, intermediate narration appears above the answer. When the answer starts streaming, that narration moves into the expandable activity block. Expand a tool's **Details** to inspect its arguments and a short result preview. You can scroll back, stop generation, copy an answer, or retry it.
+During a lookup, the work log opens to show narration and tool calls in order. It collapses when answer text starts and reopens if the model returns to research. You can open or close it while text is streaming. Expand a tool's **Details** to inspect its arguments and a short result preview. You can scroll back, stop generation, copy an answer, or retry it.
 
 Citations open the original material. Overview PDFs may open in BoilerSpace's document reader at the cited page. **Show original PDF** loads the source through your signed-in session.
 
@@ -52,7 +52,7 @@ Clear syllabus dates are added to the agenda and calendar automatically. If syll
 
 Discussion imports save progress in batches and resume after interruption. Settings shows the saved post count and whether the history check is complete. Later syncs check history pages and reread new or changed posts. Discussions refresh independently at most every 20 minutes while BoilerSpace is open, or through **Sync discussions now**.
 
-The reader reuses an open class tab when possible. Otherwise it opens a temporary inactive tab, reads through your existing signed-in session, and closes that tab afterward. Automatic refresh does not request tab focus. A reconnect can open a visible sign-in tab.
+The reader reuses an open class tab when possible and leaves it open. Otherwise it opens a temporary inactive tab, keeps it across import batches, and closes it when the refresh finishes or stops. Both Ed courses can share the same reader. Opening a temporary reader yourself makes it yours to keep. Automatic refresh does not request tab focus. A reconnect can open a visible sign-in tab.
 
 Course previews show up to three posts from the past seven days. Ask searches the full saved history, including older posts and available replies. Private and deleted posts are excluded. Discussion attachments and images must be opened on the original site.
 

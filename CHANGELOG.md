@@ -8,6 +8,8 @@ What changed, what prompted it, and what it means when you use BoilerSpace. Each
 
 This round focused on the interruptions that make an otherwise useful tool frustrating: controls that miss clicks, narration that disappears, imports that stop, and updates that draw attention away from studying.
 
+- **Stop opening a reader for every import batch.** Ed and Piazza now keep an inactive reader across a refresh, then close it when finished. Existing tabs stay open, and opening a temporary reader yourself keeps it from being closed. Coming back online retries interrupted sources without restarting healthy ones. Piazza's overlapping pinned posts no longer stop an otherwise progressing import.
+
 - **Keep research inside the work log.** Intermediate narration used to appear below a closed log, making it look like part of the answer. Research now starts expanded, stays in one ordered log, and collapses when answer text starts. Manual toggles survive streaming and rerenders; if the model returns to tools, the research log reopens.
 
 - **A clearer introduction to BoilerSpace.** The README starts with a question about a specific radiation slide, followed by a review outline built from lecture material and instructor guidance collected from Ed. The examples ask questions a student could bring to the course without already knowing which file or post contains the answer. Detailed setup instructions have their own guide, and screenshots show actual model answers. [Details](https://github.com/ltmerletti/BoilerSpace/pull/3)

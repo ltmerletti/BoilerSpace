@@ -97,7 +97,7 @@ export async function readDiscussionSite({ platform, remoteId, discover = false,
       (t) => JSON.stringify([t.version, t.main_version, t.modified, t.updated, t.tags]),
       (t) => !(t.tags ?? []).includes('private'),
       (item) => call('content.get', { nid: remoteId, cid: String(item.nr), student_view: null }));
-    const matchingPage = location.pathname === `/class/${remoteId}`;
+    const matchingPage = location.pathname.replace(/\/+$/, '') === `/class/${remoteId}`;
     return { name: matchingPage && document.getElementById('topbar_current_class_number')?.textContent?.trim() || `Piazza ${remoteId}`,
       threads, errors, seenIds, pageIds, versions, nextOffset: offset + pageIds.length,
       hasMore: pageIds.length < items.length || (items.length > 0 && feed.more === true) };

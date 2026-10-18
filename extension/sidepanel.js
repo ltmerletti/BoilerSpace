@@ -260,20 +260,28 @@ async function refreshDiscussions(force = false) {
     if (force) discussionRetryQueued = true;
     return;
   }
-  if (!force && !state.discussions.sources.some(source => source.status === 'syncing' || !source.lastAttemptAt || Date.now() - Date.parse(source.lastAttemptAt) >= 20 * 60_000)) return;
   if (state.busy.discussions) {
     if (force) discussionRetryQueued = true;
     return;
   }
+  let sourceId;
+  if (force) discussionRecoveryQueued = false;
+  else if (discussionRecoveryQueued) {
+    discussionRecoveryQueued = false;
+    sourceId = state.discussions.sources.filter(source => source.status === 'error' || source.sync).map(source => source.id);
+    if (!sourceId.length) return;
+    force = true;
+  }
+  if (!force && !state.discussions.sources.some(source => source.status === 'syncing' || !source.lastAttemptAt || Date.now() - Date.parse(source.lastAttemptAt) >= 20 * 60_000)) return;
   state.busy.discussions = true;
   state.discussionError = '';
   render();
-  try { await syncDiscussionBatches({ force }); }
+  try { await syncDiscussionBatches({ force, sourceId }); }
   catch (error) { state.discussionError = error.message; }
   finally {
     state.busy.discussions = false;
     await loadState(); render();
-    if (discussionRefreshQueued || discussionRetryQueued) {
+    if (discussionRefreshQueued || discussionRetryQueued || discussionRecoveryQueued) {
       const retry = discussionRetryQueued;
       discussionRefreshQueued = false;
       discussionRetryQueued = false;
@@ -284,6 +292,7 @@ async function refreshDiscussions(force = false) {
 
 let discussionRefreshQueued = false;
 let discussionRetryQueued = false;
+let discussionRecoveryQueued = false;
 
 async function syncDiscussionBatches({ force = false, sourceId } = {}) {
   let result;
@@ -1937,7 +1946,10 @@ async function init() {
   document.documentElement.removeAttribute('data-panel-loading');
 
   window.addEventListener('online', () => {
-    if (state.discussions.sources.some(source => source.status === 'error' || source.sync)) refreshDiscussions(true);
+    if (state.discussions.sources.some(source => source.status === 'error' || source.sync)) {
+      discussionRecoveryQueued = true;
+      refreshDiscussions();
+    }
   });
 
   store.onChange(async (changes) => {

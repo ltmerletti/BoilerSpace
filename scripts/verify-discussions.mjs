@@ -51,8 +51,9 @@ try {
   await context.route('https://us.edstem.org/api/**', (route) => {
     const request = route.request(), url = new URL(request.url());
     const headers = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'x-token' };
+    if (url.pathname.endsWith('/favicon.ico')) return route.fulfill({ status: 204 });
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
-    assert.equal(request.headers()['x-token'], 'fixture-ed-token');
+    assert.equal(request.headers()['x-token'], 'fixture-ed-token', `${request.method()} ${url.pathname} (${request.resourceType()})`);
     operations.push(`Ed ${request.method()} ${url.pathname}`);
     let data;
     if (url.pathname === '/api/user') data = { user: { name: 'Do not persist this name' }, push_key: 'do-not-persist', courses: [

@@ -6,7 +6,7 @@ function fixture() {
   const follow = createChatScrollFollow();
   const el = { scrollTop: 500, scrollHeight: 1000, clientHeight: 500, closest: () => null };
   const handlers = follow.handlers();
-  const event = (type, props = {}) => handlers[`on${type}`]({ currentTarget: el, target: el, ...props });
+  const event = (type, props = {}) => handlers[`on${type}`]({ currentTarget: el, target: el, preventDefault() {}, ...props });
   return { follow, el, event };
 }
 
@@ -75,6 +75,33 @@ test('keyboard navigation and scrollbar dragging express direction', () => {
   el.scrollTop = 500;
   event('pointerup');
   assert.equal(follow.following, true);
+});
+
+test('End resumes immediately and survives an older scrollend followed by new text', () => {
+  const { follow, el, event } = fixture();
+  let top = 400, prevented = false;
+  Object.defineProperty(el, 'scrollTop', { get: () => top, set: value => { top = Math.min(value, el.scrollHeight - el.clientHeight); } });
+  follow.pause();
+  event('keydown', { key: 'End', preventDefault: () => { prevented = true; } });
+  assert.equal(prevented, true, 'native keyboard animation cannot race the next streamed token');
+  assert.equal(follow.following, true);
+  assert.equal(el.scrollTop, 500);
+  event('scrollend');
+  el.scrollHeight += 300;
+  follow.restore(el, follow.following ? el.scrollHeight : el.scrollTop);
+  event('scroll');
+  assert.equal(follow.following, true);
+  assert.equal(el.scrollTop, 800);
+});
+
+test('End in the composer is left to normal text editing', () => {
+  const { follow, el, event } = fixture();
+  let prevented = false;
+  follow.pause();
+  event('keydown', { key: 'End', target: { closest: () => ({}) }, preventDefault: () => { prevented = true; } });
+  assert.equal(prevented, false);
+  assert.equal(follow.following, false);
+  assert.equal(el.scrollTop, 500);
 });
 
 test('touch direction pauses and deliberately resumes at the bottom', () => {

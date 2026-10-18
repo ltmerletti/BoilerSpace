@@ -6,7 +6,7 @@ What changed, what prompted it, and what it means when you use BoilerSpace. Each
 
 ## In progress
 
-- **Read earlier text while an answer is writing.** Scrolling up pauses automatic following, even for a small movement near the bottom. Opening the work log and finishing an answer keep your reading position. Scroll back to the bottom to resume following.
+- **Read earlier text while an answer is writing.** Scrolling up pauses automatic following, even for a small movement near the bottom. Opening the work log and finishing an answer keep your reading position. Scroll back to the bottom to resume following, or press End to jump to the latest text.
 
 - **Keep narration from moving the interface around.** Streaming drafts no longer repeatedly collapse and reopen the work log between tool calls. Your disclosure choices stay in place, including when an answer finishes while you are reading the work log.
 

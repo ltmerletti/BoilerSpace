@@ -11,14 +11,14 @@ mkdirSync(out, { recursive: true });
 const checks = [], errors = [];
 const extension = path.resolve(process.env.VERIFY_EXTENSION ?? 'extension');
 const check = (name, result) => { assert.ok(result, name); checks.push(name); console.log(`PASS  ${name}`); };
-let context;
+let context, page;
 try {
   context = await chromium.launchPersistentContext(profile, { headless: true, channel: 'chromium', viewport: { width: 400, height: 750 }, args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`] });
   await context.route('https://**/*', route => route.abort());
   let [worker] = context.serviceWorkers();
   worker ??= await context.waitForEvent('serviceworker');
   const origin = `chrome-extension://${new URL(worker.url()).host}`;
-  const page = await context.newPage();
+  page = await context.newPage();
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(`${origin}/document.html`);
   await page.evaluate(async snapshot => {
@@ -249,4 +249,13 @@ try {
   check('no browser page errors', errors.length === 0);
   await page.screenshot({ path: path.join(out, 'chat-streaming.png') });
   writeFileSync(path.join(out, 'results.json'), JSON.stringify({ checks, errors }, null, 2));
+} catch (error) {
+  const layout = await page?.evaluate(() => {
+    const el = document.querySelector('.messages');
+    return { top: el?.scrollTop, height: el?.scrollHeight, viewport: el?.clientHeight,
+      activeElement: document.activeElement?.tagName, traceOpen: document.querySelector('#pending > .trace')?.open };
+  }).catch(() => null);
+  writeFileSync(path.join(out, 'failure.json'), JSON.stringify({ error: error.stack, checks, errors, layout }, null, 2));
+  await page?.screenshot({ path: path.join(out, 'failure.png'), timeout: 5000 }).catch(() => {});
+  throw error;
 } finally { await context?.close(); rmSync(profile, { recursive: true, force: true }); }

@@ -312,7 +312,12 @@ try {
   const citeCount = await page.locator('.message.assistant .sources a').count();
   check('ask streams through the tool loop and shows sources', modelRequests.length === 2 && modelRequests.every((r) => r.stream) && citeCount >= 1, `${modelRequests.length} model requests, ${citeCount} sources`);
   const traceSummary = await page.locator('.message.assistant:not(.pending) .trace > summary').textContent();
-  await page.click('.message.assistant:not(.pending) .trace > summary');
+  check('completion retains the work log and details opened during research',
+    await page.locator('.message.assistant:not(.pending) .trace').evaluate(element => element.open)
+    && await page.locator('.tool-call').evaluate(element => element.open)
+    && await page.locator('.trace-reasoning').evaluate(element => element.open));
+  await page.locator('.tool-call > summary').click();
+  await page.locator('.trace-reasoning > summary').click();
   await page.screenshot({ path: path.join(outDir, '5-ask.png') });
   check('the activity log clearly names the tool and its result without a reasoning wall', /Used 1 tool/.test(traceSummary) && await page.getByText('Check upcoming work', { exact: true }).isVisible() && await page.locator('.tool-step.complete .tool-result').isVisible() && !(await page.locator('.thought-text').isVisible()) && !(await page.locator('.tool-call > code').isVisible()));
   await page.locator('.tool-call > summary').click();

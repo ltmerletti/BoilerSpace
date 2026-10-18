@@ -57,8 +57,15 @@ export function createChatScrollFollow() {
           if (event.target.closest('summary') && ['Enter', ' '].includes(event.key)) {
             pause();
             binding.gesture = null;
+          } else if (event.key === 'End') {
+            // End explicitly returns to the live answer. Browser keyboard
+            // animation can otherwise race the next token or scrollend event.
+            event.preventDefault();
+            binding.gesture = null;
+            following = true;
+            event.currentTarget.scrollTop = event.currentTarget.scrollHeight;
           } else if (['ArrowUp', 'PageUp', 'Home'].includes(event.key) || (event.key === ' ' && event.shiftKey)) begin(event.currentTarget, -1);
-          else if (['ArrowDown', 'PageDown', 'End', ' '].includes(event.key)) begin(event.currentTarget, 1);
+          else if (['ArrowDown', 'PageDown', ' '].includes(event.key)) begin(event.currentTarget, 1);
         },
         onpointerdown: event => {
           if (event.target.closest('summary')) {

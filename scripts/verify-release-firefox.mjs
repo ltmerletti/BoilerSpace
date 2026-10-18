@@ -231,9 +231,12 @@ try {
   await reopened.evaluate(() => window.nextScrollChunk());
   await wait(async () => (await scrollMetrics()).gap > paused.gap + 20);
   check('streaming tokens do not pull a paused Firefox reader back down', Math.abs((await scrollMetrics()).top - paused.top) < 2);
-  await page.mouse.wheel({ deltaY: 100000 });
+  await messages.evaluate(el => { el.tabIndex = -1; el.focus({ preventScroll: true }); });
+  await page.keyboard.press('End');
   await wait(async () => (await scrollMetrics()).gap <= 1);
+  await reopened.evaluate(() => window.nextScrollChunk());
   await new Promise(resolve => setTimeout(resolve, 200));
+  check('End resumes following the live answer in Firefox', (await scrollMetrics()).gap <= 1);
   await page.mouse.wheel({ deltaY: -40 });
   await wait(async () => (await scrollMetrics()).gap > 20);
   await new Promise(resolve => setTimeout(resolve, 200));

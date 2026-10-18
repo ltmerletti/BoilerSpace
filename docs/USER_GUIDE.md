@@ -30,7 +30,9 @@ Discussion courses are matched to Brightspace by course code and distinctive tit
 
 Choose **Connect** beside Gradescope in **Settings** and allow site access. Your existing Gradescope sign-in is reused. If it has expired, connection opens a visible sign-in page and continues after you sign in.
 
-BoilerSpace imports current-term assignment names, links, release dates, due dates and late deadlines. Recognizable course codes match Brightspace automatically. Assignments with dates appear in Week and calendar exports; the course page and Settings also list assignments with no published date. Ask can find this metadata and cite Gradescope, including courses without a Brightspace match. Under each course's **Options**, you can change its Brightspace link.
+BoilerSpace imports current-term assignment names, links, release dates, due dates and late deadlines. Recognizable course codes match Brightspace automatically. Assignments with dates appear in Week and calendar exports; the course page and Settings also list assignments with no published date. Ask can find this metadata and cite Gradescope, including courses without a Brightspace match.
+
+Under each course's **Options**, you can change its Brightspace link. For an unmatched course, leave **All my courses** selected in Ask and name the Gradescope course in your question.
 
 Normal and late deadlines remain separate. Missing dates stay unknown. Scores, submitted answers, grading feedback and assignment question text are not read. OCR is not included.
 
@@ -40,7 +42,7 @@ Gradescope refreshes at most every 20 minutes while BoilerSpace is open. Use **S
 
 Choose a course, or leave **All my courses** selected. Name the lecture, file, project, or topic when it helps identify what you mean. Follow-up questions stay in the same conversation.
 
-Ask can search syllabi, course files, announcements, and connected discussion history. It can also read questions from finished or closed quizzes when Brightspace makes them available. It excludes quiz scores and stays off active quiz attempt pages.
+Ask can search syllabi, course files, announcements, connected discussion history, and saved Gradescope assignment names and dates. It can also read questions from finished or closed quizzes when Brightspace makes them available. It excludes quiz scores and stays off active quiz attempt pages.
 
 During a lookup, the work log opens to show narration and tool calls in order. It collapses when answer text starts and reopens if the model returns to research. You can open or close it while text is streaming. Expand a tool's **Details** to inspect its arguments and a short result preview. You can scroll back, stop generation, copy an answer, or retry it.
 
@@ -89,6 +91,8 @@ Calendar export is in **Settings**. Data exports and **Clear local data** are un
 - **A connection needs attention.** Expand its Settings row and reconnect. Check that the site is signed in and that requested access was approved.
 - **A syllabus check failed.** Resolve any Simple Syllabus permission request first, then retry the course. A course without a syllabus is different from a failed check.
 - **An import stopped.** Keep BoilerSpace open and run **Sync discussions now**. Saved batches are retained.
+- **A Gradescope assignment has no date.** Gradescope does not publish dates for every assignment. It remains in the assignment list but stays out of Week and calendar exports until a date is available. Late deadlines are shown separately.
+- **Gradescope dates look stale.** Expand Gradescope in Settings and choose **Sync assignments now**. An expired sign-in offers Reconnect; a temporary service failure offers Retry and keeps the previous list.
 - **An answer is missing a source.** Confirm the relevant course or discussion history has synced. Name the file or thread if the question could refer to several things.
 - **The interface did not change after an update.** Reload the extension itself, then refresh Brightspace.
 

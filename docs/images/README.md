@@ -1,6 +1,6 @@
 # README images
 
-The opening **hero.svg** is drawn directly in SVG, using the existing orbit logo, typography and geometric shapes. The two matching lecture pages represent the course material BoilerSpace brings together. It contains no generated imagery or embedded bitmap assets. The rounded charcoal panel has transparent outer corners.
+The opening **hero.svg** is drawn directly in SVG, using the existing orbit logo, typography and geometric shapes. The service line names Brightspace, Ed, Piazza and Gradescope. The two matching lecture pages represent the course material BoilerSpace brings together. It contains no generated imagery or embedded bitmap assets. The rounded charcoal panel has transparent outer corners.
 
 The product screenshots use the running extension and real course material. Model answers come from Purdue GenAI Studio conversations and are rendered through the current interface.
 

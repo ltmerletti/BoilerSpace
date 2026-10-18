@@ -8,6 +8,8 @@ What changed, what prompted it, and what it means when you use BoilerSpace. Each
 
 This round focused on the interruptions that make an otherwise useful tool frustrating: controls that miss clicks, narration that disappears, imports that stop, and updates that draw attention away from studying.
 
+- **Keep reconnection within reach.** A compact reminder below the sync controls names Ed or Piazza when its sign-in needs attention. Reconnect from the reminder without finding the connection in Settings; it clears as soon as access is restored. Temporary update failures leave it hidden.
+
 - **Sync discussions without opening tabs.** Ed and Piazza refresh directly from the extension. A sign-in that cannot be restored keeps saved posts available and offers Reconnect in Settings. A sign-in page opens only after choosing Connect or Reconnect. Connections survive browser restarts and extension reloads. Ed renews its saved credential silently and can recover from an already-open signed-in page; Piazza uses the browser's existing sign-in cookies. Temporary renewal failures keep a working credential, and a post-level access denial does not disconnect the Ed account.
 
 - **Keep interrupted imports moving.** Coming back online retries affected discussion sources without restarting healthy ones. Piazza's overlapping pinned posts no longer stop an otherwise progressing history import.

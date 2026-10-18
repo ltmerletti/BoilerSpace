@@ -129,6 +129,7 @@ async function perform({ action, platform, url, sourceId, courseId, force = fals
     source.sync = { offset: read.nextOffset, seenIds: [...seen], pageIds: [...new Set([...source.sync.pageIds, ...read.pageIds])], pageSignatures: [...pageSignatures] };
     source.checkedCount = source.sync.pageIds.length;
     source.warning = null;
+    if (!read.needsReconnect) delete source.needsReconnect;
     if (read.errors?.length) throw Object.assign(new Error(read.errors[0]), { needsReconnect: read.needsReconnect });
     if (!read.hasMore) {
       source.threads = source.threads.filter((t) => seen.has(t.id));

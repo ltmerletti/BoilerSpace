@@ -172,6 +172,38 @@ select:focus {
   text-overflow: ellipsis;
 }
 
+.connection-reminder {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 var(--gutter) 7px;
+  padding: 6px 9px;
+  border-radius: 4px;
+  background: var(--carnelian-wash);
+  color: var(--carnelian);
+  font-size: var(--text-meta);
+  line-height: 1.35;
+}
+
+.connection-reminder > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.reminder-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+}
+
+.connection-reminder .reminder-action {
+  color: inherit;
+  font-size: inherit;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .icon-button {
   flex: none;
   display: inline-grid;

@@ -102,6 +102,7 @@ try {
   check('offline failures retain saved posts and the exact retry cursor', (await read()).sources[0].threads.length === 30 && (await read()).sources[0].sync.offset === 30);
   await panel.getByRole('button', { name: 'Settings', exact: true }).click();
   check('a network failure offers Retry instead of asking to reconnect', await panel.getByRole('button', { name: 'Retry Ed sync', exact: true }).isVisible() && await panel.getByRole('button', { name: 'Retry Piazza sync', exact: true }).isVisible());
+  check('temporary network errors do not show the reconnect reminder', await panel.locator('#connection-reminder').isHidden());
   offline = false;
   check('Ed connection survives browser restart without reconnecting', await panel.evaluate(async () => !!(await chrome.storage.local.get('discussionAuth')).discussionAuth?.ed));
   const recoveryReaders = readerTabs.length;
@@ -141,11 +142,24 @@ try {
   await until(async () => (await read()).sources.every(source => source.status === 'error'), 'expired sessions');
   check('expired sessions preserve both saved histories with an actionable sign-in error', (await read()).sources.every(source => /Sign in/i.test(source.error) && source.threads.length > 0));
   check('an unrecoverable sign-in failure offers Reconnect', await panel.getByRole('button', { name: 'Reconnect Ed', exact: true }).isVisible() && await panel.getByRole('button', { name: 'Reconnect Piazza', exact: true }).isVisible());
+  check('unrecoverable authentication shows a compact reminder near the sync controls', await panel.locator('#connection-reminder').isVisible() && (await panel.locator('#connection-reminder').innerText()).includes('Ed and Piazza'));
+  for (const view of ['Week', 'Courses', 'Ask', 'Settings']) {
+    await panel.getByRole('button', { name: view, exact: true }).click();
+    check(`the reconnect reminder stays visible on ${view}`, await panel.locator('#connection-reminder').isVisible());
+  }
+  for (const width of [320, 400]) {
+    await panel.setViewportSize({ width, height: 900 });
+    check(`the reminder fits a ${width}px panel`, await panel.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  }
+  await panel.locator('.top').screenshot({ path: path.join(out, 'connection-reminder.png') });
+  await panel.emulateMedia({ colorScheme: 'dark' });
+  await panel.locator('.top').screenshot({ path: path.join(out, 'connection-reminder-dark.png') });
+  await panel.emulateMedia({ colorScheme: 'light' });
   check('expired authentication never opens a tab', readerTabs.length === beforeExpired);
   expired = false;
-  assert.equal((await connectEd()).ok, true);
-  await panel.evaluate(() => window.dispatchEvent(new Event('online')));
+  await panel.getByRole('button', { name: 'Reconnect Ed connection', exact: true }).click();
   await until(async () => (await read()).sources.every(source => source.status === 'done'), 'session recovery');
+  check('the reminder reconnects directly and clears automatically after recovery', await panel.locator('#connection-reminder').isHidden());
   check('routine sync leaves no discussion tabs open', !context.pages().some(page => /^https:\/\/(edstem.org|piazza.com)/.test(page.url())));
   check('no browser page errors', errors.length === 0);
   writeFileSync(path.join(out, 'results.json'), JSON.stringify({ at: new Date().toISOString(), checks, operations: operations.length }, null, 2));

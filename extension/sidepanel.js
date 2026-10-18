@@ -1884,7 +1884,31 @@ function render({ top = false, bottom = false } = {}) {
   renderStatus();
 }
 
+function renderConnectionReminder() {
+  const reminder = document.getElementById('connection-reminder');
+  const platforms = ['ed', 'piazza'].filter(platform => state.discussions.sources.some(source =>
+    source.platform === platform && source.needsReconnect === true && source.status !== 'done'));
+  const show = platforms.length > 0 && !CONNECT_PAGE && !ACCESS_PAGE && !DISCUSSION_ACCESS;
+  reminder.hidden = !show;
+  const key = JSON.stringify([show && platforms, state.busy.discussionConnect, state.discussionPlatform]);
+  // Keep the buttons attached while streaming or unrelated sync progress arrives.
+  if (reminder.dataset.state === key) return;
+  reminder.dataset.state = key;
+  if (!show) { reminder.replaceChildren(); return; }
+  const names = platforms.map(discussionName);
+  reminder.replaceChildren(
+    h('span', null, `${names.join(' and ')} ${names.length === 1 ? 'needs' : 'need'} to reconnect`),
+    h('div', { class: 'reminder-actions' }, platforms.map(platform => h('button', {
+      type: 'button', class: 'text-button reminder-action',
+      'aria-label': `Reconnect ${discussionName(platform)} connection`,
+      disabled: state.busy.discussionConnect,
+      onclick: () => openDiscussionAccess(platform, platform === 'piazza' ? state.discussions.sources.find(source => source.platform === platform && source.needsReconnect)?.url : null),
+    }, state.busy.discussionConnect && state.discussionPlatform === platform ? 'Connecting…' : platforms.length === 1 ? 'Reconnect' : discussionName(platform)))),
+  );
+}
+
 function renderHeader() {
+  renderConnectionReminder();
   document.getElementById('sync-status').textContent = syncLine();
   const syncButton = document.getElementById('sync-button');
   syncButton.disabled = state.busy.sync;

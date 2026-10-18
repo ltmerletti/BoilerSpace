@@ -54,6 +54,8 @@ Discussion imports save progress in batches and resume after interruption. Setti
 
 Discussion refreshes make requests directly from the extension. They do not open, navigate or close site tabs. If your sign-in cannot be renewed or restored, saved posts stay available and Settings shows **Reconnect**. Temporary update failures offer **Retry** and recover automatically on a later refresh. Only choosing **Connect** or **Reconnect** can open a visible sign-in page.
 
+A small reminder below the panel's sync controls, visible on every tab, appears when Ed or Piazza needs reconnection. Its buttons start reconnection directly. The reminder clears when access is restored and stays hidden for temporary update failures.
+
 Connections survive browser restarts and extension reloads. Ed renews its saved credential silently while you use BoilerSpace; an already-open signed-in Ed page can also repair the connection without navigation. Piazza reuses its existing browser sign-in cookies. Reconnect is needed when the site no longer accepts the saved sign-in and automatic recovery cannot restore it.
 
 Course previews show up to three posts from the past seven days. Ask searches the full saved history, including older posts and available replies. Private and deleted posts are excluded. Discussion attachments and images must be opened on the original site.

@@ -1,0 +1,77 @@
+# Using BoilerSpace
+
+[Back to the README](../README.md)
+
+## Open the panel
+
+Sign into Purdue Brightspace, then click **BoilerSpace** in the course navigation bar. The arrow at the edge of the panel opens or closes it. You can also use the extension's browser toolbar button. Chrome opens a side panel; Firefox and Zen open a sidebar.
+
+BoilerSpace currently supports Chrome 116+ and Firefox 128+, including compatible Zen releases. Use a current browser version. Other universities' Brightspace installations are not configured.
+
+## Connect your accounts
+
+### Purdue GenAI Studio
+
+Open **Settings** and choose **Connect** beside Purdue GenAI Studio. Complete any Purdue sign-in prompts. BoilerSpace uses your own account to answer questions and read syllabi. You can change the model inside the expanded connection row.
+
+The thinking control in Ask appears for recognized models. **Default** leaves the provider's reasoning settings unchanged. Other available levels depend on the selected model. Higher thinking levels can take longer to answer.
+
+### Ed and Piazza
+
+Choose **Connect** beside Ed or Piazza in **Settings**, then approve the site's access request. Existing sign-ins are reused. If you need to sign in, connection resumes afterward.
+
+The panel embedded in Brightspace may open a short permission handoff in an extension tab. The browser sidebar connects directly. Keep BoilerSpace open while its initial history import runs.
+
+Ed discovers active US courses. Piazza finds visible classes from your signed-in page; **Add a class by link** is available if the class is not found automatically.
+
+Discussion courses are matched to Brightspace by course code and distinctive title. Older terms and ambiguous matches stay separate. To change a match, expand the connection, open the class's **Options**, and choose its **Brightspace course**. Manual choices are preserved on later syncs. A class without a Brightspace match can still be searched in Ask.
+
+## Ask a course question
+
+Choose a course, or leave **All my courses** selected. Name the lecture, file, project, or topic when it helps identify what you mean. Follow-up questions stay in the same conversation.
+
+Ask can search syllabi, course files, announcements, and connected discussion history. It can also read questions from finished or closed quizzes when Brightspace makes them available. It excludes quiz scores and stays off active quiz attempt pages.
+
+During a lookup, intermediate narration appears above the answer. When the answer starts streaming, that narration moves into the expandable activity block. Expand a tool's **Details** to inspect its arguments and a short result preview. You can scroll back, stop generation, copy an answer, or retry it.
+
+Citations open the original material. Overview PDFs may open in BoilerSpace's document reader at the cited page. **Show original PDF** loads the source through your signed-in session.
+
+## Sync and syllabus checks
+
+Course sync and syllabus reading run separately. Assignments and announcements can finish syncing while a slower syllabus page is still loading. Routine background updates keep the existing view visible. Use the header's refresh button for a manual sync.
+
+After course sync, BoilerSpace checks syllabi for current courses. It can read Content files, course overview attachments, and the **Syllabus** navigation tab, including JavaScript-rendered Simple Syllabus documents.
+
+If you see **Allow Simple Syllabus access**, use that control and approve access on the extension's permission page. Granting permission starts a retry automatically.
+
+Temporary network or loading failures get one retry after the other courses finish. A completed search that finds no syllabus is remembered for a day. Use **Courses → Check again** for a new pass, or the course's **Check again** / **Read again** control for one course. If the automatic choice is wrong, choose another course file or upload the syllabus.
+
+Clear syllabus dates are added to the agenda and calendar automatically. If syllabus dates conflict with Brightspace, the agenda uses Brightspace and keeps the discrepancy available to inspect.
+
+## Discussion history and background tabs
+
+Discussion imports save progress in batches and resume after interruption. Settings shows the saved post count and whether the history check is complete. Later syncs check history pages and reread new or changed posts. Discussions refresh independently at most every 20 minutes while BoilerSpace is open, or through **Sync discussions now**.
+
+The reader reuses an open class tab when possible. Otherwise it opens a temporary inactive tab, reads through your existing signed-in session, and closes that tab afterward. Automatic refresh does not request tab focus. A reconnect can open a visible sign-in tab.
+
+Course previews show up to three posts from the past seven days. Ask searches the full saved history, including older posts and available replies. Private and deleted posts are excluded. Discussion attachments and images must be opened on the original site.
+
+## Update the extension
+
+Download the latest source or pull the repository changes. Reload the existing extension entry in `chrome://extensions` or `about:debugging`, then refresh Brightspace. Refreshing the website alone does not load updated extension scripts.
+
+Firefox and Zen temporary add-ons are removed when the browser quits. Load `extension/manifest.json` again for the next session.
+
+## Export or remove local data
+
+Calendar export is in **Settings**. Data exports and **Clear local data** are under **Advanced**. Exports can include course material and conversations. They are not anonymized. See [Privacy](../PRIVACY.md) for storage and deletion details.
+
+## If something is not working
+
+- **A connection needs attention.** Expand its Settings row and reconnect. Check that the site is signed in and that requested access was approved.
+- **A syllabus check failed.** Resolve any Simple Syllabus permission request first, then retry the course. A course without a syllabus is different from a failed check.
+- **An import stopped.** Keep BoilerSpace open and run **Sync discussions now**. Saved batches are retained.
+- **An answer is missing a source.** Confirm the relevant course or discussion history has synced. Name the file or thread if the question could refer to several things.
+- **The interface did not change after an update.** Reload the extension itself, then refresh Brightspace.
+
+For other problems, [open an issue](https://github.com/ltmerletti/BoilerSpace/issues) with your browser, the steps to reproduce, and any visible error. Remove private course information from screenshots and logs. Report vulnerabilities through [Security](../SECURITY.md).

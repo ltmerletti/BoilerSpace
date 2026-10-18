@@ -1,6 +1,7 @@
 import { GRADESCOPE_ORIGIN, GRADESCOPE_SITES, gradescopeAssignments, gradescopeRequest } from './lib/gradescope.js';
 import { SYLLABUS_SITE, isSyllabusAccessError } from './lib/syllabus-access.js';
 import * as store from './lib/store.js';
+import { DATA_EPOCH_KEY, dataRequest } from './lib/data-lifecycle.js';
 import { AUTO_SYNC_INTERVAL_MS, BRIGHTSPACE_ORIGIN, canReachBrightspace, connectParentPage, syncNow } from './lib/sync.js';
 import { lockIsFresh } from './lib/sync-store.js';
 import { DEFAULT_MODEL, getConnection, linkAccount, refreshModels, setModel, unlink } from './lib/genai.js';
@@ -15,6 +16,7 @@ import { DISCUSSION_SITES, discussionName, discussionRequest, parseDiscussionUrl
 import { deadlineIssue } from './lib/deadline-status.js';
 import { chatTitle, chatDate, generateChatTitle } from './lib/chat.js';
 import { thinkingLevels, thinkingLabel, thinkingParams } from './lib/thinking.js';
+import { createChatScrollFollow } from './lib/chat-scroll.js';
 
 const sheet = document.createElement('link');
 sheet.rel = 'stylesheet';
@@ -176,16 +178,24 @@ async function loadChats(all) {
   const at = new Date().toISOString();
   const first = all.chat.find((m) => m.role === 'user');
   const chats = [{ id: crypto.randomUUID(), title: chatTitle(first?.content ?? 'Earlier chat'), createdAt: at, updatedAt: at, messages: all.chat }];
-  await store.set(store.KEYS.chats, chats);
+  await dataRequest('save-chats', { chats, epoch: all[DATA_EPOCH_KEY] ?? 'initial' });
   await store.remove(store.KEYS.chat);
   return chats;
 }
 
+let stateLoadVersion = 0;
 async function loadState({ includeChat = false } = {}) {
+  const version = ++stateLoadVersion;
   const all = await store.getAll();
+  const genai = all.genai ? await getConnection() : null;
+  let chats;
+  try { if (includeChat) chats = await loadChats(all); }
+  catch (error) { if (error.code === 'data-cleared') return; throw error; }
+  if (version !== stateLoadVersion) return;
+  state.dataEpoch = all[DATA_EPOCH_KEY] ?? 'initial';
   applyTheme(all.theme ?? 'system');
   if (includeChat) {
-    state.chats = await loadChats(all);
+    state.chats = chats;
     const ui = all.ui ?? {};
     if (VIEW_NAMES.includes(ui.view)) state.view = ui.view;
     state.courseId = ui.courseId ?? null;
@@ -196,7 +206,7 @@ async function loadState({ includeChat = false } = {}) {
   state.snapshot = withSyllabusSources(all.snapshot, all.syllabusSources);
   state.syncMeta = all.syncMeta ?? null;
   state.changes = all.changes ?? [];
-  state.genai = all.genai ? await getConnection() : null;
+  state.genai = genai;
   state.syllabi = all.syllabi ?? {};
   state.syllabusAccess = all.syllabusAccess ?? null;
   state.reviews = all.reviews ?? {};
@@ -392,6 +402,8 @@ async function processSyllabi(options = {}) {
   render();
   try {
     await processCurrentSyllabi(state.snapshot, { force, courseId, openTab: force, onStatus: setStatus });
+  } catch (error) {
+    if (error.code !== 'data-cleared') throw error;
   } finally {
     state.busy.syllabi = false;
     setStatus('');
@@ -412,11 +424,15 @@ async function pickSyllabus(courseId, value) {
 
 async function uploadSyllabus(courseId, file) {
   if (!file || state.busy.syllabi) return;
+  const snapshot = state.snapshot;
+  const epoch = state.dataEpoch;
   state.busy.syllabi = true;
   render();
   try {
     const bytes = new Uint8Array(await file.arrayBuffer());
-    await readUploadedSyllabus(state.snapshot, courseId, { bytes, fileName: file.name, contentType: file.type }, { onStatus: setStatus });
+    await readUploadedSyllabus(snapshot, courseId, { bytes, fileName: file.name, contentType: file.type }, { onStatus: setStatus, epoch });
+  } catch (error) {
+    if (error.code !== 'data-cleared') throw error;
   } finally {
     state.busy.syllabi = false;
     setStatus('');
@@ -472,18 +488,19 @@ function saveUi() {
   store.set(store.KEYS.ui, { view, courseId, askScope, activeChatId, thinkingByModel }).catch(() => {});
 }
 
-async function saveChats() {
+async function saveChats(epoch = state.dataEpoch) {
   state.chats = [...state.chats].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, MAX_CHATS);
-  await store.set(store.KEYS.chats, state.chats);
+  await dataRequest('save-chats', { chats: state.chats, epoch });
 }
 
-function addMessage(chatId, message) {
+function addMessage(chatId, message, epoch = state.dataEpoch) {
   const at = new Date().toISOString();
   state.chats = state.chats.map((c) => (c.id === chatId ? { ...c, updatedAt: at, messages: [...c.messages, message].slice(-MAX_CHAT_MESSAGES) } : c));
-  return saveChats();
+  return saveChats(epoch);
 }
 
 function openChat(id) {
+  answerScroll.reset();
   state.activeChatId = id;
   state.showChats = false;
   state.openTraces.clear();
@@ -538,11 +555,17 @@ async function sendQuestion(question, { reuse = false, resume = null } = {}) {
   }
   state.draft = '';
   state.showChats = false;
-  followAnswer = true;
+  answerScroll.reset();
   const keptTrace = (resume?.trace ?? []).map((entry) => ({ ...entry, active: false }));
-  state.pending = { chatId, runId: crypto.randomUUID(), trace: keptTrace, text: '', startedAt: Date.now(), phase: 'research', disclosureEpoch: 0, open: true };
+  state.pending = { chatId, runId: crypto.randomUUID(), trace: keptTrace, text: '', startedAt: Date.now(), open: true };
   state.abort = new AbortController();
-  if (!reuse && !resume) await addMessage(chatId, { id: crypto.randomUUID(), role: 'user', content: text });
+  const pending = state.pending;
+  const epoch = state.dataEpoch;
+  if (!reuse && !resume) {
+    try { await addMessage(chatId, { id: crypto.randomUUID(), role: 'user', content: text }, epoch); }
+    catch (error) { if (error.code === 'data-cleared') return; throw error; }
+  }
+  if (state.pending !== pending) return;
   render({ bottom: true });
   const ticker = setInterval(() => {
     const clock = document.querySelector('#pending .trace-time');
@@ -562,10 +585,12 @@ async function sendQuestion(question, { reuse = false, resume = null } = {}) {
       requestParams: thinkingParams(state.genai?.model, state.thinkingByModel[state.genai?.model]),
       signal: state.abort.signal,
       onTrace: (trace) => {
+        if (state.pending !== pending) return;
         state.pending.trace = [...keptTrace, ...trace];
         updatePending();
       },
       onText: (partial) => {
+        if (state.pending !== pending) return;
         setPendingText(partial);
         updatePending();
       },
@@ -582,17 +607,29 @@ async function sendQuestion(question, { reuse = false, resume = null } = {}) {
     }
     reply = { role: 'assistant', content: answer.text, citations: answer.citations, trace: [...keptTrace, ...storedTrace(answer.trace)] };
   } catch (err) {
+    if (state.pending !== pending) return;
     const stopped = err.name === 'AbortError' || state.abort?.signal.aborted;
     const partial = state.pending?.text?.trim() ?? '';
     reply = { role: 'assistant', content: stopped ? partial || 'Stopped.' : err.message, error: !stopped, stopped, trace: storedTrace(state.pending.trace) };
   } finally {
     clearInterval(ticker);
   }
+  if (state.pending !== pending) return;
+  rememberPendingDisclosure();
   reply.id = crypto.randomUUID();
+  const pendingKey = `trace-${pending.chatId}-${pending.runId}`;
+  const savedKey = `trace-${pending.chatId}-${reply.id}`;
+  const keepWorkOpen = pending.open && (pending.manualDisclosure || !answerScroll.following);
+  if (keepWorkOpen) state.openTraces.add(reply.id);
+  for (const details of document.querySelectorAll('#pending details[data-disclosure]')) {
+    const key = details.dataset.disclosure;
+    if (key.startsWith(pendingKey)) expandedSections.set(savedKey + key.slice(pendingKey.length), key === pendingKey ? keepWorkOpen : details.open);
+  }
   reply.seconds = Math.round((Date.now() - state.pending.startedAt) / 1000);
   state.pending = null;
   state.abort = null;
-  await addMessage(chatId, reply);
+  try { await addMessage(chatId, reply, epoch); }
+  catch (error) { if (error.code === 'data-cleared') return; throw error; }
   render();
   const retryDiscussions = discussionRetryQueued;
   discussionRetryQueued = false;
@@ -605,10 +642,11 @@ async function nameChat(id) {
   const chat = state.chats.find(chat => chat.id === id);
   if (!chat || namingChats.has(id)) return;
   namingChats.add(id);
+  const epoch = state.dataEpoch;
   try {
     const title = await generateChatTitle(chat.messages, { signal: AbortSignal.timeout(30_000) });
     state.chats = state.chats.map(chat => chat.id === id ? { ...chat, title, titleGenerated: true } : chat);
-    await saveChats();
+    await saveChats(epoch);
     if (state.view === 'ask' && !state.pending) render();
   } catch { /* The short local title remains available if naming fails. */ }
   finally { namingChats.delete(id); }
@@ -699,8 +737,11 @@ async function saveBenchmarkData() {
 
 async function clearData() {
   if (!confirm('Delete all BoilerSpace data on this device? This also disconnects GenAI Studio.')) return;
-  await chrome.storage.session.remove('discussionAuth');
-  await chrome.storage.local.clear();
+  state.abort?.abort();
+  state.pending = null;
+  state.abort = null;
+  queuedSyllabusRun = null;
+  await dataRequest('clear');
   await loadState({ includeChat: true });
   state.view = 'settings';
   render();
@@ -1282,7 +1323,7 @@ function traceView(trace, { key, live = false, seconds = 0, open = false, ontogg
   let summary;
   if (live) {
     const active = tools.findLast(entry => entry.active);
-    const doing = writing ? 'Writing the answer' : active ? (TOOL_TITLES[active.name] ?? active.label) : tools.length ? 'Reviewing results' : 'Thinking';
+    const doing = writing ? 'Writing' : active ? (TOOL_TITLES[active.name] ?? active.label) : tools.length ? 'Reviewing results' : 'Thinking';
     summary = [h('span', { class: 'spinner' }), h('span', { class: 'trace-current', role: 'status' }, doing), h('span', { class: 'trace-time' }, duration(seconds)), icon('chevron')];
   } else {
     const time = seconds ? ` in ${duration(seconds)}` : '';
@@ -1368,42 +1409,38 @@ function pendingView() {
   const trace = traceView(p.trace, {
     key: `trace-${p.chatId}-${p.runId}`,
     live: true,
-    writing: p.phase === 'writing',
+    writing: Boolean(p.text),
     seconds: Math.floor((Date.now() - p.startedAt) / 1000),
     open: p.open,
     ontoggle: (e) => {
       const el = e.currentTarget;
-      if (e.target === el && el.isConnected && state.pending === p && el.dataset.pendingEpoch === String(p.disclosureEpoch)) p.open = el.open;
+      if (e.target === el && el.isConnected && state.pending === p) p.open = el.open;
     },
   });
-  trace.dataset.pendingEpoch = String(p.disclosureEpoch);
+  trace.dataset.pendingTrace = 'true';
   return h(
     'div',
-    { class: 'message assistant pending', id: 'pending', style: `--activity-delay:-${(Date.now() - p.startedAt) % 1200}ms` },
+    { class: 'message assistant pending', id: 'pending', style: `--activity-delay:-${(Date.now() - p.startedAt) % 1200}ms`, onclick: event => {
+      if (event.target.closest('summary')) p.manualDisclosure = true;
+    } },
     trace,
     p.text && h('div', { class: 'streaming-answer' }, answerBody(p.text)),
   );
 }
 
 let pendingFrame = null;
-let followAnswer = true;
+const answerScroll = createChatScrollFollow();
 
 function setPendingText(text) {
-  const p = state.pending;
-  const phase = text ? 'writing' : 'research';
-  if (p.phase !== phase) {
-    p.phase = phase;
-    p.disclosureEpoch++;
-    p.open = phase === 'research';
-  }
-  p.text = text;
+  // A draft can still precede a tool. Its text must not toggle the work log.
+  state.pending.text = text;
 }
 
 function rememberPendingDisclosure() {
   const p = state.pending;
   const trace = document.querySelector('#pending > .trace');
-  // Old DOM state must not override a phase change or a new question.
-  if (p && trace?.dataset.disclosure === `trace-${p.chatId}-${p.runId}` && trace.dataset.pendingEpoch === String(p.disclosureEpoch)) p.open = trace.open;
+  // A previous question's DOM must not change this question's disclosure.
+  if (p && trace?.dataset.disclosure === `trace-${p.chatId}-${p.runId}`) p.open = trace.open;
 }
 
 // Patch the live answer in place so pointer-down targets survive the next token.
@@ -1447,7 +1484,7 @@ function paintPending() {
   const focusKey = el.contains(document.activeElement) && document.activeElement.dataset.focusKey;
   const next = pendingView();
   for (const details of next.querySelectorAll('details[data-disclosure]')) {
-    if (details.hasAttribute('data-pending-epoch')) continue;
+    if (details.hasAttribute('data-pending-trace')) continue;
     const previous = disclosures.find(item => item.key === details.dataset.disclosure);
     if (previous) details.open = previous.open;
   }
@@ -1458,7 +1495,7 @@ function paintPending() {
     if (box && previous?.scroll !== undefined) box.scrollTop = previous.scroll;
   }
   if (focusKey) [...el.querySelectorAll('[data-focus-key]')].find(element => element.dataset.focusKey === focusKey)?.focus({ preventScroll: true });
-  main.scrollTop = followAnswer ? main.scrollHeight : scroll;
+  answerScroll.restore(main, answerScroll.following ? main.scrollHeight : scroll);
 }
 
 function chatList() {
@@ -1629,10 +1666,7 @@ function askView() {
     h(
       'div',
       { class: 'messages', 'aria-label': 'Conversation',
-        onwheel: event => { if (event.deltaY < 0) followAnswer = false; },
-        ontouchmove: () => { followAnswer = false; },
-        onkeydown: event => { if (['ArrowUp', 'PageUp', 'Home'].includes(event.key)) followAnswer = false; },
-        onscroll: event => { const el = event.currentTarget; followAnswer = el.scrollHeight - el.scrollTop - el.clientHeight < 12; },
+        ...answerScroll.handlers(),
       },
       empty &&
         h(
@@ -1995,11 +2029,11 @@ const VIEWS = { week: weekView, courses: coursesView, ask: askView, settings: se
 const expandedSections = new Map();
 
 function render({ top = false, bottom = false } = {}) {
+  if (state.view === 'ask' && (top || bottom)) answerScroll.reset();
   const main = document.getElementById('view');
   rememberPendingDisclosure();
   const scroller = main.querySelector('.messages') ?? main;
   const scroll = scroller.scrollTop;
-  const atBottom = scroller.scrollHeight - scroll - scroller.clientHeight < 80;
   const active = document.activeElement;
   const focusKey = active?.dataset.focusKey;
   const selection = typeof active?.selectionStart === 'number' ? [active.selectionStart, active.selectionEnd] : null;
@@ -2007,7 +2041,7 @@ function render({ top = false, bottom = false } = {}) {
   const content = GRADESCOPE_ACCESS ? gradescopeAccessView() : DISCUSSION_ACCESS ? discussionAccessView() : ACCESS_PAGE ? syllabusAccessPage() : CONNECT_PAGE ? connectPageView() : [syllabusAccessNotice(), state.view === 'settings' ? null : hostAccessNotice(), VIEWS[state.view]()];
   main.replaceChildren(h('div', { class: state.view === 'ask' && !CONNECT_PAGE ? 'view ask-view' : 'view' }, content));
   for (const details of main.querySelectorAll('details[data-disclosure]')) {
-    if (!details.hasAttribute('data-pending-epoch')) details.open = expandedSections.get(details.dataset.disclosure) ?? false;
+    if (!details.hasAttribute('data-pending-trace')) details.open = expandedSections.get(details.dataset.disclosure) ?? false;
   }
   const focused = focusKey && [...main.querySelectorAll('[data-focus-key]')].find(element => element.dataset.focusKey === focusKey);
   if (focused) {
@@ -2017,7 +2051,7 @@ function render({ top = false, bottom = false } = {}) {
   const textarea = main.querySelector('.composer textarea');
   if (textarea?.value) { textarea.style.height = 'auto'; textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`; }
   const nextScroller = main.querySelector('.messages') ?? main;
-  if (state.view === 'ask' && (top || bottom || (state.pending ? followAnswer : atBottom))) nextScroller.scrollTop = nextScroller.scrollHeight;
+  if (state.view === 'ask') answerScroll.restore(nextScroller, top || bottom || answerScroll.following ? nextScroller.scrollHeight : scroll);
   else nextScroller.scrollTop = top ? 0 : scroll;
   for (const button of document.querySelectorAll('.tabs button')) {
     button.toggleAttribute('aria-current', false);
@@ -2127,6 +2161,15 @@ async function init() {
 
   store.onChange(async (changes) => {
     const keys = Object.keys(changes);
+    if (changes[DATA_EPOCH_KEY]) {
+      state.abort?.abort();
+      state.pending = null;
+      state.abort = null;
+      queuedSyllabusRun = null;
+      await loadState({ includeChat: true });
+      render();
+      return;
+    }
     if (changes.theme) applyTheme(changes.theme.newValue ?? 'system');
     if (changes.chats && !state.pending) {
       const chats = changes.chats.newValue ?? [];
@@ -2136,7 +2179,7 @@ async function init() {
         if (state.view === 'ask') render();
       }
     }
-    if (keys.every((k) => ['chat', 'chats', 'ui', 'drawerOpen', 'drawerWidth', 'theme'].includes(k))) return;
+    if (keys.every((k) => ['chat', 'chats', 'ui', 'drawerOpen', 'drawerWidth', 'theme', 'genaiLinkAttempt'].includes(k))) return;
     if (keys.every((k) => ['syncLock', 'syncProgress'].includes(k))) {
       if (changes.syncLock) state.syncLock = changes.syncLock.newValue ?? null;
       if (changes.syncProgress) state.progress = changes.syncProgress.newValue ?? null;
@@ -2193,5 +2236,7 @@ init().catch(error => {
   const status = document.getElementById('status');
   status.hidden = false;
   status.classList.add('error-text');
-  status.textContent = `BoilerSpace could not load saved data. ${error.message}`;
+  status.textContent = error.code === 'background-unavailable'
+    ? `BoilerSpace’s background did not respond. ${error.message}`
+    : `BoilerSpace could not load saved data. ${error.message}`;
 });

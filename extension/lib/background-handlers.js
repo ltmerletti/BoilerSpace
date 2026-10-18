@@ -3,6 +3,8 @@ import { handleGradescopeRequest } from './gradescope-sync.js';
 import { clearDiscussionAuth } from './discussion-auth.js';
 import { reportSyllabusAccess, SYLLABUS_SITE } from './syllabus-access.js';
 import { saveSyllabusEntryHere } from './syllabus-store.js';
+import { chooseSyllabusHere, clearLocalDataHere, saveChatsHere } from './data-lifecycle.js';
+import { handleGenaiDataRequest } from './genai-store.js';
 import { readXsrf } from './sync.js';
 import { snapshotSyllabus } from './syllabus-scan.js';
 import { waitForSyllabus } from './syllabus-wait.js';
@@ -112,6 +114,15 @@ export function handleMessage(message, sender, sendResponse) {
   const fromPanel = isPanelSender(sender);
   const fromBrightspace = isBrightspaceSender(sender);
   if (!fromPanel && !(fromBrightspace && ['boilerspace-syllabus', 'boilerspace-syllabus-access', 'boilerspace-xsrf'].includes(message?.type))) return false;
+  if (message?.type === 'boilerspace-data') {
+    const run = message.action === 'clear' ? clearLocalDataHere()
+      : message.action === 'save-chats' ? saveChatsHere(message.chats, message.epoch)
+      : message.action === 'syllabus-choice' ? chooseSyllabusHere(message.courseId, message.choice, message.epoch)
+      : message.action?.startsWith('genai-') ? handleGenaiDataRequest(message)
+      : Promise.reject(new Error('Unknown local data operation.'));
+    run.then(data => sendResponse({ ok: true, data }), error => sendResponse({ ok: false, error: error.message, code: error.code }));
+    return true;
+  }
   if (message?.type === 'boilerspace-gradescope') {
     const run = message.action === 'open-access'
       ? chrome.tabs.create({ url: chrome.runtime.getURL('sidepanel.html?gradescope-access=1'), active: true }).then(() => null)
@@ -140,7 +151,7 @@ export function handleMessage(message, sender, sendResponse) {
     return true;
   }
   if (message?.type === 'boilerspace-save-syllabus') {
-    saveSyllabusEntryHere(message.key, message.courseId, message.entry).then(() => sendResponse({ ok: true }), (err) => sendResponse({ ok: false, error: err.message }));
+    saveSyllabusEntryHere(message.key, message.courseId, message.entry, message.epoch).then(() => sendResponse({ ok: true }), (err) => sendResponse({ ok: false, error: err.message, code: err.code }));
     return true;
   }
   if (message?.type === 'boilerspace-syllabus') {

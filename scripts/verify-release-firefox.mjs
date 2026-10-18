@@ -29,13 +29,10 @@ const wait = async read => {
   throw new Error('Packaged Firefox check timed out.');
 };
 async function reloadAfterInstall(page) {
-  try { await page.reload({ waitUntil: 'domcontentloaded' }); }
-  catch (error) {
-    // Firefox can abort the navigation while replacing the installed add-on's
-    // extension frames. Start a fresh navigation after that specific race.
-    if (!String(error).includes('NS_BINDING_ABORTED')) throw error;
-    await page.goto('https://purdue.brightspace.com/d2l/home', { waitUntil: 'domcontentloaded' });
-  }
+  // Leave the old extension frames before loading the reinstalled add-on.
+  // Reloading their parent during replacement can strand Firefox's BiDi waiter.
+  await page.goto('about:blank', { waitUntil: 'domcontentloaded' });
+  await page.goto('https://purdue.brightspace.com/d2l/home', { waitUntil: 'domcontentloaded' });
 }
 try {
   const executablePath = process.env.FIREFOX_PATH ?? (await getInstalledBrowsers({ cacheDir: path.join(root, '.verify-tmp/browsers') })).find(browser => browser.browser === 'firefox')?.executablePath;
@@ -190,6 +187,62 @@ try {
     }
   });
   check('a page reload restores the panel and saved chat', await reopened.evaluate(async () => (await chrome.storage.local.get('chats')).chats[0].messages.some(message => message.role === 'assistant' && message.citations?.length)));
+
+  // Hold tokens and DONE separately so upward scrolling is tested both during
+  // streaming and at the transition to the saved answer.
+  await reopened.evaluate(() => {
+    const original = window.fetch;
+    window.fetch = async (url, options) => {
+      if (!String(url).endsWith('/api/chat/completions')) return original(url, options);
+      const body = JSON.parse(options.body);
+      if (!body.stream) return Response.json({ choices: [{ message: { content: 'Scroll regression' } }] });
+      // Complete the required lookup before holding the final answer. Otherwise
+      // DONE starts another model turn instead of completing the conversation.
+      if (!body.messages.some(message => message.role === 'tool')) {
+        const delta = { tool_calls: [{ index: 0, id: 'scroll-courses', type: 'function', function: { name: 'list_courses', arguments: '{}' } }] };
+        return new Response(`data: ${JSON.stringify({ choices: [{ delta }] })}\n\ndata: [DONE]\n\n`, { headers: { 'Content-Type': 'text/event-stream' } });
+      }
+      const encoder = new TextEncoder();
+      return new Response(new ReadableStream({ start(controller) {
+        const write = text => controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}\n\n`));
+        write(Array.from({ length: 30 }, (_, index) => `Paragraph ${index + 1}. ${'Synthetic course explanation for checking the reader position. '.repeat(3)}\n\n`).join(''));
+        window.nextScrollChunk = () => write('Another synthetic explanation. '.repeat(30));
+        window.finishScrollAnswer = () => { controller.enqueue(encoder.encode('data: [DONE]\n\n')); controller.close(); };
+      } }), { headers: { 'Content-Type': 'text/event-stream' } });
+    };
+    document.querySelector('[data-view="ask"]').click();
+    const input = document.querySelector('textarea[aria-label="Question"]');
+    input.value = 'Explain the course concepts for a local scroll regression.';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector('button[aria-label="Send"]').click();
+  });
+  const scrollMetrics = () => reopened.evaluate(() => {
+    const el = document.querySelector('.messages');
+    return { top: el.scrollTop, gap: el.scrollHeight - el.scrollTop - el.clientHeight, pending: !!document.querySelector('#pending') };
+  });
+  await wait(async () => await reopened.evaluate(() => !!window.nextScrollChunk && document.querySelector('#pending .streaming-answer')?.textContent.length > 1000) && (await scrollMetrics()).gap <= 1);
+  const messages = await reopened.$('.messages');
+  await messages.hover();
+  await page.mouse.wheel({ deltaY: -5 });
+  await wait(async () => (await scrollMetrics()).gap > 0);
+  await new Promise(resolve => setTimeout(resolve, 200));
+  const paused = await scrollMetrics();
+  check('a small real Firefox wheel scroll moves away from the answer bottom', paused.gap > 0 && paused.gap < 12);
+  await reopened.evaluate(() => window.nextScrollChunk());
+  await wait(async () => (await scrollMetrics()).gap > paused.gap + 20);
+  check('streaming tokens do not pull a paused Firefox reader back down', Math.abs((await scrollMetrics()).top - paused.top) < 2);
+  await page.mouse.wheel({ deltaY: 100000 });
+  await wait(async () => (await scrollMetrics()).gap <= 1);
+  await new Promise(resolve => setTimeout(resolve, 200));
+  await page.mouse.wheel({ deltaY: -40 });
+  await wait(async () => (await scrollMetrics()).gap > 20);
+  await new Promise(resolve => setTimeout(resolve, 200));
+  const beforeDone = await scrollMetrics();
+  check('the Firefox reader is paused within the old eighty-pixel completion threshold', beforeDone.gap > 20 && beforeDone.gap < 80);
+  await reopened.evaluate(() => window.finishScrollAnswer());
+  await wait(async () => !(await scrollMetrics()).pending);
+  check('finishing an answer preserves the paused Firefox reader position', Math.abs((await scrollMetrics()).top - beforeDone.top) < 2);
+
   await browser.installExtension(archive);
   await reloadAfterInstall(page);
   const retained = await wait(async () => {

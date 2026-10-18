@@ -1,6 +1,6 @@
 // Purdue GenAI Studio (Open WebUI 0.11) connection: account linking and rate-limited model requests.
 
-import * as store from './store.js';
+import { dataRequest } from './data-lifecycle.js';
 
 export const GENAI_BASE = 'https://genai.rcac.purdue.edu';
 export const DEFAULT_MODEL = 'qwen3.8:27b';
@@ -24,14 +24,8 @@ export class GenAIError extends Error {
   }
 }
 
-// Connections made before the default changed move to the new default unless the student picked a model.
 export async function getConnection() {
-  const connection = await store.get(store.KEYS.genai);
-  if (!connection || connection.modelChosen || connection.model === DEFAULT_MODEL) return connection;
-  if (connection.models && !connection.models.includes(DEFAULT_MODEL)) return connection;
-  const next = { ...connection, model: DEFAULT_MODEL };
-  await store.set(store.KEYS.genai, next);
-  return next;
+  return dataRequest('genai-read');
 }
 
 const isChatModel = (id) => !/embed|arena|whisper|tts|rerank/i.test(id);
@@ -44,21 +38,18 @@ async function fetchModelIds(key) {
 }
 
 export async function refreshModels() {
-  const connection = await getConnection();
+  const { connection, epoch, identity } = await dataRequest('genai-refresh-begin');
   if (!connection?.key) return [];
   const models = await fetchModelIds(connection.key);
-  await store.set(store.KEYS.genai, { ...connection, models });
-  return models;
+  return dataRequest('genai-refresh', { epoch, identity, models });
 }
 
 export async function setModel(model) {
-  const connection = await getConnection();
-  if (!connection) return;
-  await store.set(store.KEYS.genai, { ...connection, model, modelChosen: model !== DEFAULT_MODEL });
+  await dataRequest('genai-set-model', { model });
 }
 
 export async function unlink() {
-  await store.remove(store.KEYS.genai);
+  await dataRequest('genai-unlink');
 }
 
 // ---------- Linking ----------
@@ -125,11 +116,13 @@ async function getOrCreateKey() {
 }
 
 export async function linkAccount({ onStatus = () => {} } = {}) {
+  const attempt = await dataRequest('genai-link-begin');
   try {
     onStatus('Checking your GenAI Studio sign-in…');
     const user = (await whoami()) ?? (await signInViaTab(onStatus));
     if (!user) throw new GenAIError('GenAI Studio sign-in was not completed.');
 
+    await dataRequest('genai-link-check', attempt);
     onStatus('Connecting to Purdue GenAI Studio…');
     const { key, created } = await getOrCreateKey();
 
@@ -140,10 +133,10 @@ export async function linkAccount({ onStatus = () => {} } = {}) {
     if (!model) throw new GenAIError('No chat models are available to your GenAI Studio account.');
 
     const connection = { key, model, models: ids, name: user.name, created, linkedAt: new Date().toISOString() };
-    await store.set(store.KEYS.genai, connection);
-    return connection;
+    return await dataRequest('genai-link-finish', { ...attempt, connection });
   } finally {
     sessionToken = null;
+    await dataRequest('genai-link-cancel', attempt).catch(() => {});
   }
 }
 

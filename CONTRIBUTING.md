@@ -50,6 +50,8 @@ node scripts/verify-discussions.mjs ./node_modules/playwright/index.mjs
 node scripts/verify-gradescope.mjs
 node scripts/verify-discussion-recovery.mjs
 node scripts/verify-chat-streaming.mjs
+node scripts/verify-chat-narration.mjs
+node scripts/verify-data-lifecycle.mjs
 ```
 
 These scripts use throwaway Chromium profiles. The broader interface check runs headlessly by default; set `VERIFY_HEADED=1` to open a visible window. The syllabus check always opens a visible window. Brightspace and GenAI Studio requests are intercepted with fixtures. They do not use your real course session. `verify.mjs` checks the wider interface; `verify-syllabi.mjs` checks delayed syllabus rendering, missing sections, permissions, retries, fresh downloads, and concurrent readers.
@@ -58,7 +60,11 @@ These scripts use throwaway Chromium profiles. The broader interface check runs 
 
 `verify-discussion-recovery.mjs` restarts a disposable browser between import batches, restores an interrupted offline import, and checks expired sessions, edited or removed posts, and temporary-tab cleanup.
 
-`verify-chat-streaming.mjs` feeds incremental SSE to the actual panel and checks manual scrolling, resumed scrolling at the bottom, narration across multiple assistant/tool rounds, folding narration when the final answer starts, saved activity after reopening, and tool previews. It holds pointer clicks across streamed tokens to check that activity and tool disclosures remain interactive, checks the thinking control at narrow panel widths, and simulates Purdue’s HTTP 400 rate-limit response. Both scripts use synthetic data.
+`verify-chat-streaming.mjs` feeds incremental SSE to the actual panel and checks manual scrolling, resumed scrolling at the bottom, narration across multiple assistant/tool rounds, folding narration when the final answer starts, saved activity after reopening, and tool previews. It holds pointer clicks across streamed tokens to check that activity and tool disclosures remain interactive, checks the thinking control at narrow panel widths, and simulates Purdue’s HTTP 400 rate-limit response. Held tokens and a held completion check that small upward scrolls, resized panels and answer completion preserve a paused reading position. These checks use synthetic data.
+
+`verify-data-lifecycle.mjs` delays model-list requests and syllabus downloads while you change models, disconnect or clear data through the actual Settings controls. It checks that late results cannot restore cleared records or overwrite newer choices, and that a website content script cannot invoke the protected background writer. It uses a disposable profile and synthetic data; CI runs it against the built Chrome package.
+
+`verify-chat-narration.mjs` records a complete narration, tool and answer sequence for both following and paused readers. It checks that streamed drafts do not repeatedly toggle the work log and that finishing preserves a paused reader's open details. Videos and observations stay in the ignored verification directory.
 
 `verify.mjs` checks 320, 400 and 720 pixel panel widths, dark mode, active navigation, keyboard text selection and drafts surviving background changes. It also checks quiet background refreshes and visible recovery from a saved-data read error. Course checks cover dark hover and the collapsed AI policy. Discussion checks exercise the class Options controls and manual course-link overrides. Ask checks include the pinned composer, scrollable history, expandable sources, answer copying and cancellation of a pending model request. Screenshots use reduced motion so transient tab highlights do not enter captures.
 

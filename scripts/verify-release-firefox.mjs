@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import puppeteer from 'puppeteer-core';
 import { getInstalledBrowsers } from '@puppeteer/browsers';
-import { fakeBrightspace, pdfWithPages, snapshotFixture } from '../tests/helpers.mjs';
+import { fakeBrightspace, pdfWithPages, pdfWithJpxImage, snapshotFixture } from '../tests/helpers.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
 const out = process.env.VERIFY_OUT ?? path.join(root, '.verify-tmp/release-firefox');
@@ -28,6 +28,15 @@ const wait = async read => {
   }
   throw new Error('Packaged Firefox check timed out.');
 };
+async function reloadAfterInstall(page) {
+  try { await page.reload({ waitUntil: 'domcontentloaded' }); }
+  catch (error) {
+    // Firefox can abort the navigation while replacing the installed add-on's
+    // extension frames. Start a fresh navigation after that specific race.
+    if (!String(error).includes('NS_BINDING_ABORTED')) throw error;
+    await page.goto('https://purdue.brightspace.com/d2l/home', { waitUntil: 'domcontentloaded' });
+  }
+}
 try {
   const executablePath = process.env.FIREFOX_PATH ?? (await getInstalledBrowsers({ cacheDir: path.join(root, '.verify-tmp/browsers') })).find(browser => browser.browser === 'firefox')?.executablePath;
   assert.ok(executablePath, 'Set FIREFOX_PATH or install Firefox with: npx @puppeteer/browsers install firefox@stable --path .verify-tmp/browsers');
@@ -74,7 +83,7 @@ try {
   const id = await browser.installExtension(archive);
   check('the unmodified Firefox ZIP installs', id === 'boilerspace@lukem.dev');
   if (legacyPage) {
-    await legacyPage.reload();
+    await reloadAfterInstall(legacyPage);
     const upgraded = await wait(async () => {
       for (const frame of legacyPage.frames().filter(frame => frame.parentFrame())) {
         const value = await frame.evaluate(async () => globalThis.chrome?.runtime?.id ? { version: chrome.runtime.getManifest().version, data: await chrome.storage.local.get(['theme', 'snapshot', 'chats']) } : null).catch(() => null);
@@ -126,6 +135,14 @@ try {
   }, snapshotFixture());
   const pdf = await panel.evaluate(async bytes => (await import('./lib/extract.js')).extractText({ bytes: new Uint8Array(bytes), fileName: 'release.pdf', contentType: 'application/pdf' }), [...pdfWithPages([['Packaged PDF reading works.']])]);
   check('bundled PDF.js and its worker read a real PDF under the release CSP', pdf.pages[0].text.includes('Packaged PDF reading works'));
+  const pixels = await panel.evaluate(async bytes => {
+    const picture = await (await import('./lib/extract.js')).pagePicture(new Uint8Array(bytes), 'page 1');
+    const image = await createImageBitmap(await (await fetch(`data:${picture.mediaType};base64,${picture.data}`)).blob());
+    const canvas = new OffscreenCanvas(image.width, image.height), ctx = canvas.getContext('2d');
+    ctx.drawImage(image, 0, 0);
+    return [Array.from(ctx.getImageData(image.width / 4, image.height / 2, 1, 1).data), Array.from(ctx.getImageData(image.width * 3 / 4, image.height / 2, 1, 1).data)];
+  }, [...pdfWithJpxImage()]);
+  check('JPEG2000 image pages render their actual pixels using bundled codecs', pixels[0][0] > 180 && pixels[0][2] < 70 && pixels[1][2] > 180 && pixels[1][0] < 70);
   const semantic = await panel.evaluate(async () => {
     const { createDiscussionSearch, DiscussionSearchClient } = await import('./lib/discussion-search.js');
     const client = new DiscussionSearchClient();
@@ -174,7 +191,7 @@ try {
   });
   check('a page reload restores the panel and saved chat', await reopened.evaluate(async () => (await chrome.storage.local.get('chats')).chats[0].messages.some(message => message.role === 'assistant' && message.citations?.length)));
   await browser.installExtension(archive);
-  await page.reload();
+  await reloadAfterInstall(page);
   const retained = await wait(async () => {
     for (const frame of page.frames().filter(frame => frame.parentFrame())) {
       const value = await frame.evaluate(async () => typeof chrome !== 'undefined' && chrome.runtime?.id ? { version: chrome.runtime.getManifest().version, chats: (await chrome.storage.local.get('chats')).chats } : null).catch(() => null);

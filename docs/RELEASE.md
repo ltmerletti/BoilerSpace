@@ -41,7 +41,7 @@ The validator's remaining reviewed warnings are restricted to:
 - Manifest Android compatibility: this release deliberately has no `gecko_android` key and is available only on desktop. The linter nevertheless compares the desktop minimum of 140 against Android's data-consent minimum of 142. Do not enable Android in the listing.
 - `content.js`: two static HTML templates with extension-owned constants/URLs, and a dynamic import resolving only hard-coded local module names.
 - LinkeDOM's unmodified upstream parser: `innerHTML` is used to parse inert fetched HTML, not to insert it into the displayed page. Gradescope scripts, score elements and submission status are removed before metadata extraction.
-- PDF.js's unmodified upstream release: internal dynamic imports and `Function` detection. Both document-reading paths explicitly set `isEvalSupported: false`; extension CSP excludes `unsafe-eval` and remote scripts. The worker URL, character maps and fonts are bundled local assets.
+- PDF.js's unmodified upstream release: internal dynamic imports and `Function` detection. All three document-reading/rendering entry points explicitly set `isEvalSupported: false`; extension CSP excludes `unsafe-eval` and remote scripts. The worker, character maps, fonts, JPEG2000 decoder and color-conversion assets are bundled locally, including the decoder's upstream JavaScript fallback.
 
 First-party source is readable. Bundled library versions, source links and license notices are in `THIRD_PARTY_NOTICES.md`, with additional pinned hashes in the LinkeDOM and retrieval-model provenance files. The model is a local numeric token table, not executable remote code.
 
@@ -60,8 +60,8 @@ First-party source is readable. Bundled library versions, source links and licen
 | Check | Result |
 | --- | --- |
 | Unit suite | 243 passing, including cross-time-zone byte-identical package rebuilds and upstream library hashes |
-| Built Chrome package | 83 interface, 35 streaming, 16 syllabus, 30 discussion, 23 recovery and 18 Gradescope checks passing |
-| Official Firefox 158 | 15 packaged-install checks passing; 16 with the additional previous-main upgrade check |
+| Built Chrome package | 84 interface, 35 streaming, 16 syllabus, 30 discussion, 23 recovery and 18 Gradescope checks passing |
+| Official Firefox 158 | 16 packaged-install checks passing; 17 with the additional previous-main upgrade check |
 | Mozilla add-on validator 10.14.0 | Zero errors; 11 reviewed warnings described above |
 | npm dependency audit | Zero reported vulnerabilities |
 

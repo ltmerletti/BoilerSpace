@@ -52,6 +52,7 @@ async function extractPdf(bytes) {
   const doc = await pdfjs.getDocument({
     data: bytes.slice(),
     isEvalSupported: false,
+    wasmUrl: chrome.runtime.getURL('vendor/pdfjs/wasm/'),
     cMapUrl: chrome.runtime.getURL('vendor/pdfjs/cmaps/'),
     cMapPacked: true,
     standardFontDataUrl: chrome.runtime.getURL('vendor/pdfjs/standard_fonts/'),
@@ -183,6 +184,7 @@ export async function pagePicture(bytes, location) {
   const doc = await pdfjs.getDocument({
     data: bytes.slice(),
     isEvalSupported: false,
+    wasmUrl: chrome.runtime.getURL('vendor/pdfjs/wasm/'),
     cMapUrl: chrome.runtime.getURL('vendor/pdfjs/cmaps/'),
     cMapPacked: true,
     standardFontDataUrl: chrome.runtime.getURL('vendor/pdfjs/standard_fonts/'),

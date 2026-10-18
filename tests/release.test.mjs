@@ -15,6 +15,9 @@ test('reviewed runtime libraries retain their exact upstream release bytes', () 
   for (const [file, expected] of [
     ['pdfjs/pdf.min.mjs', '343b4166b06716a55a8f87175b83223cb1a9ab701eb8a96b2577509d47fbaf4a'],
     ['pdfjs/pdf.worker.min.mjs', 'dbcae78a691b3c501508f74b774c6066a57a14a76cefdc9e25ad86b651bb75d5'],
+    ['pdfjs/wasm/openjpeg.wasm', '67b8e2b162da472e98cb48d3d32e3e38fff481b9b32ff4818e78bb248af88ab2'],
+    ['pdfjs/wasm/openjpeg_nowasm_fallback.js', '07c3c3361827308741bc31c561b59e705ebb4d1e8efb84e4d24884e230dbb894'],
+    ['pdfjs/wasm/qcms_bg.wasm', '6017eca5939cde1836e88e6d8cd27ae039246f206515ea4487bdfd0e3fb16e26'],
     ['fflate/fflate.js', '8cc1f687e0159e977addb6b85e274dbd11e622cf151f4fcb7b85d49622ea43e7'],
     ['tokenizers/tokenizers.mjs', '1c4a848f86156201c033d6cd08c4cf81ae1088552acec3367f31ef086edf5af0'],
     ['linkedom/worker.js', 'ea9f1de69b009d210968dd8f4d3f4ecf1095bedf80d389ec83244c1713578288'],

@@ -14,7 +14,7 @@ function runtimeFile(file) {
     || /^lib\/[a-z-]+\.js$/.test(file)
     || /^icons\/(?:icon(?:16|32|48|128)\.png|logo\.svg)$/.test(file)
     || /^fonts\/(?:[a-zA-Z0-9_-]+\.woff2|OFL\.txt)$/.test(file)
-    || /^vendor\/(?:fflate\/(?:fflate\.js|LICENSE)|tokenizers\/(?:tokenizers\.mjs|LICENSE)|linkedom\/(?:worker\.js|LICENSE|NOTICE\.md|PROVENANCE\.md)|potion\/(?:model-i8\.safetensors|tokenizer\.json|LICENSE|MODEL_CARD\.md|PROVENANCE\.md)|pdfjs\/(?:pdf(?:\.worker)?\.min\.mjs|LICENSE|cmaps\/(?:[a-zA-Z0-9_-]+\.bcmap|LICENSE)|standard_fonts\/(?:LICENSE_(?:FOXIT|LIBERATION)|[a-zA-Z0-9_-]+\.(?:pfb|ttf))))$/.test(file);
+    || /^vendor\/(?:fflate\/(?:fflate\.js|LICENSE)|tokenizers\/(?:tokenizers\.mjs|LICENSE)|linkedom\/(?:worker\.js|LICENSE|NOTICE\.md|PROVENANCE\.md)|potion\/(?:model-i8\.safetensors|tokenizer\.json|LICENSE|MODEL_CARD\.md|PROVENANCE\.md)|pdfjs\/(?:pdf(?:\.worker)?\.min\.mjs|LICENSE|wasm\/(?:openjpeg\.wasm|qcms_bg\.wasm|openjpeg_nowasm_fallback\.js|LICENSE_(?:QCMS|OPENJPEG|PDFJS_OPENJPEG|PDFJS_QCMS))|cmaps\/(?:[a-zA-Z0-9_-]+\.bcmap|LICENSE)|standard_fonts\/(?:LICENSE_(?:FOXIT|LIBERATION)|[a-zA-Z0-9_-]+\.(?:pfb|ttf))))$/.test(file);
 }
 
 function readTree(directory, prefix = '') {

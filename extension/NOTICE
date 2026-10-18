@@ -13,6 +13,7 @@ the GNU General Public License.
 Bundled components retain their own licenses and copyright notices:
 
 - PDF.js: Apache License 2.0; see vendor/pdfjs/LICENSE and source notices.
+- OpenJPEG and QCMS codecs: see the four LICENSE files in vendor/pdfjs/wasm/.
 - Adobe character maps: see vendor/pdfjs/cmaps/LICENSE.
 - Foxit/PDFium fonts: see vendor/pdfjs/standard_fonts/LICENSE_FOXIT.
 - Liberation fonts: see vendor/pdfjs/standard_fonts/LICENSE_LIBERATION.

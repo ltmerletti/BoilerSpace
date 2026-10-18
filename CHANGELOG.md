@@ -6,6 +6,8 @@ What changed, what prompted it, and what it means when you use BoilerSpace. Each
 
 ## October 18, 2026
 
+- **Read image-heavy PDFs completely.** Bundle the PDF reader's JPEG2000 decoder and color-conversion assets rather than leaving those optional files out of the install. A synthetic image PDF now checks the rendered pixels in both browsers, so a blank page cannot pass as a successful render.
+
 - **Prepare a consistent v1 install.** Firefox and Chrome now have separate release packages with the correct background and panel APIs. The Firefox package declares its data use in the browser's installation prompt. Reproducible ZIPs, source and checksums make the submitted build inspectable, and CI installs the actual Firefox archive to check course sync, document reading, local discussion search and cited answers.
 
 - **Tighten requests between the panel and browser.** Background readers accept requests only from the extension or the specific Brightspace content script that needs them. Syllabus requests stay within Purdue Brightspace. Account connection requests also have a time limit so an unavailable service cannot leave setup waiting indefinitely.

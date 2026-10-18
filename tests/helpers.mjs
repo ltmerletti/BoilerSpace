@@ -130,6 +130,26 @@ export function pdfWithPages(pageTexts) {
   return new TextEncoder().encode(pdf);
 }
 
+// A synthetic 8x8 red/blue JPEG2000 image, encoded losslessly with Pillow and
+// OpenJPEG 2.5.4. No downloaded document or course content is used.
+export function pdfWithJpxImage() {
+  const image = atob('/0//UQAvAAAAAAAIAAAACAAAAAAAAAAAAAAACAAAAAgAAAAAAAAAAAADBwEBBwEBBwEB/1IADAAAAAEAAwQEAAH/XAANQEBISFBISFBISFD/ZAAlAAFDcmVhdGVkIGJ5IE9wZW5KUEVHIHZlcnNpb24gMi41LjT/kAAKAAAAAABgAAH/k8fUBAMfz7QICL/H1AIIz8AICHvB84EAAs/ADAH/f8faCgACXUCsx8D5AYAJQF/H2goACRVURILH2goAF9fSbn/A+QIAFyyVn8faDAAXLJtN+6f/2Q==');
+  const paint = 'q 64 0 0 64 0 0 cm /Image1 Do Q';
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 64 64] /Contents 4 0 R /Resources << /XObject << /Image1 5 0 R >> >> >>',
+    `<< /Length ${paint.length} >>\nstream\n${paint}\nendstream`,
+    `<< /Type /XObject /Subtype /Image /Width 8 /Height 8 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /JPXDecode /Length ${image.length} >>\nstream\n${image}\nendstream`,
+  ];
+  let pdf = '%PDF-1.5\n';
+  const offsets = [];
+  for (const [i, object] of objects.entries()) { offsets.push(pdf.length); pdf += `${i + 1} 0 obj\n${object}\nendobj\n`; }
+  const xref = pdf.length;
+  pdf += `xref\n0 6\n0000000000 65535 f \n${offsets.map(offset => `${String(offset).padStart(10, '0')} 00000 n \n`).join('')}trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Uint8Array.from(pdf, character => character.charCodeAt(0));
+}
+
 // What the model might return for SYLLABUS_PAGES, including two items it made up.
 export const MODEL_OUTPUT = {
   deadlines: [

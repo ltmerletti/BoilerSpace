@@ -38,6 +38,12 @@ The reader reads the full available history per connected course, with available
 
 Discussion text stays in extension storage until used by Ask or exported. Questions about connected discussions can send matching excerpts and saved replies to Purdue GenAI Studio, with direct thread citations. Disconnecting a discussion source removes its cached posts and course link. Existing chats and exports may still contain quoted discussion content. **Clear local data** clears the discussion cache along with the rest of extension storage.
 
+## Optional Gradescope
+
+Gradescope access is requested when you choose to connect. The reader uses your existing browser cookies to fetch the account's course list and current-term student assignment lists. These HTML responses can contain score columns; the parser removes submission-status and score elements, then extracts only course names, course links, assignment headings, canonical assignment links, and published release, due and late due timestamps. It does not inspect score values, open submissions, read grading feedback, or save raw pages. No Gradescope password, cookie or authentication token is copied into extension storage.
+
+The saved assignment metadata appears in Week, course details, calendar and data exports, and Ask tools. Relevant metadata can go to Purdue GenAI Studio when you ask a question. Missing dates are not inferred, and late deadlines do not replace normal deadlines. OCR and assignment document reading are not included. Refreshes run directly without opening site tabs. Choosing Connect or Reconnect can open a visible sign-in page. Disconnecting Gradescope or clearing local data removes its cached courses and assignments; existing chats and exports can retain cited metadata.
+
 ## Sign-in and API keys
 
 You sign into Purdue in the browser. BoilerSpace does not ask you to enter your Purdue password into its settings. It uses the existing Brightspace session to read course material and the GenAI Studio connection flow to obtain an API key.

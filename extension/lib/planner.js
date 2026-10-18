@@ -1,3 +1,4 @@
+import { gradescopeAssignments } from './gradescope.js';
 // Turns a sync snapshot plus syllabus results into the agenda the student sees.
 
 import { dayKey, isValidDate, zonedToUtc } from './dates.js';
@@ -59,8 +60,16 @@ export function syllabusItems(syllabi, reviews = {}, snapshot = null) {
   return out;
 }
 
-export function agendaItems(snapshot, syllabi, reviews) {
-  return [...brightspaceItems(snapshot), ...syllabusItems(syllabi, reviews, snapshot)].sort((a, b) => a.dueAt.localeCompare(b.dueAt));
+export function agendaItems(snapshot, syllabi, reviews, gradescope = null) {
+  const items = [...brightspaceItems(snapshot), ...syllabusItems(syllabi, reviews, snapshot)];
+  const titleKey = value => value.toLowerCase().replace(/[^a-z0-9]/g, '');
+  for (const item of gradescopeAssignments(gradescope)) {
+    if (!item.dueAt) continue;
+    // Collapse only exact title/date/course duplicates; differing deadlines stay visible.
+    if (item.courseId && items.some(other => other.courseId === item.courseId && other.dueAt === item.dueAt && titleKey(other.title) === titleKey(item.title))) continue;
+    items.push({ ...item, kind: 'assignment', source: 'gradescope', allDay: false });
+  }
+  return items.sort((a, b) => a.dueAt.localeCompare(b.dueAt));
 }
 
 export function itemDayKey(item) {
@@ -81,12 +90,12 @@ export function aiPolicyFor(syllabi, courseId) {
   return usableRecord(syllabi?.[courseId])?.policies?.aiUse ?? null;
 }
 
-export function calendarEvents(snapshot, syllabi, reviews) {
+export function calendarEvents(snapshot, syllabi, reviews, gradescope = null) {
   const courses = new Map((snapshot?.courses ?? []).map((c) => [c.id, shortCourseLabel(c)]));
-  return agendaItems(snapshot, syllabi, reviews)
+  return agendaItems(snapshot, syllabi, reviews, gradescope)
     .filter((item) => item.source !== 'syllabus' || item.confirmed)
     .map((item) => {
-      const label = courses.get(item.courseId) ?? '';
+      const label = courses.get(item.courseId) ?? item.courseName ?? '';
       const uid =
         item.source === 'syllabus' ? `${item.key}@boilerspace` : `bs-${item.courseId}-${item.key.replace(':', '-')}@boilerspace`;
       const kindWord = item.kind === 'event' ? '' : ` (${item.kind})`;

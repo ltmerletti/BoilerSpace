@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/hero.svg" width="1000" alt="BoilerSpace wordmark and orbit emblem alongside two matching lecture pages, drawn as a vector illustration">
+  <img src="docs/images/hero.svg" width="1000" alt="BoilerSpace for Brightspace, Ed, Piazza and Gradescope, with an orbit emblem and two illustrated lecture pages">
 </p>
 
 <h1 align="center">BoilerSpace</h1>
@@ -45,15 +45,17 @@ The same search works with Piazza. It covers the full saved public history, incl
 
 ## Assignments and upcoming dates
 
-Assignments, quizzes, exams and syllabus dates come together in **Week**. **Courses** keeps your current classes and syllabi close by. Export upcoming work to your calendar when you need it elsewhere.
+Assignments, quizzes, exams and syllabus dates come together in **Week**. Connect **Gradescope** in Settings to include its assignments and published deadlines alongside Brightspace. Clear course matches link to Brightspace automatically. Ask can look up assignment dates with links back to Gradescope.
+
+**Courses** keeps your current classes, syllabi and connected assignment lists close by. Export upcoming work to your calendar when you need it elsewhere.
 
 ## Get started
 
-BoilerSpace works in **Chrome, Firefox and Zen**. You need your Purdue Brightspace and [GenAI Studio](https://genai.rcac.purdue.edu) accounts.
+BoilerSpace works in **Chrome, Firefox and Zen**. Use your Purdue Brightspace account, and connect [GenAI Studio](https://genai.rcac.purdue.edu) for course answers.
 
 1. **[Download the source ZIP](https://github.com/ltmerletti/BoilerSpace/archive/refs/heads/main.zip)** and extract it.
 2. **Load the `extension` folder** using your browser's instructions below.
-3. **Open Brightspace**, click **BoilerSpace**, and connect Purdue GenAI Studio in **Settings**. Approve the requested access. Ed and Piazza are optional connections in the same place.
+3. **Open Brightspace**, click **BoilerSpace**, and connect Purdue GenAI Studio in **Settings**. Approve the requested access. Ed, Piazza and Gradescope are optional connections in the same place.
 
 | Browser | Load the extension |
 | --- | --- |

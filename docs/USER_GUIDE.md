@@ -26,11 +26,23 @@ Ed discovers active US courses. Piazza finds visible classes from your signed-in
 
 Discussion courses are matched to Brightspace by course code and distinctive title. Older terms and ambiguous matches stay separate. To change a match, expand the connection, open the class's **Options**, and choose its **Brightspace course**. Manual choices are preserved on later syncs. A class without a Brightspace match can still be searched in Ask.
 
+### Gradescope
+
+Choose **Connect** beside Gradescope in **Settings** and allow site access. Your existing Gradescope sign-in is reused. If it has expired, connection opens a visible sign-in page and continues after you sign in.
+
+BoilerSpace imports current-term assignment names, links, release dates, due dates and late deadlines. Recognizable course codes match Brightspace automatically. Assignments with dates appear in Week and calendar exports; the course page and Settings also list assignments with no published date. Ask can find this metadata and cite Gradescope, including courses without a Brightspace match.
+
+Under each course's **Options**, you can change its Brightspace link. For an unmatched course, leave **All my courses** selected in Ask and name the Gradescope course in your question.
+
+Normal and late deadlines remain separate. Missing dates stay unknown. Scores, submitted answers, grading feedback and assignment question text are not read. OCR is not included.
+
+Gradescope refreshes at most every 20 minutes while BoilerSpace is open. Use **Sync assignments now** for an immediate update. Routine updates do not open site tabs. Temporary failures keep saved assignments; an expired sign-in or revoked permission shows the shared reconnect reminder. **Disconnect Gradescope** removes its saved course and assignment data.
+
 ## Ask a course question
 
 Choose a course, or leave **All my courses** selected. Name the lecture, file, project, or topic when it helps identify what you mean. Follow-up questions stay in the same conversation.
 
-Ask can search syllabi, course files, announcements, and connected discussion history. It can also read questions from finished or closed quizzes when Brightspace makes them available. It excludes quiz scores and stays off active quiz attempt pages.
+Ask can search syllabi, course files, announcements, connected discussion history, and saved Gradescope assignment names and dates. It can also read questions from finished or closed quizzes when Brightspace makes them available. It excludes quiz scores and stays off active quiz attempt pages.
 
 During a lookup, the work log opens to show narration and tool calls in order. It collapses when answer text starts and reopens if the model returns to research. You can open or close it while text is streaming. Expand a tool's **Details** to inspect its arguments and a short result preview. You can scroll back, stop generation, copy an answer, or retry it.
 
@@ -58,7 +70,7 @@ Discussion imports save progress in batches and resume after interruption. Setti
 
 Discussion refreshes make requests directly from the extension. They do not open, navigate or close site tabs. If your sign-in cannot be renewed or restored, saved posts stay available and Settings shows **Reconnect**. Temporary update failures offer **Retry** and recover automatically on a later refresh. Only choosing **Connect** or **Reconnect** can open a visible sign-in page.
 
-A small reminder below the panel's sync controls, visible on every tab, appears when Ed or Piazza needs reconnection. Its buttons start reconnection directly. The reminder clears when access is restored and stays hidden for temporary update failures.
+A small reminder below the panel's sync controls, visible on every tab, appears when Ed, Piazza or Gradescope needs reconnection. Its buttons start reconnection directly. The reminder clears when access is restored and stays hidden for temporary update failures.
 
 Connections survive browser restarts and extension reloads. Ed renews its saved credential silently while you use BoilerSpace; an already-open signed-in Ed page can also repair the connection without navigation. Piazza reuses its existing browser sign-in cookies. Reconnect is needed when the site no longer accepts the saved sign-in and automatic recovery cannot restore it.
 
@@ -79,6 +91,8 @@ Calendar export is in **Settings**. Data exports and **Clear local data** are un
 - **A connection needs attention.** Expand its Settings row and reconnect. Check that the site is signed in and that requested access was approved.
 - **A syllabus check failed.** Resolve any Simple Syllabus permission request first, then retry the course. A course without a syllabus is different from a failed check.
 - **An import stopped.** Keep BoilerSpace open and run **Sync discussions now**. Saved batches are retained.
+- **A Gradescope assignment has no date.** Gradescope does not publish dates for every assignment. It remains in the assignment list but stays out of Week and calendar exports until a date is available. Late deadlines are shown separately.
+- **Gradescope dates look stale.** Expand Gradescope in Settings and choose **Sync assignments now**. An expired sign-in offers Reconnect; a temporary service failure offers Retry and keeps the previous list.
 - **An answer is missing a source.** Confirm the relevant course or discussion history has synced. Name the file or thread if the question could refer to several things.
 - **The interface did not change after an update.** Reload the extension itself, then refresh Brightspace.
 

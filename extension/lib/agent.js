@@ -1,3 +1,4 @@
+import { gradescopeAssignments, gradescopeDocuments } from './gradescope.js';
 import { isSyllabusAccessError } from './syllabus-access.js';
 // The course assistant: a tool-calling loop over synced Brightspace data and syllabus facts.
 // Tools only read data that is already on this device. Grades are never sent to the model.
@@ -33,6 +34,15 @@ const clip = (text, max) => (text && text.length > max ? `${text.slice(0, max)}�
 
 const TOOLS = [
   {
+    name: 'list_gradescope_assignments',
+    description: 'List saved Gradescope assignments and their published release, due and late due dates, including courses not linked to Brightspace. No scores, submitted answers or assignment question text are read. Use source_id or course_id to narrow the list; follow next_offset for more.',
+    parameters: { type: 'object', properties: {
+      course_id: { type: 'integer' }, source_id: { type: 'string' },
+      query: { type: 'string', description: 'Optional title words.' },
+      offset: { type: 'integer', minimum: 0 },
+    } },
+  },
+  {
     name: 'list_courses',
     description: "List the student's current courses with their ids and AI-use policy.",
     parameters: { type: 'object', properties: {} },
@@ -40,7 +50,7 @@ const TOOLS = [
   {
     name: 'list_upcoming',
     description:
-      'List assignments, quizzes, exams and events due soon, from Brightspace and from syllabi. An item with assessment true is an exam, midterm, final or checkpoint even when its kind is event or quiz. Exams mentioned only in an announcement are not in this list.',
+      'List assignments, quizzes, exams and events due soon, from Brightspace, connected Gradescope courses and syllabi. An item with assessment true is an exam, midterm, final or checkpoint even when its kind is event or quiz. Exams mentioned only in an announcement are not in this list.',
     parameters: {
       type: 'object',
       properties: {
@@ -64,7 +74,7 @@ const TOOLS = [
   {
     name: 'list_items',
     description:
-      'List quizzes and assignments, including ones already due. list_upcoming hides those. Returns posted instructions. Use read_quiz for the questions.',
+      'List Brightspace quizzes and assignments, including ones already due. list_upcoming hides those. Returns posted instructions. Use read_quiz for the questions.',
     parameters: {
       type: 'object',
       properties: {
@@ -173,7 +183,7 @@ class SourceRegistry {
 
 // cachedFile(topic, { syllabi }) returns a promise for a file that is already loaded, or null. Search only
 // covers those, because opening every file in the background would download whole courses.
-export function createTools({ snapshot, syllabi = {}, reviews = {}, discussions = { sources: [] }, now = new Date(), readFile = readCourseFile, readQuiz = readQuizOnPage, cachedFile = readFile === readCourseFile ? getCachedCourseFile : null }) {
+export function createTools({ snapshot, syllabi = {}, reviews = {}, discussions = { sources: [] }, gradescope = null, now = new Date(), readFile = readCourseFile, readQuiz = readQuizOnPage, cachedFile = readFile === readCourseFile ? getCachedCourseFile : null }) {
   const sources = new SourceRegistry();
   const courses = currentCourses(snapshot);
   const label = (courseId) => {
@@ -197,7 +207,7 @@ export function createTools({ snapshot, syllabi = {}, reviews = {}, discussions 
           if (res?.pages?.length) files.push({ ...topic, kind: res.kind, pages: res.pages });
         }
       }
-      return buildIndex(documentsFromSnapshot(snapshot, syllabi, { files }));
+      return buildIndex([...documentsFromSnapshot(snapshot, syllabi, { files }), ...gradescopeDocuments(gradescope)]);
     })();
     return indexPromise;
   }
@@ -270,6 +280,7 @@ export function createTools({ snapshot, syllabi = {}, reviews = {}, discussions 
   }
 
   const describe = {
+    list_gradescope_assignments: () => ['Checking Gradescope assignments', 'Checked Gradescope assignments'],
     list_courses: () => ['Checking your courses', 'Checked your courses'],
     list_upcoming: () => ['Checking what is due', 'Checked what is due'],
     list_items: () => ['Checking quizzes and assignments', 'Checked quizzes and assignments'],
@@ -298,7 +309,31 @@ export function createTools({ snapshot, syllabi = {}, reviews = {}, discussions 
     }
   }
 
+  const gradescopeItem = item => ({
+    source: sources.add({ key: item.key, label: `Gradescope · ${item.courseName}: ${item.title}`, url: item.url }),
+    item_key: item.key, course: label(item.courseId) === String(item.courseId) ? item.courseName : label(item.courseId),
+    title: item.title, kind: 'assignment', platform: 'Gradescope',
+    due_display: item.dueAt ? dueDisplay(item.dueAt) : null,
+    release_display: item.releaseAt ? dueDisplay(item.releaseAt) : null,
+    late_due_display: item.lateDueAt ? dueDisplay(item.lateDueAt) : null,
+    days_from_today: item.dueAt ? daysFromToday(item.dueAt, now) : null,
+  });
   const handlers = {
+    list_gradescope_assignments({ course_id, source_id, query = '', offset = 0 }) {
+      const course = resolveCourse(course_id);
+      if (!Number.isInteger(offset) || offset < 0) throw new Error('Offset must be a nonnegative integer.');
+      if (source_id && !gradescope?.courses.some(source => source.id === source_id)) throw new Error('Gradescope course not found. Omit source_id to list courses.');
+      const words = tokenize(query);
+      const selected = (gradescope?.courses ?? []).filter(source => (!source_id || source.id === source_id) && (!course || source.courseId === course.id));
+      const items = gradescopeAssignments({ courses: selected }).filter(item => words.every(word => tokenize(item.title).includes(word)));
+      return {
+        note: 'Only published assignment names and dates are available. Missing dates are unknown, not inferred. Late deadlines are separate from normal due dates. Scores, submissions, feedback and question text are not read.',
+        synced_at: gradescope?.lastSyncedAt ?? null, status: gradescope?.status ?? 'not connected', error: gradescope?.error ?? null,
+        courses: selected.map(source => ({ source_id: source.id, name: source.name, brightspace_course_id: source.courseId, synced_at: source.lastSyncedAt ?? null, error: source.error ?? null })),
+        total: items.length, items: items.slice(offset, offset + 40).map(gradescopeItem),
+        ...(items.length > offset + 40 ? { next_offset: offset + 40 } : {}),
+      };
+    },
     list_discussions({ course_id, platform }) {
       const course = resolveCourse(course_id);
       const connected = (discussions.sources ?? []).filter((s) => (!course || s.courseId === course.id) && (!platform || s.platform === platform));
@@ -337,14 +372,15 @@ export function createTools({ snapshot, syllabi = {}, reviews = {}, discussions 
     list_upcoming({ course_id, days = 14 }) {
       const course = resolveCourse(course_id);
       const horizon = Math.min(Math.max(Number(days) || 14, 1), 120);
-      const items = agendaItems(snapshot, syllabi, reviews)
+      const items = agendaItems(snapshot, syllabi, reviews, gradescope)
         .filter((item) => !course || item.courseId === course.id)
         .map((item) => ({ item, offset: daysFromToday(item.allDay && item.date ? item.date : item.dueAt, now) }))
         .filter(({ offset }) => offset >= 0 && offset <= horizon)
         .map(({ item, offset }) => ({
-          source: sources.add({ key: item.key, label: `${label(item.courseId)}: ${item.title}`, url: item.url }),
+          source: sources.add({ key: item.key, label: `${item.source === 'gradescope' ? 'Gradescope · ' : ''}${item.courseName ?? label(item.courseId)}: ${item.title}`, url: item.url }),
           item_key: item.key,
-          course: label(item.courseId),
+          course: item.courseName ?? label(item.courseId),
+          ...(item.source === 'gradescope' ? { platform: 'Gradescope' } : {}),
           title: item.title,
           kind: item.kind,
           due_display: dueDisplay(item.allDay && item.date ? item.date : item.dueAt, { allDay: item.allDay }),
@@ -353,7 +389,7 @@ export function createTools({ snapshot, syllabi = {}, reviews = {}, discussions 
           ...(item.source === 'syllabus' ? { from_syllabus: true, confirmed_in_brightspace: false } : {}),
         }));
       return {
-        note: 'kind is Brightspace\'s own label, so count every item with assessment true. An exam, midterm or checkpoint that was only announced is not in this list; search announcements before saying this is all of them.',
+        note: 'Count every item with assessment true, regardless of its kind. An exam, midterm or checkpoint that was only announced is not in this list; search announcements before saying this is all of them.',
         items,
       };
     },
@@ -388,6 +424,8 @@ export function createTools({ snapshot, syllabi = {}, reviews = {}, discussions 
     get_item({ item_key, course_id }) {
       const course = resolveCourse(course_id);
       const raw = String(item_key ?? '').trim();
+      const gs = gradescopeAssignments(gradescope, course?.id).find(item => item.key === raw);
+      if (gs) return { ...gradescopeItem(gs), note: 'Gradescope exposes assignment names and dates here. Scores, submissions and question text are not read.' };
       const [kind, rawId] = raw.split(':');
       const pools = snapshot.data.filter((d) => !course || d.courseId === course.id);
       let found = null;
@@ -780,13 +818,13 @@ export function toolPreview(result) {
   };
   add('Course', result?.course);
   add(result?.title ?? 'Post', result?.text);
-  for (const course of result?.courses ?? []) add(course.name, `${course.saved_post_count} saved posts${course.import_in_progress ? ' · import in progress' : ''}`);
+  for (const course of result?.courses ?? []) add(course.name, course.saved_post_count !== undefined ? `${course.saved_post_count} saved posts${course.import_in_progress ? ' · import in progress' : ''}` : 'Gradescope assignments');
   for (const [key, label] of [['late_work', 'Late work'], ['ai_use', 'AI policy'], ['attendance', 'Attendance'], ['office_hours', 'Office hours']]) {
     add(label, result?.[key]?.summary);
   }
   for (const date of result?.syllabus_dates ?? []) add(date.title, date.due_display);
   for (const item of (Array.isArray(result) ? result : result?.excerpts ?? result?.results ?? result?.items ?? result?.files ?? result?.questions ?? result?.replies ?? []).slice(0, 4)) {
-    add(item.title ?? item.label ?? item.location ?? `Question ${item.number ?? ''}`, item.text ?? item.snippet ?? item.instructions ?? item.title ?? item.label);
+    add(item.title ?? item.label ?? item.location ?? `Question ${item.number ?? ''}`, item.platform === 'Gradescope' ? item.due_display ?? 'No due date published' : item.text ?? item.snippet ?? item.instructions ?? item.title ?? item.label);
   }
   if (!lines.length || result?.error) add('Note', result?.error ?? result?.note);
   return lines.slice(0, 6);
@@ -798,6 +836,8 @@ function describeResult(name, result) {
       return plural(result.length, 'course');
     case 'list_upcoming':
       return result.items.length ? plural(result.items.length, 'item') : 'Nothing due in that window';
+    case 'list_gradescope_assignments':
+      return `${plural(result.items.length, 'assignment')}${result.next_offset ? ' · more available' : ''}`;
     case 'list_items':
       return result.items.length ? plural(result.items.length, 'item') : 'Nothing in that window';
     case 'get_item':
@@ -896,6 +936,7 @@ export async function ask({
   syllabi,
   reviews,
   discussions = { sources: [] },
+  gradescope = null,
   scopeCourseId = null,
   now = new Date(),
   onTrace = () => {},
@@ -906,9 +947,9 @@ export async function ask({
   complete = chatCompletion,
   requestParams = {},
 }) {
-  const tools = createTools({ snapshot, syllabi, reviews, discussions, now, ...(readFile ? { readFile } : {}), ...(cachedFile !== undefined ? { cachedFile } : {}) });
+  const tools = createTools({ snapshot, syllabi, reviews, discussions, gradescope, now, ...(readFile ? { readFile } : {}), ...(cachedFile !== undefined ? { cachedFile } : {}) });
   const messages = [
-    { role: 'system', content: systemPrompt({ snapshot, syllabi, discussions, now, scopeCourseId }) },
+    { role: 'system', content: systemPrompt({ snapshot, syllabi, discussions, now, scopeCourseId }) + (gradescope ? '\nGradescope is connected. Call list_gradescope_assignments for its assignments and published dates, including courses not linked to Brightspace. A missing date is unknown. Normal and late deadlines differ. Gradescope question text, submitted work, scores and feedback are unavailable.' : '') },
     ...history.slice(-HISTORY_MESSAGES).map(({ role, content }) => ({ role, content: role === 'assistant' ? stripStaleCitations(content) : content })),
     { role: 'user', content: question },
   ];
@@ -917,6 +958,7 @@ export async function ask({
   const finish = (text, citations = []) => ({ text, citations, trace, steps: trace.filter((e) => e.type === 'tool').map((e) => e.label) });
   const pageReads = new Map();
   let completionChecks = 0;
+  let retriedGradescopeCitations = false;
 
   function rememberPages(result) {
     for (const item of result?.excerpts ?? result?.results ?? []) {
@@ -1044,6 +1086,13 @@ export async function ask({
       sentToLectures = true;
       keepCommentary();
       messages.push({ role: 'user', content: OPEN_LECTURES });
+      continue;
+    }
+    const gradescopeSources = tools.sources.list.filter(source => source.key.startsWith('gradescope:'));
+    if (text && !citations.length && gradescopeSources.length && !retriedGradescopeCitations && !lastTurn) {
+      retriedGradescopeCitations = true;
+      keepCommentary();
+      messages.push({ role: 'user', content: `Your answer has no valid source citation. Rewrite it with the exact source ids from the Gradescope tool results, such as [${gradescopeSources[0].id}], next to the assignment or deadline facts they support. Available Gradescope source ids: ${gradescopeSources.map(source => source.id).join(', ')}. Use only the relevant records; do not invent a source or attach unrelated assignments. If no returned record answers the question, say so.` });
       continue;
     }
     if (text) return finish(text, citations);

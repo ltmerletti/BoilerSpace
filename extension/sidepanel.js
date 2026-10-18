@@ -1,3 +1,4 @@
+import { GRADESCOPE_ORIGIN, GRADESCOPE_SITES, gradescopeAssignments, gradescopeRequest } from './lib/gradescope.js';
 import { SYLLABUS_SITE, isSyllabusAccessError } from './lib/syllabus-access.js';
 import * as store from './lib/store.js';
 import { AUTO_SYNC_INTERVAL_MS, BRIGHTSPACE_ORIGIN, canReachBrightspace, connectParentPage, syncNow } from './lib/sync.js';
@@ -35,6 +36,7 @@ const PARAMS = new URLSearchParams(location.search);
 const EMBEDDED = PARAMS.has('embedded');
 const CONNECT_PAGE = PARAMS.has('connect');
 const ACCESS_PAGE = PARAMS.has('syllabus-access');
+const GRADESCOPE_ACCESS = PARAMS.has('gradescope-access');
 const DISCUSSION_ACCESS = DISCUSSION_SITES[PARAMS.get('discussions-access')] ? PARAMS.get('discussions-access') : null;
 const STOPPED_SYNC_NOTICE_MS = 10 * 60_000;
 
@@ -59,6 +61,9 @@ const state = {
   syllabi: {},
   reviews: {},
   discussions: { sources: [] },
+  gradescope: null,
+  gradescopeError: '',
+  gradescopeAccessDone: false,
   discussionError: '',
   discussionAccessDone: false,
   discussionPlatform: null,
@@ -82,7 +87,7 @@ const state = {
   runningSync: false,
   quietSync: false,
   status: '',
-  busy: { sync: false, syllabi: false, link: false, capture: false, discussions: false, discussionConnect: false },
+  busy: { sync: false, syllabi: false, link: false, capture: false, discussions: false, discussionConnect: false, gradescope: false },
   linkStatus: '',
   linkError: '',
   syncError: '',
@@ -196,6 +201,7 @@ async function loadState({ includeChat = false } = {}) {
   state.syllabusAccess = all.syllabusAccess ?? null;
   state.reviews = all.reviews ?? {};
   state.discussions = all.discussions ?? { sources: [] };
+  state.gradescope = all.gradescope ?? null;
   state.syncLock = all.syncLock ?? null;
   state.progress = all.syncProgress ?? null;
   state.busy.sync = computeSyncBusy();
@@ -551,6 +557,7 @@ async function sendQuestion(question, { reuse = false, resume = null } = {}) {
       syllabi: state.syllabi,
       reviews: state.reviews,
       discussions: state.discussions,
+      gradescope: state.gradescope,
       scopeCourseId,
       requestParams: thinkingParams(state.genai?.model, state.thinkingByModel[state.genai?.model]),
       signal: state.abort.signal,
@@ -665,7 +672,7 @@ function download(fileName, content, type) {
 }
 
 function exportCalendar() {
-  const events = calendarEvents(state.snapshot, state.syllabi, state.reviews);
+  const events = calendarEvents(state.snapshot, state.syllabi, state.reviews, state.gradescope);
   download('boilerspace.ics', buildCalendar(events, { name: 'BoilerSpace courses' }), 'text/calendar');
 }
 
@@ -709,7 +716,7 @@ function itemMeta(item, { withCourse = true, withDay = false } = {}) {
   else if (item.kind === 'event' && item.endAt && item.endAt !== item.dueAt) parts.push(`${formatTime(item.dueAt)} to ${formatTime(item.endAt)}`);
   else parts.push(formatTime(item.dueAt));
   if (item.location) parts.push(item.location);
-  const course = withCourse && labelFor(item.courseId);
+  const course = withCourse && (labelFor(item.courseId) || item.courseName);
   return [course && h('span', { class: 'item-course' }, course), course && ' ', parts.filter(Boolean).join(', ')];
 }
 
@@ -719,7 +726,7 @@ function agendaItem(item, options) {
     'li',
     { class: classes },
     h('div', null, link(item.url, item.title, { class: 'item-title' })),
-    h('div', { class: 'meta' }, itemMeta(item, options), item.source === 'syllabus' ? [' · ', 'Syllabus'] : null),
+    h('div', { class: 'meta' }, itemMeta(item, options), item.source === 'syllabus' ? [' · ', 'Syllabus'] : item.source === 'gradescope' ? [' · ', 'Gradescope'] : null),
   );
 }
 
@@ -904,7 +911,7 @@ function reviewSection(limit = 3) {
 function agendaSection() {
   const today = dayKey(new Date());
   const end = addDaysToKey(today, AGENDA_DAYS - 1);
-  const all = agendaItems(state.snapshot, state.syllabi, state.reviews);
+  const all = agendaItems(state.snapshot, state.syllabi, state.reviews, state.gradescope);
   const items = all.filter((item) => {
     const key = itemDayKey(item);
     return key >= today && key <= end;
@@ -979,7 +986,7 @@ function syllabusTag(known, status) {
 function coursesList() {
   const list = courses();
   if (!list.length) return [h('p', { class: 'lede' }, 'No current courses were found.')];
-  const items = agendaItems(state.snapshot, state.syllabi, state.reviews);
+  const items = agendaItems(state.snapshot, state.syllabi, state.reviews, state.gradescope);
   const now = new Date().toISOString();
   return [
     viewHeading('Courses'),
@@ -1107,7 +1114,7 @@ function courseDetail(course) {
   const record = usableRecord(raw);
   const data = state.snapshot.data.find((d) => d.courseId === course.id);
   const now = new Date().toISOString();
-  const upcoming = agendaItems(state.snapshot, state.syllabi, state.reviews).filter((i) => i.courseId === course.id && i.dueAt >= now);
+  const upcoming = agendaItems(state.snapshot, state.syllabi, state.reviews, state.gradescope).filter((i) => i.courseId === course.id && i.dueAt >= now);
   const files = (data?.content ?? []).filter((t) => !t.isHidden);
   const pending = pendingReviews(state.syllabi, state.reviews).filter((d) => d.courseId === course.id);
   const grading = record?.policies.grading ?? [];
@@ -1143,6 +1150,10 @@ function courseDetail(course) {
         !record.policies.gradingAddsUp && h('p', { class: 'meta', style: 'margin-top:4px' }, `These add up to ${Math.round(gradingTotal * 10) / 10}%, so the syllabus may describe weights differently. Check the original.`),
       ),
     pending.length > 0 && h('section', { class: 'section' }, disclosure(`course-dates-${course.id}`, 'Where syllabus dates differ', pending.map(reviewCard))),
+    state.gradescope?.courses.some(source => source.courseId === course.id) && h('section', { class: 'section' },
+      h('h2', { class: 'heading' }, 'Gradescope'),
+      gradescopeCourseList(state.gradescope.courses.filter(source => source.courseId === course.id), false),
+    ),
     state.discussions.sources.some((s) => s.courseId === course.id) && h('section', { class: 'section' },
       h('h2', { class: 'heading' }, 'Discussions'),
       state.discussions.sources.filter((s) => s.courseId === course.id).map((source) => h('div', { class: 'discussion-preview' },
@@ -1160,7 +1171,7 @@ function courseDetail(course) {
       'section',
       { class: 'section' },
       h('div', { class: 'section-head' }, h('h2', { class: 'heading' }, 'Coming up')),
-      upcoming.length ? h('ul', { class: 'list' }, upcoming.slice(0, 25).map((item) => agendaItem(item, { withCourse: false, withDay: true }))) : h('p', { class: 'muted' }, 'Nothing upcoming in Brightspace.'),
+      upcoming.length ? h('ul', { class: 'list' }, upcoming.slice(0, 25).map((item) => agendaItem(item, { withCourse: false, withDay: true }))) : h('p', { class: 'muted' }, 'Nothing upcoming.'),
     ),
     files.length > 0 &&
       h(
@@ -1241,6 +1252,7 @@ const TOOL_TITLES = {
   read_discussion: 'Read discussion and replies',
   list_course_files: 'Find course files',
   read_course_file: 'Read course file',
+  list_gradescope_assignments: 'Check Gradescope assignments',
 };
 
 function traceStep(entry, key) {
@@ -1644,6 +1656,106 @@ function askView() {
 
 // ---------- Settings ----------
 
+async function refreshGradescope(force = false) {
+  if (!state.gradescope || state.busy.gradescope || state.pending) return;
+  state.busy.gradescope = true;
+  try { await gradescopeRequest('sync', { force }); }
+  catch (error) { state.gradescopeError = error.message; }
+  finally { state.busy.gradescope = false; await loadState(); if (!state.pending) render(); }
+}
+
+async function openGradescopeAccess() {
+  if (EMBEDDED) {
+    try { await gradescopeRequest('open-access'); }
+    catch (error) { state.gradescopeError = error.message; render(); }
+    return;
+  }
+  // Request permission in the click handler, while the browser still has its gesture.
+  const permission = chrome.permissions.request({ origins: GRADESCOPE_SITES });
+  await connectGradescope(permission);
+}
+
+async function connectGradescope(permission = chrome.permissions.request({ origins: GRADESCOPE_SITES })) {
+  if (state.busy.gradescope) return;
+  state.busy.gradescope = true;
+  state.gradescopeError = '';
+  state.gradescopeAccessDone = false;
+  render();
+  try {
+    if (!(await permission)) throw new Error('Allow Gradescope access to connect.');
+    let signInTab = null;
+    const until = Date.now() + 5 * 60_000;
+    while (true) {
+      try { await gradescopeRequest('connect'); break; }
+      catch (error) {
+        if (!error.needsReconnect || Date.now() > until) throw error;
+        if (!signInTab) {
+          const existing = (await chrome.tabs.query({ url: `${GRADESCOPE_ORIGIN}/*` }))[0];
+          signInTab = existing ? await chrome.tabs.update(existing.id, { active: true }) : await chrome.tabs.create({ url: `${GRADESCOPE_ORIGIN}/account`, active: true });
+        } else if (!(await chrome.tabs.get(signInTab.id).catch(() => null))) throw new Error('Sign-in was closed. Connect again when you are ready.');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+    }
+    state.gradescopeAccessDone = true;
+  } catch (error) { state.gradescopeError = error.message; }
+  finally { state.busy.gradescope = false; await loadState(); render(); }
+}
+
+async function updateGradescope(action, args = {}) {
+  try { await gradescopeRequest(action, args); }
+  catch (error) { state.gradescopeError = error.message; }
+  await loadState(); render();
+}
+
+function gradescopeCourseList(list, options = true) {
+  return list.map(source => h('div', { class: 'discussion-source', 'data-source-id': source.id },
+    h('h3', { class: 'small' }, link(source.url, source.name, { class: 'discussion-class-link' })),
+    options && h('p', { class: 'connection-match' }, source.courseId ? `${labelFor(source.courseId)}${source.linkOrigin === 'manual' ? '' : ' · Matched automatically'}` : 'Available in Week and Ask'),
+    h('p', { class: 'meta' }, `${plural(source.assignments?.length ?? 0, 'assignment')}${source.lastSyncedAt ? ` · Synced ${syncAge(source.lastSyncedAt)}` : ''}`),
+    source.error && h('p', { class: 'error-text small' }, source.error),
+    disclosure(`gradescope-assignments-${source.id}`, 'Assignments', h('ul', { class: 'list' }, (source.assignments ?? []).map(item => h('li', null,
+      link(item.url, item.title),
+      h('div', { class: 'meta' }, item.dueAt ? `Due ${formatDateTime(item.dueAt)}` : 'No due date published'),
+      item.lateDueAt && h('div', { class: 'meta' }, `Late deadline ${formatDateTime(item.lateDueAt)}`),
+    )))),
+    options && disclosure(`gradescope-options-${source.id}`, 'Options', h('label', { class: 'field' }, 'Brightspace course', h('select', {
+      'aria-label': `Brightspace course for ${source.name}`, disabled: state.busy.gradescope,
+      onchange: event => updateGradescope('link', { sourceId: source.id, courseId: event.target.value ? Number(event.target.value) : null }),
+    }, h('option', { value: '', selected: !source.courseId }, 'Keep as a separate course'), courses().map(course => h('option', { value: course.id, selected: source.courseId === course.id }, shortCourseLabel(course)))))),
+  ));
+}
+
+function gradescopeSettings() {
+  const data = state.gradescope;
+  const failed = data?.status === 'error';
+  const reconnect = data?.needsReconnect;
+  const status = state.busy.gradescope ? 'Updating assignments…' : data ? `${plural(data.courses.length, 'course')} · ${failed ? reconnect ? 'Sign-in needed' : 'Update failed' : plural(gradescopeAssignments(data).length, 'assignment')}` : 'Assignments and due dates';
+  return connectionCard('gradescope-details', 'gradescope', 'Gradescope', status, Boolean(data) && !failed, {
+    action: (!data || failed) && h('button', { class: 'button secondary', type: 'button', disabled: state.busy.gradescope, 'aria-label': !data ? 'Connect Gradescope' : reconnect ? 'Reconnect Gradescope' : 'Retry Gradescope sync', onclick: () => data && !reconnect ? refreshGradescope(true) : openGradescopeAccess() }, !data ? 'Connect' : reconnect ? 'Reconnect' : 'Retry'),
+    notices: [state.gradescopeError && h('p', { class: 'error-text small' }, state.gradescopeError)],
+    children: [data && [
+      gradescopeCourseList(data.courses),
+      !data.courses.length && h('p', { class: 'meta' }, 'No current-term Gradescope courses found.'),
+      h('div', { class: 'button-row' },
+        h('button', { class: 'text-button', type: 'button', disabled: state.busy.gradescope, onclick: () => refreshGradescope(true) }, 'Sync assignments now'),
+        h('button', { class: 'text-button danger-text', type: 'button', disabled: state.busy.gradescope, onclick: () => updateGradescope('disconnect') }, 'Disconnect Gradescope'),
+      ),
+      data.error && h('p', { class: 'error-text small' }, data.error),
+    ]],
+  });
+}
+
+function gradescopeAccessView() {
+  return h('section', { class: 'setup' },
+    h('h2', { class: 'setup-intro' }, state.gradescopeAccessDone ? 'Gradescope connected' : 'Connect Gradescope'),
+    h('p', null, state.gradescopeAccessDone ? 'Your assignments are available in BoilerSpace.' : 'Allow access to read assignment names and dates from your signed-in account.'),
+    state.gradescopeError && h('p', { class: 'error-text' }, state.gradescopeError),
+    h('div', { class: 'button-row' }, state.gradescopeAccessDone
+      ? h('button', { class: 'button', type: 'button', onclick: () => window.close() }, 'Return to BoilerSpace')
+      : h('button', { class: 'button', type: 'button', disabled: state.busy.gradescope, onclick: () => connectGradescope() }, state.busy.gradescope ? 'Connecting…' : 'Allow Gradescope and connect')),
+  );
+}
+
 function discussionProgress(source) {
   const count = plural(source.threads?.length ?? 0, 'saved post');
   if (source.status === 'syncing') return `${count} · Checking history (${source.checkedCount ?? 0} posts checked)…`;
@@ -1667,7 +1779,7 @@ function discussionSourceCard(source) {
 
 function connectionHeader(service, name, status, connected) {
   return h('div', { class: 'connection-header' },
-    h('span', { class: `service-icon service-${service}`, 'aria-hidden': 'true' }, service === 'brightspace' ? h('img', { src: chrome.runtime.getURL('icons/icon48.png'), width: 23, height: 23, alt: '' }) : { ed: 'ed', piazza: 'P', genai: 'AI' }[service]),
+    h('span', { class: `service-icon service-${service}`, 'aria-hidden': 'true' }, service === 'brightspace' ? h('img', { src: chrome.runtime.getURL('icons/icon48.png'), width: 23, height: 23, alt: '' }) : { ed: 'ed', piazza: 'P', genai: 'AI', gradescope: 'G' }[service]),
     h('div', { class: 'connection-info' }, h('h3', null, name), h('p', { class: 'connection-status' }, status)),
     connected && h('span', { class: 'status-dot', role: 'img', 'aria-label': 'Connected' }),
     icon('chevron'),
@@ -1824,6 +1936,7 @@ function settingsView() {
         h('p', { class: 'meta', style: 'margin-top:8px' }, 'Disconnect removes the saved key from this browser. You can revoke it in GenAI Studio under Settings, Account.'),
       ]],
     }),
+    gradescopeSettings(),
     discussionsSettings(),
     h('p', { class: 'connections-note' }, 'Discussions update every 20 minutes while BoilerSpace is open.'),
     themeSetting(),
@@ -1891,7 +2004,7 @@ function render({ top = false, bottom = false } = {}) {
   const focusKey = active?.dataset.focusKey;
   const selection = typeof active?.selectionStart === 'number' ? [active.selectionStart, active.selectionEnd] : null;
   for (const details of main.querySelectorAll('details[data-disclosure]')) expandedSections.set(details.dataset.disclosure, details.open);
-  const content = DISCUSSION_ACCESS ? discussionAccessView() : ACCESS_PAGE ? syllabusAccessPage() : CONNECT_PAGE ? connectPageView() : [syllabusAccessNotice(), state.view === 'settings' ? null : hostAccessNotice(), VIEWS[state.view]()];
+  const content = GRADESCOPE_ACCESS ? gradescopeAccessView() : DISCUSSION_ACCESS ? discussionAccessView() : ACCESS_PAGE ? syllabusAccessPage() : CONNECT_PAGE ? connectPageView() : [syllabusAccessNotice(), state.view === 'settings' ? null : hostAccessNotice(), VIEWS[state.view]()];
   main.replaceChildren(h('div', { class: state.view === 'ask' && !CONNECT_PAGE ? 'view ask-view' : 'view' }, content));
   for (const details of main.querySelectorAll('details[data-disclosure]')) {
     if (!details.hasAttribute('data-pending-epoch')) details.open = expandedSections.get(details.dataset.disclosure) ?? false;
@@ -1918,22 +2031,24 @@ function renderConnectionReminder() {
   const reminder = document.getElementById('connection-reminder');
   const platforms = ['ed', 'piazza'].filter(platform => state.discussions.sources.some(source =>
     source.platform === platform && source.needsReconnect === true && source.status !== 'done'));
-  const show = platforms.length > 0 && !CONNECT_PAGE && !ACCESS_PAGE && !DISCUSSION_ACCESS;
+  if (state.gradescope?.needsReconnect) platforms.push('gradescope');
+  const connectionName = platform => platform === 'gradescope' ? 'Gradescope' : discussionName(platform);
+  const show = platforms.length > 0 && !CONNECT_PAGE && !ACCESS_PAGE && !DISCUSSION_ACCESS && !GRADESCOPE_ACCESS;
   reminder.hidden = !show;
-  const key = JSON.stringify([show && platforms, state.busy.discussionConnect, state.discussionPlatform]);
+  const key = JSON.stringify([show && platforms, state.busy.discussionConnect, state.discussionPlatform, state.busy.gradescope]);
   // Keep the buttons attached while streaming or unrelated sync progress arrives.
   if (reminder.dataset.state === key) return;
   reminder.dataset.state = key;
   if (!show) { reminder.replaceChildren(); return; }
-  const names = platforms.map(discussionName);
+  const names = platforms.map(connectionName);
   reminder.replaceChildren(
     h('span', null, `${names.join(' and ')} ${names.length === 1 ? 'needs' : 'need'} to reconnect`),
     h('div', { class: 'reminder-actions' }, platforms.map(platform => h('button', {
       type: 'button', class: 'text-button reminder-action',
-      'aria-label': `Reconnect ${discussionName(platform)} connection`,
-      disabled: state.busy.discussionConnect,
-      onclick: () => openDiscussionAccess(platform, platform === 'piazza' ? state.discussions.sources.find(source => source.platform === platform && source.needsReconnect)?.url : null),
-    }, state.busy.discussionConnect && state.discussionPlatform === platform ? 'Connecting…' : platforms.length === 1 ? 'Reconnect' : discussionName(platform)))),
+      'aria-label': `Reconnect ${connectionName(platform)} connection`,
+      disabled: state.busy.discussionConnect || state.busy.gradescope,
+      onclick: () => platform === 'gradescope' ? openGradescopeAccess() : openDiscussionAccess(platform, platform === 'piazza' ? state.discussions.sources.find(source => source.platform === platform && source.needsReconnect)?.url : null),
+    }, (state.busy.discussionConnect && state.discussionPlatform === platform) || (state.busy.gradescope && platform === 'gradescope') ? 'Connecting…' : platforms.length === 1 ? 'Reconnect' : connectionName(platform)))),
   );
 }
 
@@ -1943,7 +2058,7 @@ function renderHeader() {
   const syncButton = document.getElementById('sync-button');
   syncButton.disabled = state.busy.sync;
   syncButton.classList.toggle('spinning', state.busy.sync && (!state.snapshot || (state.runningSync && !state.quietSync)));
-  syncButton.hidden = !state.snapshot || CONNECT_PAGE || ACCESS_PAGE || DISCUSSION_ACCESS;
+  syncButton.hidden = !state.snapshot || CONNECT_PAGE || ACCESS_PAGE || DISCUSSION_ACCESS || GRADESCOPE_ACCESS;
 }
 
 // Progress updates arrive several times a second during a sync, so they skip the full re-render.
@@ -1982,7 +2097,7 @@ async function attempt(fn) {
 
 async function init() {
   systemColorScheme.addEventListener('change', () => { if (state.theme === 'system') applyTheme(); });
-  if (CONNECT_PAGE || ACCESS_PAGE || DISCUSSION_ACCESS) document.querySelector('.tabs').hidden = true;
+  if (CONNECT_PAGE || ACCESS_PAGE || DISCUSSION_ACCESS || GRADESCOPE_ACCESS) document.querySelector('.tabs').hidden = true;
   for (const button of document.querySelectorAll('.tabs button')) {
     button.addEventListener('click', () => {
       if (state.view === 'ask' && button.dataset.view === 'ask') state.showChats = false;
@@ -2003,6 +2118,7 @@ async function init() {
   document.documentElement.removeAttribute('data-panel-loading');
 
   window.addEventListener('online', () => {
+    if (state.gradescope?.status === 'error') refreshGradescope(true);
     if (state.discussions.sources.some(source => source.status === 'error' || source.sync)) {
       discussionRecoveryQueued = true;
       refreshDiscussions();
@@ -2034,10 +2150,11 @@ async function init() {
     await loadState();
     if (!state.pending) render();
     if (CONNECT_PAGE && linked) setTimeout(() => window.close(), 1500);
-    if (!ACCESS_PAGE && !CONNECT_PAGE && !DISCUSSION_ACCESS && (snapshotChanged || linked || accessGranted)) processSyllabi();
-    if (!DISCUSSION_ACCESS && (snapshotChanged || (newDiscussion && !state.busy.discussionConnect))) refreshDiscussions();
+    if (!ACCESS_PAGE && !CONNECT_PAGE && !DISCUSSION_ACCESS && !GRADESCOPE_ACCESS && (snapshotChanged || linked || accessGranted)) processSyllabi();
+    if (!GRADESCOPE_ACCESS && !DISCUSSION_ACCESS && (snapshotChanged || (newDiscussion && !state.busy.discussionConnect))) refreshDiscussions();
+    if (snapshotChanged && !GRADESCOPE_ACCESS) refreshGradescope();
   });
-  if (DISCUSSION_ACCESS) return;
+  if (DISCUSSION_ACCESS || GRADESCOPE_ACCESS) return;
   setInterval(onSyncActivity, 3000);
 
   const access = await attempt(() => chrome.runtime.sendMessage({ type: 'boilerspace-syllabus-access' }));
@@ -2066,6 +2183,8 @@ async function init() {
   if (syncAge > AUTO_SYNC_INTERVAL_MS && (await attempt(canReachBrightspace))) runSync({ quiet: true });
   else if (courses().some(course => !state.syllabi[course.id])) processSyllabi();
   refreshDiscussions();
+  refreshGradescope();
+  setInterval(() => { if (document.visibilityState === 'visible') refreshGradescope(); }, 20 * 60_000);
   setInterval(() => { if (document.visibilityState === 'visible') refreshDiscussions(); }, 20 * 60_000);
 }
 

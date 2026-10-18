@@ -4,6 +4,10 @@ What changed, what prompted it, and what it means when you use BoilerSpace. Each
 
 [Back to the README](README.md) · [Full commit history](https://github.com/ltmerletti/BoilerSpace/commits/main)
 
+## October 18, 2026
+
+- **Bring Gradescope deadlines into your courses.** Connect your existing Gradescope sign-in in Settings to import current-term assignment names and published dates. Clear course matches link automatically; assignments appear in Week, course details, calendar exports and Ask with source links. Normal and late deadlines stay separate, and missing dates stay unknown. The reader excludes score columns, submitted answers and grading feedback. Routine refreshes use direct requests without opening site tabs. OCR is deferred.
+
 ## October 17, 2026
 
 This round focused on the interruptions that make an otherwise useful tool frustrating: controls that miss clicks, narration that disappears, imports that stop, and updates that draw attention away from studying.

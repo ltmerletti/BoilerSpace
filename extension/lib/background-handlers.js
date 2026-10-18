@@ -1,3 +1,5 @@
+import { GRADESCOPE_SITES } from './gradescope.js';
+import { handleGradescopeRequest } from './gradescope-sync.js';
 import { clearDiscussionAuth } from './discussion-auth.js';
 import { reportSyllabusAccess, SYLLABUS_SITE } from './syllabus-access.js';
 import { saveSyllabusEntryHere } from './syllabus-store.js';
@@ -86,6 +88,14 @@ function sharedSyllabusRequest(message) {
 
 // Content scripts cannot call the page's own XSRF helper, so they ask for it here.
 export function handleMessage(message, sender, sendResponse) {
+  if (message?.type === 'boilerspace-gradescope') {
+    if (sender.id !== chrome.runtime.id || !sender.url?.startsWith(chrome.runtime.getURL(''))) return false;
+    const run = message.action === 'open-access'
+      ? chrome.tabs.create({ url: chrome.runtime.getURL('sidepanel.html?gradescope-access=1'), active: true }).then(() => null)
+      : handleGradescopeRequest(message);
+    run.then(data => sendResponse({ ok: true, data }), error => sendResponse({ ok: false, error: error.message, needsReconnect: Boolean(error.needsReconnect) }));
+    return true;
+  }
   if (message?.type === 'boilerspace-discussions') {
     if (sender.id !== chrome.runtime.id || !sender.url?.startsWith(chrome.runtime.getURL(''))) return false;
     const run = async () => {
@@ -121,6 +131,13 @@ export function handleMessage(message, sender, sendResponse) {
 }
 
 export const onSiteAccessChanged = ({ origins }) => {
+  if (origins?.some(origin => GRADESCOPE_SITES.includes(origin))) {
+    chrome.permissions.contains({ origins: GRADESCOPE_SITES }).then(async allowed => {
+      if (allowed) return;
+      const { gradescope } = await chrome.storage.local.get('gradescope');
+      if (gradescope) await chrome.storage.local.set({ gradescope: { ...gradescope, status: 'error', needsReconnect: true, error: 'Allow Gradescope access to reconnect.' } });
+    }).catch(() => {});
+  }
   if (origins?.some(origin => DISCUSSION_SITES.ed.includes(origin))) {
     chrome.permissions.contains({ origins: DISCUSSION_SITES.ed }).then(allowed => {
       if (!allowed) return clearDiscussionAuth('ed');

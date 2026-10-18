@@ -26,6 +26,16 @@ Ed discovers active US courses. Piazza finds visible classes from your signed-in
 
 Discussion courses are matched to Brightspace by course code and distinctive title. Older terms and ambiguous matches stay separate. To change a match, expand the connection, open the class's **Options**, and choose its **Brightspace course**. Manual choices are preserved on later syncs. A class without a Brightspace match can still be searched in Ask.
 
+### Gradescope
+
+Choose **Connect** beside Gradescope in **Settings** and allow site access. Your existing Gradescope sign-in is reused. If it has expired, connection opens a visible sign-in page and continues after you sign in.
+
+BoilerSpace imports current-term assignment names, links, release dates, due dates and late deadlines. Recognizable course codes match Brightspace automatically. Assignments with dates appear in Week and calendar exports; the course page and Settings also list assignments with no published date. Ask can find this metadata and cite Gradescope, including courses without a Brightspace match. Under each course's **Options**, you can change its Brightspace link.
+
+Normal and late deadlines remain separate. Missing dates stay unknown. Scores, submitted answers, grading feedback and assignment question text are not read. OCR is not included.
+
+Gradescope refreshes at most every 20 minutes while BoilerSpace is open. Use **Sync assignments now** for an immediate update. Routine updates do not open site tabs. Temporary failures keep saved assignments; an expired sign-in or revoked permission shows the shared reconnect reminder. **Disconnect Gradescope** removes its saved course and assignment data.
+
 ## Ask a course question
 
 Choose a course, or leave **All my courses** selected. Name the lecture, file, project, or topic when it helps identify what you mean. Follow-up questions stay in the same conversation.
@@ -58,7 +68,7 @@ Discussion imports save progress in batches and resume after interruption. Setti
 
 Discussion refreshes make requests directly from the extension. They do not open, navigate or close site tabs. If your sign-in cannot be renewed or restored, saved posts stay available and Settings shows **Reconnect**. Temporary update failures offer **Retry** and recover automatically on a later refresh. Only choosing **Connect** or **Reconnect** can open a visible sign-in page.
 
-A small reminder below the panel's sync controls, visible on every tab, appears when Ed or Piazza needs reconnection. Its buttons start reconnection directly. The reminder clears when access is restored and stays hidden for temporary update failures.
+A small reminder below the panel's sync controls, visible on every tab, appears when Ed, Piazza or Gradescope needs reconnection. Its buttons start reconnection directly. The reminder clears when access is restored and stays hidden for temporary update failures.
 
 Connections survive browser restarts and extension reloads. Ed renews its saved credential silently while you use BoilerSpace; an already-open signed-in Ed page can also repair the connection without navigation. Piazza reuses its existing browser sign-in cookies. Reconnect is needed when the site no longer accepts the saved sign-in and automatic recovery cannot restore it.
 

@@ -19,6 +19,7 @@ export const KEYS = {
   ui: 'ui',
   theme: 'theme',
   discussions: 'discussions',
+  gradescope: 'gradescope',
 };
 
 export async function get(key, fallback = null) {

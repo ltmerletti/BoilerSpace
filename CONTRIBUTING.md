@@ -34,6 +34,7 @@ export BOILERSPACE_FIXTURES_DIR=.verify-tmp/Brightspace-Bar/session-capture/test
 node scripts/verify.mjs ./node_modules/playwright/index.mjs
 node scripts/verify-syllabi.mjs ./node_modules/playwright/index.mjs
 node scripts/verify-discussions.mjs ./node_modules/playwright/index.mjs
+node scripts/verify-gradescope.mjs
 node scripts/verify-discussion-recovery.mjs
 node scripts/verify-chat-streaming.mjs
 ```
@@ -50,9 +51,11 @@ These scripts use throwaway Chromium profiles. The broader interface check runs 
 
 Use `VERIFY_OUT=/tmp/boilerspace-verification` to choose a screenshot directory. The broader script otherwise writes to `verification/`; the focused script defaults to a temporary directory. Review screenshots before committing them, since existing demonstration assets are tracked.
 
+`verify-gradescope.mjs` uses synthetic Gradescope course and assignment tables with fake score values. It checks connection, automatic course matching, missing and late dates, Week and course views, Ask tools, expired sessions, outages, manual links, disconnect, and absence of automatic site tabs. Score values and submission identifiers must not enter storage or tool results.
+
 ### Continuous integration
 
-[CI](https://github.com/ltmerletti/BoilerSpace/actions/workflows/ci.yml) runs on pushes and pull requests, and can also be started manually from GitHub Actions. It runs the unit suite on Node.js 22 and 24; the interface, chat streaming, syllabus, discussion and recovery Chromium suites; and the discussion-worker checks in Chromium and Firefox. The interface, discussion and worker suites run headlessly; the syllabus suite uses visible Chromium under `xvfb-run`. The broader interface suite saves a Playwright trace and page state if it throws.
+[CI](https://github.com/ltmerletti/BoilerSpace/actions/workflows/ci.yml) runs on pushes and pull requests, and can also be started manually from GitHub Actions. It runs the unit suite on Node.js 22 and 24; the interface, chat streaming, syllabus, discussion, Gradescope and recovery Chromium suites; and the discussion-worker checks in Chromium and Firefox. The interface, discussion and worker suites run headlessly; the syllabus suite uses visible Chromium under `xvfb-run`. The broader interface suite saves a Playwright trace and page state if it throws.
 
 CI installs from `package-lock.json` and checks out the public fixtures at the same pinned commit shown above. It needs no Purdue credentials, API keys, or repository secrets. Each browser job uploads any generated fixture-test screenshots for seven days, including on failure. New runs cancel older runs on the same branch or pull request.
 

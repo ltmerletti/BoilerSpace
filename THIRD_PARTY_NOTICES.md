@@ -8,6 +8,7 @@ BoilerSpace's original code is licensed under GPLv3 only. The following bundled 
 | Adobe character maps used by PDF.js | `extension/vendor/pdfjs/cmaps/` | [Adobe redistribution notice](extension/vendor/pdfjs/cmaps/LICENSE), including its conditions and disclaimer |
 | Foxit/PDFium standard font data | `extension/vendor/pdfjs/standard_fonts/` | [BSD-style redistribution notice](extension/vendor/pdfjs/standard_fonts/LICENSE_FOXIT) |
 | Liberation font data | `extension/vendor/pdfjs/standard_fonts/` | [SIL Open Font License 1.1 and copyright notices](extension/vendor/pdfjs/standard_fonts/LICENSE_LIBERATION) |
+| [LinkeDOM](https://github.com/WebReflection/linkedom), version 0.18.13 | `extension/vendor/linkedom/` | [ISC License](extension/vendor/linkedom/LICENSE), copyright Andrea Giammarchi; bundled worker includes its upstream parser dependencies, whose notices are retained in [NOTICE.md](extension/vendor/linkedom/NOTICE.md) |
 | [fflate](https://github.com/101arrowz/fflate) | `extension/vendor/fflate/` | [MIT License](extension/vendor/fflate/LICENSE), copyright Arjun Barrett |
 | [Lato](https://www.latofonts.com/) | `extension/fonts/` | [SIL Open Font License 1.1](extension/fonts/OFL.txt), copyright tyPoland Łukasz Dziedzic, with Reserved Font Name “Lato” |
 | [Tokenizers.js](https://github.com/huggingface/tokenizers.js), version 0.2.0 | `extension/vendor/tokenizers/` | [Apache License 2.0](extension/vendor/tokenizers/LICENSE); Hugging Face and contributors |

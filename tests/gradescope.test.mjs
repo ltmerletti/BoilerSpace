@@ -198,3 +198,44 @@ test('Gradescope tool pagination covers long lists without dropping unlinked cou
   assert.equal(last.next_offset, undefined);
   assert.equal(new Set([...first.items, ...second.items, ...last.items].map(item => item.item_key)).size, 95);
 });
+
+
+test('an uncited Gradescope answer gets one rewrite using only retrieved source ids', async () => {
+  let calls = 0;
+  const result = await ask({ question: 'When is Lab 8 due on Gradescope?', snapshot: snapshotFixture(), syllabi: {}, reviews: {}, gradescope: saved(), now: NOW,
+    complete: async request => {
+      calls++;
+      if (calls === 1) return { role: 'assistant', content: '', tool_calls: [{ id: 'g1', type: 'function', function: { name: 'list_gradescope_assignments', arguments: '{"query":"Lab 8"}' } }] };
+      if (calls === 2) return { role: 'assistant', content: 'Lab 8 is due October 19 at 5:30 PM ET.' };
+      assert.match(request.messages.at(-1).content, /no valid source citation/);
+      assert.match(request.messages.at(-1).content, /Available Gradescope source ids: S1\./);
+      return { role: 'assistant', content: 'Lab 8 is due October 19 at 5:30 PM ET. [S1]' };
+    },
+  });
+  assert.equal(calls, 3);
+  assert.equal(result.citations.length, 1);
+  assert.equal(result.citations[0].url, 'https://www.gradescope.com/courses/20/assignments/51');
+  assert.equal(result.trace.filter(entry => entry.type === 'commentary').length, 1, 'the superseded draft stays inside the work log');
+});
+
+test('citation repair is bounded and never fabricates a citation the model did not use', async () => {
+  let calls = 0;
+  const result = await ask({ question: 'When is Lab 8 due on Gradescope?', snapshot: snapshotFixture(), syllabi: {}, reviews: {}, gradescope: saved(), now: NOW,
+    complete: async () => ++calls === 1
+      ? { role: 'assistant', content: '', tool_calls: [{ id: 'g1', type: 'function', function: { name: 'list_gradescope_assignments', arguments: '{}' } }] }
+      : { role: 'assistant', content: 'Lab 8 is due October 19 at 5:30 PM ET.' },
+  });
+  assert.equal(calls, 3);
+  assert.deepEqual(result.citations, []);
+});
+
+test('an empty Gradescope search does not trigger a citation rewrite', async () => {
+  let calls = 0;
+  const result = await ask({ question: 'When is the unavailable assignment due?', snapshot: snapshotFixture(), syllabi: {}, reviews: {}, gradescope: saved(), now: NOW,
+    complete: async () => ++calls === 1
+      ? { role: 'assistant', content: '', tool_calls: [{ id: 'g1', type: 'function', function: { name: 'list_gradescope_assignments', arguments: '{"query":"unavailable"}' } }] }
+      : { role: 'assistant', content: 'No matching assignment is in the saved Gradescope list.' },
+  });
+  assert.equal(calls, 2);
+  assert.deepEqual(result.citations, []);
+});

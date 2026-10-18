@@ -958,6 +958,7 @@ export async function ask({
   const finish = (text, citations = []) => ({ text, citations, trace, steps: trace.filter((e) => e.type === 'tool').map((e) => e.label) });
   const pageReads = new Map();
   let completionChecks = 0;
+  let retriedGradescopeCitations = false;
 
   function rememberPages(result) {
     for (const item of result?.excerpts ?? result?.results ?? []) {
@@ -1085,6 +1086,13 @@ export async function ask({
       sentToLectures = true;
       keepCommentary();
       messages.push({ role: 'user', content: OPEN_LECTURES });
+      continue;
+    }
+    const gradescopeSources = tools.sources.list.filter(source => source.key.startsWith('gradescope:'));
+    if (text && !citations.length && gradescopeSources.length && !retriedGradescopeCitations && !lastTurn) {
+      retriedGradescopeCitations = true;
+      keepCommentary();
+      messages.push({ role: 'user', content: `Your answer has no valid source citation. Rewrite it with the exact source ids from the Gradescope tool results, such as [${gradescopeSources[0].id}], next to the assignment or deadline facts they support. Available Gradescope source ids: ${gradescopeSources.map(source => source.id).join(', ')}. Use only the relevant records; do not invent a source or attach unrelated assignments. If no returned record answers the question, say so.` });
       continue;
     }
     if (text) return finish(text, citations);

@@ -6,6 +6,8 @@ What changed, what prompted it, and what it means when you use BoilerSpace. Each
 
 ## October 18, 2026
 
+- **Keep Gradescope answers linked to their sources.** If the model omits citations after reading Gradescope records, Ask requests one cited rewrite. The earlier draft stays in the work log; links still resolve only to records the tools returned.
+
 - **Bring Gradescope deadlines into your courses.** Connect your existing Gradescope sign-in in Settings to import current-term assignment names and published dates. Clear course matches link automatically; assignments appear in Week, course details, calendar exports and Ask with source links. Normal and late deadlines stay separate, and missing dates stay unknown. The reader excludes score columns, submitted answers and grading feedback. Routine refreshes use direct requests without opening site tabs. OCR is deferred.
 
 ## October 17, 2026

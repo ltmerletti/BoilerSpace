@@ -6,7 +6,13 @@ Bug reports, fixes, and focused improvements are welcome. For a larger change, o
 
 The extension runs directly from `extension/`. There is no bundler or production dependency install. Load that directory using the [README instructions](README.md#get-started), reload the extension after edits, and refresh Brightspace.
 
-Development checks use Node.js 22 or newer. The browser checks below use Playwright 1.58.2, the version used for the current live verification. Playwright is a development tool, not part of the extension.
+Development checks use Node.js 22.13 or newer. The browser checks below use Playwright 1.58.2, the version used for the current live verification. Playwright is a development tool, not part of the extension.
+
+### Linting
+
+Run `npm ci --ignore-scripts`, then `npm run lint`. ESLint checks our JavaScript and CSS for mistakes such as undefined names, unused variables, invalid CSS values and duplicate keyframes. It covers the extension, tests, scripts and JavaScript experiments. Bundled libraries, generated packages and private verification files are excluded. Formatting is left alone.
+
+CI runs the same command on Node.js 22 and 24, with warnings treated as failures. The Firefox add-on validator remains a separate release check.
 
 ### Release packages
 
@@ -74,7 +80,7 @@ Use `VERIFY_OUT=/tmp/boilerspace-verification` to choose a screenshot directory.
 
 ### Continuous integration
 
-[CI](https://github.com/ltmerletti/BoilerSpace/actions/workflows/ci.yml) runs on pushes and pull requests, and can also be started manually from GitHub Actions. It runs the unit suite on Node.js 22 and 24; the interface, chat streaming, syllabus, discussion, Gradescope and recovery Chromium suites; and the discussion-worker checks in Chromium and Firefox. The interface, discussion and worker suites run headlessly; the syllabus suite uses visible Chromium under `xvfb-run`. The broader interface suite saves a Playwright trace and page state if it throws.
+[CI](https://github.com/ltmerletti/BoilerSpace/actions/workflows/ci.yml) runs on pushes and pull requests, and can also be started manually from GitHub Actions. It runs lint and the unit suite on Node.js 22 and 24; the interface, chat streaming, syllabus, discussion, Gradescope and recovery Chromium suites; and the discussion-worker checks in Chromium and Firefox. The interface, discussion and worker suites run headlessly; the syllabus suite uses visible Chromium under `xvfb-run`. The broader interface suite saves a Playwright trace and page state if it throws.
 
 CI installs from `package-lock.json` and checks out the public fixtures at the same pinned commit shown above. It needs no Purdue credentials, API keys, or repository secrets. Each browser job uploads any generated fixture-test screenshots for seven days, including on failure. New runs cancel older runs on the same branch or pull request.
 

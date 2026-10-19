@@ -92,10 +92,10 @@ try {
     window.finishDiscussionRefresh();
   });
   await page.waitForFunction(() => window.askStatusUpdates >= 2);
-  check('a discussion refresh finishing during generation retains every conversation element', await page.evaluate(() => askNodes.input === document.querySelector('textarea') && askNodes.list === document.querySelector('.messages') && askNodes.saved.every(node => node.isConnected) && askNodes.pending === document.querySelector('#pending')));
+  check('a discussion refresh finishing during generation retains every conversation element', await page.evaluate(() => window.askNodes.input === document.querySelector('textarea') && window.askNodes.list === document.querySelector('.messages') && window.askNodes.saved.every(node => node.isConnected) && window.askNodes.pending === document.querySelector('#pending')));
   await page.evaluate(() => { window.writeSelectionChunk('More details.'); window.finishSelectionStream(); });
   await page.locator('#pending').waitFor({ state: 'detached' });
-  check('answer completion retains the composer, saved history, active message and streamed paragraph', await page.evaluate(() => askNodes.input === document.querySelector('textarea') && askNodes.saved.every(node => node.isConnected) && askNodes.pending.isConnected && askNodes.paragraph.isConnected));
+  check('answer completion retains the composer, saved history, active message and streamed paragraph', await page.evaluate(() => window.askNodes.input === document.querySelector('textarea') && window.askNodes.saved.every(node => node.isConnected) && window.askNodes.pending.isConnected && window.askNodes.paragraph.isConnected));
   await question.press('ControlOrMeta+z');
   check('a follow-up draft keeps native undo through generation, sync completion and answer saving', await question.inputValue() === '' && await page.getByRole('button', { name: 'Send', exact: true }).isDisabled());
   await question.fill('The next question');

@@ -360,7 +360,7 @@ async function connectDiscussions(platform = DISCUSSION_ACCESS, url = PARAMS.get
           signInTab = await chrome.tabs.create({ url: 'about:blank', active: true });
           await chrome.tabs.update(signInTab.id, { url: platform === 'ed' ? 'https://edstem.org/us/' : url || 'https://piazza.com/' });
         }
-        else if (!(await chrome.tabs.get(signInTab.id).catch(() => null))) throw new Error('Sign-in was closed. You can connect again whenever you are ready.');
+        else if (!(await chrome.tabs.get(signInTab.id).catch(() => null))) throw new Error('Sign-in was closed. You can connect again whenever you are ready.', { cause: error });
         state.discussionConnecting = `Finish signing in to ${discussionName(platform)}${platform === 'piazza' ? ' and open your class' : ''}. Connection continues automatically.`;
         render();
         await new Promise(resolve => setTimeout(resolve, 2000));
@@ -1749,7 +1749,7 @@ async function connectGradescope(permission = chrome.permissions.request({ origi
         if (!signInTab) {
           const existing = (await chrome.tabs.query({ url: `${GRADESCOPE_ORIGIN}/*` }))[0];
           signInTab = existing ? await chrome.tabs.update(existing.id, { active: true }) : await chrome.tabs.create({ url: `${GRADESCOPE_ORIGIN}/account`, active: true });
-        } else if (!(await chrome.tabs.get(signInTab.id).catch(() => null))) throw new Error('Sign-in was closed. Connect again when you are ready.');
+        } else if (!(await chrome.tabs.get(signInTab.id).catch(() => null))) throw new Error('Sign-in was closed. Connect again when you are ready.', { cause: error });
         await new Promise(resolve => setTimeout(resolve, 2000));
       }
     }

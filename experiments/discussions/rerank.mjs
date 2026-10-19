@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync } from 'node:fs';
 import { localModel, loadRerankerHead } from './local-model.mjs';
 import { loadDataset } from './dataset.mjs';
 import { lexicalIndex } from './lexical.mjs';

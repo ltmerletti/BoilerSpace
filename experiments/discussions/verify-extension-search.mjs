@@ -56,7 +56,7 @@ try {
         await new Promise(resolve => setTimeout(resolve, 5000));
         baselineRss = sampleFirefox();
         baselineProcesses = finalProcesses;
-        memoryTimer = setInterval(() => { try { peakRss = Math.max(peakRss, sampleFirefox()); } catch {} }, 50);
+        memoryTimer = setInterval(() => { try { peakRss = Math.max(peakRss, sampleFirefox()); } catch { /* A process may exit between memory samples. */ } }, 50);
         response.setHeader('Access-Control-Allow-Origin', '*'); response.end('ok'); return;
       }
       if (request.method !== 'POST' || request.url !== '/report') { response.writeHead(404); response.end(); return; }

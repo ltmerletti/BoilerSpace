@@ -12,6 +12,13 @@ What changed, what prompted it, and what it means when you use BoilerSpace. Each
 
 - **Keep Ask steady during background updates.** Refreshes update the affected controls while keeping your conversation and draft field in place. Open course and thinking menus stay open, native undo keeps working, and a refresh that finishes during an answer no longer rebuilds the chat. Completed answers reuse their message and paragraphs; quiz locking, disconnects and clearing data still remove the conversation immediately.
 
+<details>
+<summary>Development checks</summary>
+
+- **Catch code mistakes before merging.** CI now lints our JavaScript and CSS on Node.js 22 and 24, alongside the existing browser and unit tests. The same check runs locally with `npm run lint`. It checks correctness without imposing a new formatting style or scanning bundled libraries and private captures.
+
+</details>
+
 ## In progress
 
 - **Read earlier text while an answer is writing.** Scrolling up pauses automatic following, even for a small movement near the bottom. Opening the work log and finishing an answer keep your reading position. Scroll back to the bottom to resume following, or press End to jump to the latest text.

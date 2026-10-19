@@ -814,7 +814,7 @@ export async function findSyllabusTab(client, { courseId, le, lp = null, origin,
     }
   }
   if (!link) {
-    let html = '';
+    let html;
     for (const path of [`/d2l/home/${courseId}`, `/d2l/le/content/${courseId}/Home`]) {
       try {
         html = await client.getText(path);

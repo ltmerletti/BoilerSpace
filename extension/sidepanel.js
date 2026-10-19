@@ -2043,7 +2043,11 @@ function render({ top = false, bottom = false } = {}) {
   const active = document.activeElement;
   const focusKey = active?.dataset.focusKey;
   const selection = typeof active?.selectionStart === 'number' ? [active.selectionStart, active.selectionEnd] : null;
-  for (const details of main.querySelectorAll('details[data-disclosure]')) expandedSections.set(details.dataset.disclosure, details.open);
+  // Pending openness lives in state; copying its old DOM value at completion
+  // would override the final answer's decision to fold the work log.
+  for (const details of main.querySelectorAll('details[data-disclosure]')) {
+    if (!details.hasAttribute('data-pending-trace')) expandedSections.set(details.dataset.disclosure, details.open);
+  }
   const content = GRADESCOPE_ACCESS ? gradescopeAccessView() : DISCUSSION_ACCESS ? discussionAccessView() : ACCESS_PAGE ? syllabusAccessPage() : CONNECT_PAGE ? connectPageView() : [syllabusAccessNotice(), state.view === 'settings' ? null : hostAccessNotice(), VIEWS[state.view]()];
   main.replaceChildren(h('div', { class: state.view === 'ask' && !CONNECT_PAGE ? 'view ask-view' : 'view' }, content));
   for (const details of main.querySelectorAll('details[data-disclosure]')) {

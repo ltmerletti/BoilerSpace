@@ -117,6 +117,24 @@ test('touch direction pauses and deliberately resumes at the bottom', () => {
   assert.equal(follow.following, true);
 });
 
+test('starting a text selection pauses following without blocking native pointer behavior', () => {
+  const { follow, event } = fixture();
+  let prevented = false;
+  event('pointerdown', { button: 0, target: { closest: () => null }, preventDefault: () => { prevented = true; } });
+  assert.equal(follow.following, false);
+  assert.equal(prevented, false);
+});
+
+test('Shift+End extends text selection rather than jumping to the live answer', () => {
+  const { follow, event, el } = fixture();
+  el.scrollTop = 400;
+  let prevented = false;
+  event('keydown', { key: 'End', shiftKey: true, preventDefault: () => { prevented = true; } });
+  assert.equal(follow.following, false);
+  assert.equal(prevented, false);
+  assert.equal(el.scrollTop, 400);
+});
+
 test('disclosure activation pauses and a new question resets following', () => {
   const { follow, event } = fixture();
   const summary = { closest: selector => selector === 'summary' ? summary : null };

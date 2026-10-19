@@ -14,6 +14,8 @@ What changed, what prompted it, and what it means when you use BoilerSpace. Each
 
 ## October 18, 2026
 
+- **Select text while an answer arrives.** Incoming tokens update only the changed text, so dragging to highlight a passage no longer loses the selection. Selecting text pauses automatic scrolling, and highlights survive answer completion and background redraws. Shift-based selection keeps its normal browser behavior.
+
 - **Read image-heavy PDFs completely.** Bundle the PDF reader's JPEG2000 decoder and color-conversion assets rather than leaving those optional files out of the install. A synthetic image PDF now checks the rendered pixels in both browsers, so a blank page cannot pass as a successful render.
 
 - **Prepare a consistent v1 install.** Firefox and Chrome now have separate release packages with the correct background and panel APIs. The Firefox package declares its data use in the browser's installation prompt. Reproducible ZIPs, source and checksums make the submitted build inspectable, and CI installs the actual Firefox archive to check course sync, document reading, local discussion search and cited answers.

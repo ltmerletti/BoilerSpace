@@ -9,6 +9,7 @@ import path from 'node:path';
 import puppeteer from 'puppeteer-core';
 import { getInstalledBrowsers } from '@puppeteer/browsers';
 import { fakeBrightspace, pdfWithPages, pdfWithJpxImage, snapshotFixture } from '../tests/helpers.mjs';
+import { installSelectionStream, selectionCoordinates, selectionState } from '../tests/text-selection-browser.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
 const out = process.env.VERIFY_OUT ?? path.join(root, '.verify-tmp/release-firefox');
@@ -245,6 +246,41 @@ try {
   await reopened.evaluate(() => window.finishScrollAnswer());
   await wait(async () => !(await scrollMetrics()).pending);
   check('finishing an answer preserves the paused Firefox reader position', Math.abs((await scrollMetrics()).top - beforeDone.top) < 2);
+
+  await reopened.evaluate(installSelectionStream);
+  await reopened.evaluate(() => {
+    const input = document.querySelector('textarea[aria-label="Question"]');
+    input.value = 'Explain the course material.';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector('button[aria-label="Send"]').click();
+  });
+  await wait(() => reopened.evaluate(() => window.writeSelectionChunk && !!document.querySelector('#pending .streaming-answer p')));
+  const coordinates = await reopened.evaluate(selectionCoordinates);
+  const frameBox = await (await reopened.frameElement()).boundingBox();
+  await page.mouse.move(frameBox.x + coordinates.end.x, frameBox.y + coordinates.end.y);
+  await page.mouse.down();
+  await page.mouse.move(frameBox.x + coordinates.start.x, frameBox.y + coordinates.start.y, { steps: 12 });
+  const selected = await reopened.evaluate(selectionState);
+  check('real Firefox mouse dragging selects answer text backwards', selected.text === 'Select this' && selected.backward);
+  await reopened.evaluate(() => window.writeSelectionChunk('More details keep arriving in the same paragraph. '));
+  await wait(() => reopened.evaluate(() => document.querySelector('#pending .streaming-answer p').textContent.includes('More details')));
+  check('Firefox retains a held mouse selection as text is appended', (await reopened.evaluate(selectionState)).text === selected.text);
+  await page.mouse.up();
+  await reopened.evaluate(() => window.writeSelectionChunk('\n\n' + 'Another paragraph makes the answer longer. '.repeat(30)));
+  await wait(() => reopened.evaluate(() => document.querySelectorAll('#pending .streaming-answer p').length === 2));
+  const growing = await reopened.evaluate(selectionState);
+  check('Firefox keeps selection direction and reading position as the answer grows', growing.text === selected.text && growing.backward && Math.abs(growing.top - selected.top) < 2);
+  await reopened.evaluate(() => window.finishSelectionStream());
+  await wait(() => reopened.evaluate(() => !document.querySelector('#pending')));
+  const completed = await reopened.evaluate(selectionState);
+  check('Firefox preserves selected text and direction when the answer is saved', completed.text === selected.text && completed.backward);
+  await reopened.evaluate(async () => {
+    const { chats } = await chrome.storage.local.get('chats');
+    chats[0].title = 'Updated chat title';
+    await chrome.storage.local.set({ chats });
+  });
+  await wait(() => reopened.evaluate(() => document.querySelector('.chat-title')?.textContent === 'Updated chat title'));
+  check('Firefox retains text selection through a background panel redraw', (await reopened.evaluate(selectionState)).text === selected.text);
 
   await browser.installExtension(archive);
   await reloadAfterInstall(page);

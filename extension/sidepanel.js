@@ -17,6 +17,7 @@ import { deadlineIssue } from './lib/deadline-status.js';
 import { chatTitle, chatDate, generateChatTitle } from './lib/chat.js';
 import { thinkingLevels, thinkingLabel, thinkingParams } from './lib/thinking.js';
 import { createChatScrollFollow } from './lib/chat-scroll.js';
+import { patchText, rememberTextSelection } from './lib/text-selection.js';
 
 const sheet = document.createElement('link');
 sheet.rel = 'stylesheet';
@@ -616,7 +617,7 @@ async function sendQuestion(question, { reuse = false, resume = null } = {}) {
   }
   if (state.pending !== pending) return;
   rememberPendingDisclosure();
-  reply.id = crypto.randomUUID();
+  reply.id = pending.runId;
   const pendingKey = `trace-${pending.chatId}-${pending.runId}`;
   const savedKey = `trace-${pending.chatId}-${reply.id}`;
   const keepWorkOpen = pending.open && (pending.manualDisclosure || !answerScroll.following);
@@ -1253,7 +1254,7 @@ function inlineNodes(text, citations) {
   return nodes;
 }
 
-function answerBody(text, citations = []) {
+function answerBody(text, citations = [], selectionKey = null) {
   const blocks = [];
   let list = null;
   for (const line of text.split('\n')) {
@@ -1270,6 +1271,7 @@ function answerBody(text, citations = []) {
     if (line.trim()) blocks.push(h('p', null, inlineNodes(line.replace(/^#+\s*/, ''), citations)));
   }
   if (list) blocks.push(list);
+  if (selectionKey) blocks.forEach((block, index) => { block.dataset.selectionKey = `${selectionKey}-${index}`; });
   return blocks;
 }
 
@@ -1347,8 +1349,9 @@ function traceView(trace, { key, live = false, seconds = 0, open = false, ontogg
 const messageTrace = (message) => message.trace ?? (message.steps ?? []).map((label) => ({ type: 'tool', label }));
 
 function messageView(message, index) {
-  if (message.role === 'user') return h('div', { class: 'message user' }, message.content);
   const key = message.id ?? `i${index}`;
+  const selectionKey = `message-${state.activeChatId}-${key}`;
+  if (message.role === 'user') return h('div', { class: 'message user', 'data-selection-key': selectionKey }, message.content);
   const trace = traceView(messageTrace(message), {
     key: `trace-${state.activeChatId}-${key}`,
     seconds: message.seconds ?? 0,
@@ -1395,7 +1398,7 @@ function messageView(message, index) {
     'div',
     { class: 'message assistant' },
     trace,
-    answerBody(message.content, citations),
+    answerBody(message.content, citations, selectionKey),
     h('div', { class: 'answer-footer' },
       citations.length > 0 && disclosure(`sources-${state.activeChatId}-${key}`, `${plural(citations.length, 'source')}`,
         h('div', { class: 'sources' }, citations.map((c, i) => link(c.url, [h('span', { class: 'cite' }, i + 1), h('span', null, c.label)], { title: c.label })))),
@@ -1424,7 +1427,7 @@ function pendingView() {
       if (event.target.closest('summary')) p.manualDisclosure = true;
     } },
     trace,
-    p.text && h('div', { class: 'streaming-answer' }, answerBody(p.text)),
+    p.text && h('div', { class: 'streaming-answer' }, answerBody(p.text, [], `message-${p.chatId}-${p.runId}`)),
   );
 }
 
@@ -1446,7 +1449,7 @@ function rememberPendingDisclosure() {
 // Patch the live answer in place so pointer-down targets survive the next token.
 function patchPendingNode(current, next) {
   if (current.nodeType === Node.TEXT_NODE) {
-    if (current.data !== next.data) current.data = next.data;
+    patchText(current, next.data);
     return;
   }
   for (const attribute of [...current.attributes]) if (!next.hasAttribute(attribute.name)) current.removeAttribute(attribute.name);
@@ -1478,6 +1481,7 @@ function paintPending() {
   if (!el || !state.pending) return;
   const main = document.querySelector('.messages');
   if (!main) return;
+  const restoreSelection = rememberTextSelection(main);
   rememberPendingDisclosure();
   const scroll = main.scrollTop;
   const disclosures = [...el.querySelectorAll('details[data-disclosure]')].map(details => ({ key: details.dataset.disclosure, open: details.open, scroll: details.querySelector('.thought-text')?.scrollTop }));
@@ -1489,6 +1493,7 @@ function paintPending() {
     if (previous) details.open = previous.open;
   }
   patchPendingNode(el, next);
+  restoreSelection();
   for (const details of el.querySelectorAll('details[data-disclosure]')) {
     const previous = disclosures.find(item => item.key === details.dataset.disclosure);
     const box = details.querySelector('.thought-text');
@@ -2031,6 +2036,7 @@ const expandedSections = new Map();
 function render({ top = false, bottom = false } = {}) {
   if (state.view === 'ask' && (top || bottom)) answerScroll.reset();
   const main = document.getElementById('view');
+  const restoreSelection = rememberTextSelection(main);
   rememberPendingDisclosure();
   const scroller = main.querySelector('.messages') ?? main;
   const scroll = scroller.scrollTop;
@@ -2050,6 +2056,7 @@ function render({ top = false, bottom = false } = {}) {
   } else if (top && state.view === 'ask') main.querySelector('textarea')?.focus({ preventScroll: true });
   const textarea = main.querySelector('.composer textarea');
   if (textarea?.value) { textarea.style.height = 'auto'; textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`; }
+  restoreSelection();
   const nextScroller = main.querySelector('.messages') ?? main;
   if (state.view === 'ask') answerScroll.restore(nextScroller, top || bottom || answerScroll.following ? nextScroller.scrollHeight : scroll);
   else nextScroller.scrollTop = top ? 0 : scroll;

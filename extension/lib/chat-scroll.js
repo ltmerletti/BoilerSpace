@@ -54,6 +54,11 @@ export function createChatScrollFollow() {
         },
         onkeydown: event => {
           if (event.target.closest('input, textarea, select, [contenteditable]')) return;
+          if (event.shiftKey && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) {
+            pause();
+            binding.gesture = null;
+            return;
+          }
           if (event.target.closest('summary') && ['Enter', ' '].includes(event.key)) {
             pause();
             binding.gesture = null;
@@ -72,6 +77,10 @@ export function createChatScrollFollow() {
             pause();
             binding.gesture = null;
           } else if (event.target === event.currentTarget) begin(event.currentTarget, 0);
+          else if (event.button === 0 && !event.target.closest('button, a, input, textarea, select, [contenteditable]')) {
+            pause();
+            binding.gesture = null;
+          }
         },
         onclick: event => {
           if (event.target.closest('summary')) {

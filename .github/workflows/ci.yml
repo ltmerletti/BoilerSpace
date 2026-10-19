@@ -98,6 +98,8 @@ jobs:
             script: scripts/verify.mjs
           - suite: chat-streaming
             script: scripts/verify-chat-streaming.mjs
+          - suite: ask-updates
+            script: scripts/verify-ask-updates.mjs
           - suite: chat-narration
             script: scripts/verify-chat-narration.mjs
           - suite: data-lifecycle

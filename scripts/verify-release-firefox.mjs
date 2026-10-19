@@ -11,6 +11,7 @@ import { getInstalledBrowsers } from '@puppeteer/browsers';
 import { fakeBrightspace, pdfWithPages, pdfWithJpxImage, snapshotFixture } from '../tests/helpers.mjs';
 import { installSelectionStream, selectionCoordinates, selectionState } from '../tests/text-selection-browser.mjs';
 import { COURSE_FILE_FIXTURES, checkCourseFileFormats } from '../tests/file-formats-fixture.mjs';
+import { updateAskMetadata, checkAskBackgroundUpdates } from '../tests/ask-updates-browser.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
 const out = process.env.VERIFY_OUT ?? path.join(root, '.verify-tmp/release-firefox');
@@ -286,6 +287,23 @@ try {
   });
   await wait(() => reopened.evaluate(() => document.querySelector('.chat-title')?.textContent === 'Updated chat title'));
   check('Firefox retains text selection through a background panel redraw', (await reopened.evaluate(selectionState)).text === selected.text);
+
+  await reopened.evaluate(updateAskMetadata);
+  for (const result of await reopened.evaluate(checkAskBackgroundUpdates)) check(`Firefox: ${result.name}`, result.pass);
+  const question = await reopened.$('textarea[aria-label="Question"]');
+  const undo = async () => {
+    const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
+    await page.keyboard.down(modifier);
+    await page.keyboard.press('z');
+    await page.keyboard.up(modifier);
+  };
+  await question.type('Draft question');
+  await undo();
+  check('Firefox native undo removes typed text before an update', await question.evaluate(input => input.value === ''));
+  await question.type('Draft question');
+  await reopened.evaluate(updateAskMetadata);
+  await undo();
+  check('Firefox native undo survives a background update', await question.evaluate(input => input.value === ''));
 
   await browser.installExtension(archive);
   await reloadAfterInstall(page);

@@ -477,11 +477,6 @@ main {
   white-space: nowrap;
 }
 
-.tag.gold {
-  background: var(--carnelian-wash);
-  color: var(--carnelian);
-}
-
 .tag.danger {
   background: var(--cinnabar-wash);
   color: var(--cinnabar);

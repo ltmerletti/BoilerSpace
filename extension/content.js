@@ -74,10 +74,6 @@
         return reply(pageWork('discover-syllabus', message));
       case 'boilerspace-read-quiz':
         return reply(pageWork('read-quiz', message));
-      case 'boilerspace-toggle':
-        toggleDrawer();
-        sendResponse({ ok: true });
-        return false;
       default:
         return false;
     }

@@ -17,6 +17,8 @@ What changed, what prompted it, and what it means when you use BoilerSpace. Each
 
 - **Catch code mistakes before merging.** CI now lints our JavaScript and CSS on Node.js 22 and 24, alongside the existing browser and unit tests. The same check runs locally with `npm run lint`. It checks correctness without imposing a new formatting style or scanning bundled libraries and private captures.
 
+- **Check longer conversations and simultaneous panels.** Background-update tests now exercise a full 40-message history, edited answers and citations, retained selections, and a draft in one panel while another finishes an answer. Retry and Continue are checked after old messages are removed. The full-history checks run in Chrome and packaged Firefox.
+
 </details>
 
 ## In progress

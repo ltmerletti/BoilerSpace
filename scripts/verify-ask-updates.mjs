@@ -6,7 +6,7 @@ import path from 'node:path';
 import { chromium } from 'playwright';
 import { snapshotFixture } from '../tests/helpers.mjs';
 import { installSelectionStream } from '../tests/text-selection-browser.mjs';
-import { updateAskMetadata, checkAskBackgroundUpdates } from '../tests/ask-updates-browser.mjs';
+import { updateAskMetadata, checkAskBackgroundUpdates, checkAskHistoryUpdates } from '../tests/ask-updates-browser.mjs';
 
 const extension = path.resolve(process.env.VERIFY_EXTENSION ?? 'extension');
 const out = process.env.VERIFY_OUT ?? '.verify-tmp/ask-updates';
@@ -16,7 +16,7 @@ const checks = [], errors = [];
 const check = (name, pass) => { assert.ok(pass, name); checks.push(name); console.log(`PASS  ${name}`); };
 let context, page;
 try {
-  context = await chromium.launchPersistentContext(profile, { channel: 'chromium', headless: true, viewport: { width: 400, height: 850 }, args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`] });
+  context = await chromium.launchPersistentContext(profile, { channel: 'chromium', headless: true, viewport: { width: 400, height: 850 }, recordVideo: process.env.VERIFY_VIDEO ? { dir: path.join(out, 'video'), size: { width: 400, height: 850 } } : undefined, args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`] });
   await context.route(/^https?:/, route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Synthetic page</title>' }));
   const worker = context.serviceWorkers()[0] ?? await context.waitForEvent('serviceworker');
   const origin = `chrome-extension://${new URL(worker.url()).host}`;
@@ -35,6 +35,9 @@ try {
   await page.evaluate(updateAskMetadata);
   const metadataChecks = await page.evaluate(checkAskBackgroundUpdates);
   for (const result of metadataChecks) check(result.name, result.pass);
+  const historyChecks = await page.evaluate(checkAskHistoryUpdates);
+  for (const result of historyChecks.results) check(result.name, result.pass);
+  console.log('Full-history update timing (including storage and polling):', historyChecks.timings);
 
   const question = page.getByLabel('Question', { exact: true });
   await question.fill('');
@@ -101,6 +104,69 @@ try {
   await question.fill('The next question');
   check('the retained composer enables its current Send button after completion', await page.getByRole('button', { name: 'Send', exact: true }).isEnabled());
 
+  await question.press('ControlOrMeta+a');
+  await question.pressSequentially('A draft in the first panel');
+  await page.evaluate(() => { window.beforeOtherPanel = { input: document.querySelector('textarea'), messages: [...document.querySelectorAll('.message')] }; });
+  const other = await context.newPage();
+  other.on('pageerror', error => errors.push(error.message));
+  await other.goto(`${origin}/sidepanel.html`);
+  await other.getByLabel('Question', { exact: true }).waitFor();
+  await other.evaluate(installSelectionStream);
+  await other.getByLabel('Question', { exact: true }).fill('A question from the second real panel.');
+  await other.getByRole('button', { name: 'Send', exact: true }).click();
+  await other.waitForFunction(() => window.writeSelectionChunk && document.querySelector('#pending'));
+  await page.waitForFunction(() => [...document.querySelectorAll('.message.user')].at(-1)?.textContent === 'A question from the second real panel.');
+  await other.evaluate(() => window.finishSelectionStream());
+  await other.locator('#pending').waitFor({ state: 'detached' });
+  await page.waitForFunction(() => document.querySelector('.message:last-child')?.textContent.includes('Select this explanation'));
+  check('a second real panel can complete a question without replacing the first panel draft or history', await page.evaluate(() => window.beforeOtherPanel.input === document.querySelector('textarea') && window.beforeOtherPanel.messages.every(node => node.isConnected) && document.querySelector('textarea').value === 'A draft in the first panel'));
+  await page.bringToFront();
+  await question.press('ControlOrMeta+z');
+  check('native undo survives a conversation completed in another real panel', await question.inputValue() === 'The next question');
+  await other.close();
+
+  // Retain the last answer while its index changes, then exercise its real controls.
+  await page.evaluate(async () => {
+    const { chats } = await chrome.storage.local.get('chats');
+    window.beforeHistoryActions = structuredClone(chats);
+    chats[0].messages = Array.from({ length: 20 }, (_, i) => [
+      { id: `action-user-${i}`, role: 'user', content: `Explain retained topic ${i}.` },
+      { id: `action-answer-${i}`, role: 'assistant', content: 'A stopped explanation.', ...(i === 19 ? { stopped: true } : {}) },
+    ]).flat();
+    await window.updateAskMetadata({ chats });
+    window.retainedLastAnswer = document.querySelector('.message:last-child');
+    chats[0].messages = chats[0].messages.slice(2);
+    await window.updateAskMetadata({ chats });
+  });
+  check('removing old messages retains the stopped answer and its controls', await page.evaluate(() => window.retainedLastAnswer === document.querySelector('.message:last-child') && !!window.retainedLastAnswer.querySelector('button')));
+  await page.evaluate(() => { delete window.writeSelectionChunk; });
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await page.waitForFunction(() => window.writeSelectionChunk && !!document.querySelector('#pending'));
+  await page.evaluate(() => window.finishSelectionStream());
+  await page.locator('#pending').waitFor({ state: 'detached' });
+  check('Continue resolves the current answer position after history removal', await page.evaluate(async () => {
+    const { chats } = await chrome.storage.local.get('chats');
+    return chats[0].messages.at(-1).content.includes('Select this explanation') && chats[0].messages.filter(message => message.role === 'user' && message.content === 'Explain retained topic 19.').length === 1;
+  }));
+  await page.evaluate(async () => {
+    const { chats } = await chrome.storage.local.get('chats');
+    window.retainedLastAnswer = document.querySelector('.message:last-child');
+    chats[0].messages = chats[0].messages.slice(2);
+    await window.updateAskMetadata({ chats });
+    delete window.writeSelectionChunk;
+  });
+  check('removing more history retains the completed answer and its Retry control', await page.evaluate(() => window.retainedLastAnswer === document.querySelector('.message:last-child')));
+  await page.getByRole('button', { name: 'Retry', exact: true }).click();
+  await page.waitForFunction(() => window.writeSelectionChunk && !!document.querySelector('#pending'));
+  await page.evaluate(() => window.finishSelectionStream());
+  await page.locator('#pending').waitFor({ state: 'detached' });
+  check('Retry resolves the current answer position without duplicating its question', await page.evaluate(async () => {
+    const { chats } = await chrome.storage.local.get('chats');
+    return chats[0].messages.at(-1).content.includes('Select this explanation') && document.querySelector('.message:last-child').textContent.includes('Select this explanation') && chats[0].messages.filter(message => message.role === 'user' && message.content === 'Explain retained topic 19.').length === 1;
+  }));
+  await page.screenshot({ path: path.join(out, 'history-actions.png') });
+  await page.evaluate(() => window.updateAskMetadata({ chats: window.beforeHistoryActions }));
+
   const tab = await context.newPage();
   await tab.goto('https://purdue.brightspace.com/d2l/lms/quizzing/user/attempt/quiz_start_frame_auto.d2l?ou=1600001');
   await page.evaluate(async () => {
@@ -127,7 +193,7 @@ try {
   check('there are no browser page errors', errors.length === 0);
   writeFileSync(path.join(out, 'results.json'), JSON.stringify({ checks, errors }, null, 2));
 } catch (error) {
-  writeFileSync(path.join(out, 'failure.json'), JSON.stringify({ error: error.stack, checks, errors }, null, 2));
+  writeFileSync(path.join(out, 'failure.json'), JSON.stringify({ error: error.stack, checks, errors, lastMessage: await page?.locator('.message:last-child').evaluate(node => node.outerHTML).catch(() => null) }, null, 2));
   await page?.screenshot({ path: path.join(out, 'failure.png') }).catch(() => {});
   throw error;
 } finally { await context?.close(); rmSync(profile, { recursive: true, force: true }); }

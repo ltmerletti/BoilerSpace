@@ -57,6 +57,7 @@ node scripts/verify-gradescope.mjs
 node scripts/verify-discussion-recovery.mjs
 node scripts/verify-chat-streaming.mjs
 node scripts/verify-chat-narration.mjs
+node scripts/verify-ask-updates.mjs
 node scripts/verify-data-lifecycle.mjs
 ```
 
@@ -71,6 +72,8 @@ These scripts use throwaway Chromium profiles. The broader interface check runs 
 `verify-data-lifecycle.mjs` delays model-list requests and syllabus downloads while you change models, disconnect or clear data through the actual Settings controls. It checks that late results cannot restore cleared records or overwrite newer choices, and that a website content script cannot invoke the protected background writer. It uses a disposable profile and synthetic data; CI runs it against the built Chrome package.
 
 `verify-chat-narration.mjs` records a complete narration, tool and answer sequence for both following and paused readers. It checks that streamed drafts do not repeatedly toggle the work log and that finishing preserves a paused reader's open details. Videos and observations stay in the ignored verification directory.
+
+`verify-ask-updates.mjs` checks native undo, open menus and saved messages during background updates, including a full 40-message history and two simultaneous panels. It checks edits, history eviction, Retry and Continue after message positions change, quiz locking and disconnects. Set `VERIFY_VIDEO=1` to retain a recording. The full-history cases also run in the packaged Firefox suite.
 
 `verify.mjs` checks 320, 400 and 720 pixel panel widths, dark mode, active navigation, keyboard text selection and drafts surviving background changes. It also checks quiet background refreshes and visible recovery from a saved-data read error. Course checks cover dark hover and the collapsed AI policy. Discussion checks exercise the class Options controls and manual course-link overrides. Ask checks include the pinned composer, scrollable history, expandable sources, answer copying and cancellation of a pending model request. Screenshots use reduced motion so transient tab highlights do not enter captures.
 

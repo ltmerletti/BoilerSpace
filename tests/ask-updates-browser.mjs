@@ -49,3 +49,57 @@ export async function checkAskBackgroundUpdates() {
   results.push({ name: 'a cross-panel title update changes the title without remounting messages', pass: retained() && document.querySelector('.chat-title').textContent === 'Background title' });
   return results;
 }
+
+// Exercise a full retained history rather than just the most recent question.
+export async function checkAskHistoryUpdates() {
+  const update = window.updateAskMetadata;
+  const original = (await chrome.storage.local.get('chats')).chats;
+  const chats = structuredClone(original), chat = chats[0], results = [];
+  chat.messages = Array.from({ length: 20 }, (_, index) => [
+    { id: `history-user-${index}`, role: 'user', content: `Explain topic ${index}.` },
+    { id: `history-answer-${index}`, role: 'assistant', content: Array.from({ length: 8 }, (_, paragraph) => `Topic ${index}, paragraph ${paragraph}. These are the posted course objectives and the material to review. [1]`).join('\n\n'),
+      citations: [{ id: 'S1', label: `Topic ${index} syllabus`, url: 'https://purdue.brightspace.com/d2l/home/1600001' }],
+      trace: [{ type: 'thought', text: 'Reviewing the course evidence. '.repeat(50) }, { type: 'tool', name: 'read_course_file', args: { file_key: `content:${index}` }, label: `Read topic ${index}`, summary: '8 paragraphs', details: [{ label: 'Learning objective', text: 'Explain the topic from its posted source.' }] }] },
+  ]).flat();
+  await update({ chats });
+  const list = document.querySelector('.messages'), input = document.querySelector('textarea');
+  const nodes = new Map([...list.children].map(node => [node.dataset.messageKey, node]));
+  const same = except => input === document.querySelector('textarea') && list === document.querySelector('.messages') && [...nodes].every(([key, node]) => key === except || node === list.querySelector(`[data-message-key="${key}"]`));
+  results.push({ name: 'a full 40-message history renders with sources and tool logs', pass: nodes.size === 40 && list.querySelectorAll('.sources').length === 20 && list.querySelectorAll('.tool-step').length === 20 });
+  list.scrollTop = list.scrollHeight / 3;
+  await new Promise(requestAnimationFrame);
+  const top = list.scrollTop;
+  const target = nodes.get('history-answer-6').querySelector('p[data-selection-key]');
+  const text = target.firstChild;
+  getSelection().setBaseAndExtent(text, 24, text, 3);
+  const selected = getSelection().toString();
+  const trace = nodes.get('history-answer-6').querySelector('.trace');
+  trace.open = true;
+  // Let the browser finish the disclosure's layout before recording the reading position.
+  await new Promise(requestAnimationFrame);
+  const settledTop = list.scrollTop;
+  const durations = [];
+  for (let index = 0; index < 8; index++) {
+    const before = performance.now();
+    await update();
+    durations.push(performance.now() - before);
+  }
+  results.push({ name: 'repeated updates retain every message and the composer at the history limit', pass: same() });
+  results.push({ name: 'repeated updates preserve selected text, direction, reading position and an open work log', pass: getSelection().toString() === selected && getSelection().anchorOffset === 24 && trace.open && Math.abs(list.scrollTop - settledTop) < 2 && top > 0 });
+  // Storage serialization may change property order without changing any message.
+  chat.messages = chat.messages.map(message => Object.fromEntries(Object.entries(message).reverse()));
+  await update({ chats });
+  results.push({ name: 'storage key reordering leaves the entire history mounted', pass: same() });
+  const changed = chat.messages.find(message => message.id === 'history-answer-12');
+  changed.content = 'A corrected instructor explanation.';
+  changed.citations = [{ id: 'S2', label: 'Corrected source', url: 'https://purdue.brightspace.com/d2l/home/1600002' }];
+  await update({ chats });
+  results.push({ name: 'an edited answer updates its text and citation without rebuilding other messages', pass: same(changed.id) && !nodes.get(changed.id).isConnected && list.querySelector(`[data-message-key="${changed.id}"]`).textContent.includes(changed.content) && list.querySelector(`[data-message-key="${changed.id}"] .sources a`).href.endsWith('/1600002') });
+  nodes.set(changed.id, list.querySelector(`[data-message-key="${changed.id}"]`));
+  chat.messages = [...chat.messages.slice(2), { id: 'history-user-new', role: 'user', content: 'A question from another panel.' }, { id: 'history-answer-new', role: 'assistant', content: 'The new answer.' }];
+  await update({ chats });
+  results.push({ name: 'history eviction removes only the oldest pair and moves answer controls to the latest reply', pass: list.children.length === 40 && !nodes.get('history-user-0').isConnected && !nodes.get('history-answer-0').isConnected && [...nodes].filter(([key]) => !['history-user-0', 'history-answer-0'].includes(key)).every(([key, node]) => node === list.querySelector(`[data-message-key="${key}"]`)) && list.querySelectorAll('.message-actions').length === 1 && !!list.querySelector('[data-message-key="history-answer-new"] .message-actions') });
+  getSelection().removeAllRanges();
+  await update({ chats: original });
+  return { results, timings: { updates: durations.length, maximumMs: Math.round(Math.max(...durations)), medianMs: Math.round([...durations].sort((a, b) => a - b)[Math.floor(durations.length / 2)]) } };
+}

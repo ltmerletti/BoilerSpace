@@ -20,6 +20,8 @@ const archive = path.join(root, 'dist', `boilerspace-${version}-firefox.zip`);
 const profile = mkdtempSync(path.join(tmpdir(), 'boilerspace-release-firefox-'));
 mkdirSync(out, { recursive: true });
 let browser;
+let closingBrowser = false;
+const requestTasks = new Set(), requestErrors = [];
 const checks = [];
 const check = (name, value) => { assert.ok(value, name); checks.push(name); console.log(`PASS  ${name}`); };
 const wait = async read => {
@@ -98,7 +100,7 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   const fake = fakeBrightspace({ requireToken: false });
   await page.setRequestInterception(true);
-  page.on('request', async request => {
+  const respondToRequest = async request => {
     if (!/^https?:/.test(request.url())) return request.continue();
     if (request.url() === 'https://purdue.brightspace.com/d2l/home') return request.respond({ status: 200, contentType: 'text/html', body: '<!doctype html><title>Packaged Firefox test</title><d2l-navigation-main-header><div slot="right"></div></d2l-navigation-main-header><main>Release verification</main>' });
     const fixture = COURSE_FILE_FIXTURES.find(file => new URL(request.url()).pathname.endsWith(`/content/topics/${file.id}/file`));
@@ -108,6 +110,14 @@ try {
       return request.respond({ status: response.status, contentType: 'application/json', body: await response.text() });
     }
     return request.respond({ status: 404, contentType: 'application/json', body: '{}' });
+  };
+  page.on('request', request => {
+    const task = respondToRequest(request).catch(error => {
+      // Firefox can close a BiDi response target while the test browser exits.
+      if (!closingBrowser || error.name !== 'TargetCloseError') requestErrors.push(error);
+    });
+    requestTasks.add(task);
+    task.then(() => requestTasks.delete(task));
   });
   await page.goto('https://purdue.brightspace.com/d2l/home');
   await page.waitForSelector('#boilerspace-root');
@@ -318,10 +328,15 @@ try {
   });
   check('reloading the packaged extension retains its saved conversations', retained.version === version && retained.chats[0].messages.some(message => message.role === 'assistant' && message.citations?.length));
   check('routine work opens no Ed, Piazza or Gradescope tabs', openedSites.length === 0);
+  await Promise.all([...requestTasks]);
+  assert.equal(requestErrors.length, 0, requestErrors.map(error => error.stack).join('\n'));
   check('the Brightspace page has no JavaScript errors', errors.length === 0);
   writeFileSync(path.join(out, 'report.json'), JSON.stringify({ browser: browserVersion, version, checks }, null, 2) + '\n');
   console.log(`${checks.length} packaged Firefox checks passed (${browserVersion}).`);
 } finally {
+  closingBrowser = true;
   await browser?.close();
+  await Promise.all([...requestTasks]);
   rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  assert.equal(requestErrors.length, 0, requestErrors.map(error => error.stack).join('\n'));
 }

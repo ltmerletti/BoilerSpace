@@ -64,7 +64,7 @@ test('background data writes and privileged readers reject untrusted senders', a
   };
   try {
     for (const sender of [{}, { id: 'other', url: 'moz-extension://test/sidepanel.html' }, { id: 'test', url: 'https://untrusted.example/', tab: { id: 2 } }, { id: 'test', url: 'https://purdue.brightspace.com/d2l/home', tab: { id: 3 } }]) {
-      for (const type of ['boilerspace-save-syllabus', 'boilerspace-open-syllabus-access', 'boilerspace-discussions', 'boilerspace-gradescope']) {
+      for (const type of ['boilerspace-data', 'boilerspace-save-syllabus', 'boilerspace-open-syllabus-access', 'boilerspace-discussions', 'boilerspace-gradescope']) {
         assert.equal(handleMessage({ type, action: 'connect' }, sender, () => {}), false);
       }
     }

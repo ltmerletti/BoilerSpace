@@ -4,6 +4,7 @@
 import * as store from './store.js';
 import { isSyllabusAccessError } from './syllabus-access.js';
 import { saveSyllabusEntry } from './syllabus-store.js';
+import { assertDataEpoch, dataEpoch, dataRequest } from './data-lifecycle.js';
 import { chatCompletion } from './genai.js';
 import { extractText } from './extract.js';
 import { canReachBrightspace, discoverSyllabusOnPage, downloadTopicFile } from './sync.js';
@@ -24,27 +25,29 @@ export function withSyllabusSources(snapshot, sources = {}) {
   })) };
 }
 
-async function discoverSource(snapshot, courseId, { force, openTab, now, discover }) {
+async function discoverSource(snapshot, courseId, { force, openTab, now, discover, epoch }) {
   const cached = ((await store.get(store.KEYS.syllabusSources)) ?? {})[courseId];
   if (!force && !cached?.error && cached?.readerVersion === DISCOVERY_VERSION && now - Date.parse(cached.checkedAt) < DISCOVERY_RETRY_MS) {
     return cached.topic ?? null;
   }
-  if (discoveries.has(courseId)) return discoveries.get(courseId);
+  const discoveryKey = `${epoch}:${courseId}`;
+  if (discoveries.has(discoveryKey)) return discoveries.get(discoveryKey);
   const pending = (async () => {
     try {
       const topic = await discover(courseId, { versions: snapshot.versions, open: openTab });
-      await saveSyllabusEntry(store.KEYS.syllabusSources, courseId, { topic, readerVersion: DISCOVERY_VERSION, checkedAt: now.toISOString() });
+      await saveSyllabusEntry(store.KEYS.syllabusSources, courseId, { topic, readerVersion: DISCOVERY_VERSION, checkedAt: now.toISOString() }, epoch);
       return topic;
     } catch (err) {
-      await saveSyllabusEntry(store.KEYS.syllabusSources, courseId, { ...cached, error: err.message, readerVersion: DISCOVERY_VERSION, checkedAt: now.toISOString() });
+      if (err.code === 'data-cleared') throw err;
+      await saveSyllabusEntry(store.KEYS.syllabusSources, courseId, { ...cached, error: err.message, readerVersion: DISCOVERY_VERSION, checkedAt: now.toISOString() }, epoch);
       throw err;
     }
   })();
-  discoveries.set(courseId, pending);
+  discoveries.set(discoveryKey, pending);
   try {
     return await pending;
   } finally {
-    discoveries.delete(courseId);
+    discoveries.delete(discoveryKey);
   }
 }
 const DEADLINE_KINDS = ['exam', 'quiz', 'assignment', 'project', 'lab', 'presentation', 'other'];
@@ -396,24 +399,22 @@ function brightspaceItemsFor(snapshot, courseId) {
   return [...data.assignments, ...data.quizzes, ...events];
 }
 
-const saveRecord = async (courseId, record) => {
-  await saveSyllabusEntry(store.KEYS.syllabi, courseId, record);
+const saveRecord = async (courseId, record, epoch) => {
+  await saveSyllabusEntry(store.KEYS.syllabi, courseId, record, epoch);
   return record;
 };
 
-export async function chooseSyllabus(courseId, choice) {
-  await store.update(store.KEYS.syllabusChoice, (all) => {
-    const next = { ...(all ?? {}) };
-    if (choice === null) delete next[courseId];
-    else next[courseId] = choice;
-    return next;
-  }, {});
+export async function chooseSyllabus(courseId, choice, epoch) {
+  epoch ??= await dataEpoch();
+  await dataRequest('syllabus-choice', { courseId, choice, epoch });
 }
 
 const textFile = (text) => ({ bytes: new TextEncoder().encode(text), fileName: 'overview.txt', contentType: 'text/plain' });
 
 // Automatic runs use an existing Brightspace session. Syllabus discovery never holds the course-sync lock.
-export async function processCourse(snapshot, courseId, { force = false, openTab = true, onStatus = () => {}, now = new Date(), discover = discoverSyllabusOnPage, download = downloadTopicFile } = {}) {
+export async function processCourse(snapshot, courseId, { force = false, openTab = true, onStatus = () => {}, now = new Date(), discover = discoverSyllabusOnPage, download = downloadTopicFile, epoch } = {}) {
+  epoch ??= await dataEpoch();
+  await assertDataEpoch(epoch);
   const course = snapshot.courses.find((c) => c.id === courseId);
   const data = snapshot.data.find((d) => d.courseId === courseId);
   if (!course || !data) return null;
@@ -424,7 +425,7 @@ export async function processCourse(snapshot, courseId, { force = false, openTab
   const candidates = picked?.chosen ? [picked] : syllabusCandidates(data, course);
   const unavailableSources = (existing?.unavailableSources ?? []).filter((source) => now - Date.parse(source.checkedAt) < DISCOVERY_RETRY_MS);
   const sourceMatches = (source, topic) => source.id === topic.id && source.fileUrl === topic.fileUrl && source.updatedAt === topic.updatedAt;
-  const save = (record) => saveRecord(courseId, { ...record, unavailableSources });
+  const save = (record) => saveRecord(courseId, { ...record, unavailableSources }, epoch);
   let discovered = false;
 
   // Any attempt to read a navigation source resolves its current document in the browser.
@@ -435,7 +436,7 @@ export async function processCourse(snapshot, courseId, { force = false, openTab
     discovered = true;
     onStatus(`Looking for the ${shortCourseLabel(course)} syllabus…`);
     try {
-      const refreshed = await discoverSource(snapshot, courseId, { force: true, openTab, now, discover });
+      const refreshed = await discoverSource(snapshot, courseId, { force: true, openTab, now, discover, epoch });
       if (refreshed) candidates[0] = refreshed;
       else candidates.shift();
     } catch (err) {
@@ -443,6 +444,7 @@ export async function processCourse(snapshot, courseId, { force = false, openTab
     }
   }
   while (true) {
+    await assertDataEpoch(epoch);
     let topic = candidates.shift();
     if (!topic) {
       if (discovered || picked?.chosen) break;
@@ -450,7 +452,7 @@ export async function processCourse(snapshot, courseId, { force = false, openTab
       discovered = true;
       onStatus(`Looking for the ${shortCourseLabel(course)} syllabus…`);
       try {
-        topic = await discoverSource(snapshot, courseId, { force: force || existing?.status === 'error', openTab, now, discover });
+        topic = await discoverSource(snapshot, courseId, { force: force || existing?.status === 'error', openTab, now, discover, epoch });
       } catch (err) {
         return save({ courseId, status: 'error', error: err.message, checkedAt: now.toISOString(), previous: usableRecord(existing) });
       }
@@ -479,7 +481,7 @@ export async function processCourse(snapshot, courseId, { force = false, openTab
     }
     // A successful manual retry clears an earlier missing-file result for this source.
     for (let i = unavailableSources.length - 1; i >= 0; i--) if (sourceMatches(unavailableSources[i], topic)) unavailableSources.splice(i, 1);
-    return readAndExtract({ snapshot, course, base: { ...base, unavailableSources }, existing, force, onStatus, now, load: async () => file });
+    return readAndExtract({ snapshot, course, base: { ...base, unavailableSources }, existing, force, onStatus, now, epoch, load: async () => file });
   }
   return save({ courseId, status: 'none', checkedAt: now.toISOString(), previous: usableRecord(existing) });
 }
@@ -493,6 +495,8 @@ function temporarySyllabusFailure(record) {
 
 // Each pass covers every current course, then retries temporary failures once.
 export async function processCurrentSyllabi(snapshot, { courseId = null, onStatus = () => {}, wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), ...options } = {}) {
+  const epoch = options.epoch ?? await dataEpoch();
+  options = { ...options, epoch };
   const courses = (snapshot?.courses ?? []).filter((course) => course.current && (!courseId || course.id === courseId));
   const hasSource = (course) => syllabusCandidates(snapshot.data.find((d) => d.courseId === course.id) ?? {}, course).length > 0;
   courses.sort((a, b) => Number(hasSource(b)) - Number(hasSource(a)));
@@ -514,22 +518,25 @@ export async function processCurrentSyllabi(snapshot, { courseId = null, onStatu
 }
 
 // A syllabus the student uploaded because it isn't in Brightspace as a file (or BoilerSpace picked the wrong one).
-export async function readUploadedSyllabus(snapshot, courseId, file, { onStatus = () => {}, now = new Date() } = {}) {
+export async function readUploadedSyllabus(snapshot, courseId, file, { onStatus = () => {}, now = new Date(), epoch } = {}) {
+  epoch ??= await dataEpoch();
+  await assertDataEpoch(epoch);
   const course = snapshot.courses.find((c) => c.id === courseId);
   if (!course) return null;
-  await chooseSyllabus(courseId, 'upload');
+  await chooseSyllabus(courseId, 'upload', epoch);
   const existing = ((await store.get(store.KEYS.syllabi)) ?? {})[courseId];
   const base = { courseId, source: 'upload', topicId: 'upload', title: file.fileName, url: null, updatedAt: null, chosen: true, checkedAt: now.toISOString() };
-  return readAndExtract({ snapshot, course, base, existing, force: true, onStatus, now, load: async () => file });
+  return readAndExtract({ snapshot, course, base, existing, force: true, onStatus, now, epoch, load: async () => file });
 }
 
-async function readAndExtract({ snapshot, course, base, existing, force, onStatus, now, load }) {
+async function readAndExtract({ snapshot, course, base, existing, force, onStatus, now, epoch, load }) {
   const courseId = course.id;
   const label = shortCourseLabel(course);
-  const save = (record) => saveRecord(courseId, record);
+  const save = (record) => saveRecord(courseId, record, epoch);
   try {
     onStatus(`Reading the ${label} syllabus…`);
     const file = await load();
+    await assertDataEpoch(epoch);
     const { kind, pages, warning } = Array.isArray(file.pages) ? file : await extractText(file);
     const readable = pages.filter((p) => p.text);
     if (!readable.length) return save({ ...base, status: 'unreadable', kind, warning: warning ?? 'No text could be read from this file.' });
@@ -539,6 +546,7 @@ async function readAndExtract({ snapshot, course, base, existing, force, onStatu
 
     onStatus(`Finding dates and policies in the ${label} syllabus…`);
     const { messages, truncated } = buildPrompt(course, readable, now);
+    await assertDataEpoch(epoch);
     const message = await chatCompletion({
       messages,
       temperature: 0,
@@ -563,6 +571,7 @@ async function readAndExtract({ snapshot, course, base, existing, force, onStatu
       ...facts,
     });
   } catch (err) {
+    if (err.code === 'data-cleared') throw err;
     return save({ ...base, status: 'error', error: err.message, errorStatus: err.status ?? null, previous: existing?.status === 'done' ? existing : existing?.previous ?? null });
   }
 }

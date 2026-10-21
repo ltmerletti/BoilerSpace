@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { handleGenaiDataRequest } from '../extension/lib/genai-store.js';
 
 async function fixture(responses, { abortDuringWait = false } = {}) {
   const saved = Object.fromEntries(['chrome', 'fetch', 'setTimeout', 'clearTimeout'].map(key => [key, globalThis[key]]));
@@ -8,6 +9,7 @@ async function fixture(responses, { abortDuringWait = false } = {}) {
   const calls = [], delays = [], controller = new AbortController();
   Date.now = () => now;
   globalThis.chrome = { storage: { local: { get: async () => ({ genai: { key: 'synthetic', model: 'qwen3.8:27b' } }) } } };
+  chrome.runtime = { sendMessage: async message => ({ ok: true, data: await handleGenaiDataRequest(message) }) };
   globalThis.fetch = async (_url, options) => {
     calls.push(JSON.parse(options.body));
     return responses[Math.min(calls.length - 1, responses.length - 1)]();

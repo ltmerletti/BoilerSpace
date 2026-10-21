@@ -4,7 +4,17 @@ What changed, what prompted it, and what it means when you use BoilerSpace. Each
 
 [Back to the README](README.md) · [Full commit history](https://github.com/ltmerletti/BoilerSpace/commits/main)
 
+## In progress
+
+- **Read earlier text while an answer is writing.** Scrolling up pauses automatic following, even for a small movement near the bottom. Opening the work log and finishing an answer keep your reading position. Scroll back to the bottom to resume following, or press End to jump to the latest text.
+
+- **Keep narration from moving the interface around.** Streaming drafts no longer repeatedly collapse and reopen the work log between tool calls. Your disclosure choices stay in place, including when an answer finishes while you are reading the work log.
+
+- **Keep disconnect and clear actions final.** A model-list refresh cannot restore a disconnected account or undo a newer model choice. Pending syllabus reads and chat writes cannot bring back data after you clear it.
+
 ## October 18, 2026
+
+- **Select text while an answer arrives.** Incoming tokens update only the changed text, so dragging to highlight a passage no longer loses the selection. Selecting text pauses automatic scrolling, and highlights survive answer completion and background redraws. Shift-based selection keeps its normal browser behavior.
 
 - **Read image-heavy PDFs completely.** Bundle the PDF reader's JPEG2000 decoder and color-conversion assets rather than leaving those optional files out of the install. A synthetic image PDF now checks the rendered pixels in both browsers, so a blank page cannot pass as a successful render.
 

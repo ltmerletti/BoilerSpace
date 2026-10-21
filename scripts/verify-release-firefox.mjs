@@ -9,6 +9,7 @@ import path from 'node:path';
 import puppeteer from 'puppeteer-core';
 import { getInstalledBrowsers } from '@puppeteer/browsers';
 import { fakeBrightspace, pdfWithPages, pdfWithJpxImage, snapshotFixture } from '../tests/helpers.mjs';
+import { installSelectionStream, selectionCoordinates, selectionState } from '../tests/text-selection-browser.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
 const out = process.env.VERIFY_OUT ?? path.join(root, '.verify-tmp/release-firefox');
@@ -29,13 +30,10 @@ const wait = async read => {
   throw new Error('Packaged Firefox check timed out.');
 };
 async function reloadAfterInstall(page) {
-  try { await page.reload({ waitUntil: 'domcontentloaded' }); }
-  catch (error) {
-    // Firefox can abort the navigation while replacing the installed add-on's
-    // extension frames. Start a fresh navigation after that specific race.
-    if (!String(error).includes('NS_BINDING_ABORTED')) throw error;
-    await page.goto('https://purdue.brightspace.com/d2l/home', { waitUntil: 'domcontentloaded' });
-  }
+  // Leave the old extension frames before loading the reinstalled add-on.
+  // Reloading their parent during replacement can strand Firefox's BiDi waiter.
+  await page.goto('about:blank', { waitUntil: 'domcontentloaded' });
+  await page.goto('https://purdue.brightspace.com/d2l/home', { waitUntil: 'domcontentloaded' });
 }
 try {
   const executablePath = process.env.FIREFOX_PATH ?? (await getInstalledBrowsers({ cacheDir: path.join(root, '.verify-tmp/browsers') })).find(browser => browser.browser === 'firefox')?.executablePath;
@@ -190,6 +188,100 @@ try {
     }
   });
   check('a page reload restores the panel and saved chat', await reopened.evaluate(async () => (await chrome.storage.local.get('chats')).chats[0].messages.some(message => message.role === 'assistant' && message.citations?.length)));
+
+  // Hold tokens and DONE separately so upward scrolling is tested both during
+  // streaming and at the transition to the saved answer.
+  await reopened.evaluate(() => {
+    const original = window.fetch;
+    window.fetch = async (url, options) => {
+      if (!String(url).endsWith('/api/chat/completions')) return original(url, options);
+      const body = JSON.parse(options.body);
+      if (!body.stream) return Response.json({ choices: [{ message: { content: 'Scroll regression' } }] });
+      // Complete the required lookup before holding the final answer. Otherwise
+      // DONE starts another model turn instead of completing the conversation.
+      if (!body.messages.some(message => message.role === 'tool')) {
+        const delta = { tool_calls: [{ index: 0, id: 'scroll-courses', type: 'function', function: { name: 'list_courses', arguments: '{}' } }] };
+        return new Response(`data: ${JSON.stringify({ choices: [{ delta }] })}\n\ndata: [DONE]\n\n`, { headers: { 'Content-Type': 'text/event-stream' } });
+      }
+      const encoder = new TextEncoder();
+      return new Response(new ReadableStream({ start(controller) {
+        const write = text => controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}\n\n`));
+        write(Array.from({ length: 30 }, (_, index) => `Paragraph ${index + 1}. ${'Synthetic course explanation for checking the reader position. '.repeat(3)}\n\n`).join(''));
+        window.nextScrollChunk = () => write('Another synthetic explanation. '.repeat(30));
+        window.finishScrollAnswer = () => { controller.enqueue(encoder.encode('data: [DONE]\n\n')); controller.close(); };
+      } }), { headers: { 'Content-Type': 'text/event-stream' } });
+    };
+    document.querySelector('[data-view="ask"]').click();
+    const input = document.querySelector('textarea[aria-label="Question"]');
+    input.value = 'Explain the course concepts for a local scroll regression.';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector('button[aria-label="Send"]').click();
+  });
+  const scrollMetrics = () => reopened.evaluate(() => {
+    const el = document.querySelector('.messages');
+    return { top: el.scrollTop, gap: el.scrollHeight - el.scrollTop - el.clientHeight, pending: !!document.querySelector('#pending') };
+  });
+  await wait(async () => await reopened.evaluate(() => !!window.nextScrollChunk && document.querySelector('#pending .streaming-answer')?.textContent.length > 1000) && (await scrollMetrics()).gap <= 1);
+  const messages = await reopened.$('.messages');
+  await messages.hover();
+  await page.mouse.wheel({ deltaY: -5 });
+  await wait(async () => (await scrollMetrics()).gap > 0);
+  await new Promise(resolve => setTimeout(resolve, 200));
+  const paused = await scrollMetrics();
+  check('a small real Firefox wheel scroll moves away from the answer bottom', paused.gap > 0 && paused.gap < 12);
+  await reopened.evaluate(() => window.nextScrollChunk());
+  await wait(async () => (await scrollMetrics()).gap > paused.gap + 20);
+  check('streaming tokens do not pull a paused Firefox reader back down', Math.abs((await scrollMetrics()).top - paused.top) < 2);
+  await messages.evaluate(el => { el.tabIndex = -1; el.focus({ preventScroll: true }); });
+  await page.keyboard.press('End');
+  await wait(async () => (await scrollMetrics()).gap <= 1);
+  await reopened.evaluate(() => window.nextScrollChunk());
+  await new Promise(resolve => setTimeout(resolve, 200));
+  check('End resumes following the live answer in Firefox', (await scrollMetrics()).gap <= 1);
+  await page.mouse.wheel({ deltaY: -40 });
+  await wait(async () => (await scrollMetrics()).gap > 20);
+  await new Promise(resolve => setTimeout(resolve, 200));
+  const beforeDone = await scrollMetrics();
+  check('the Firefox reader is paused within the old eighty-pixel completion threshold', beforeDone.gap > 20 && beforeDone.gap < 80);
+  await reopened.evaluate(() => window.finishScrollAnswer());
+  await wait(async () => !(await scrollMetrics()).pending);
+  check('finishing an answer preserves the paused Firefox reader position', Math.abs((await scrollMetrics()).top - beforeDone.top) < 2);
+
+  await reopened.evaluate(installSelectionStream);
+  await reopened.evaluate(() => {
+    const input = document.querySelector('textarea[aria-label="Question"]');
+    input.value = 'Explain the course material.';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector('button[aria-label="Send"]').click();
+  });
+  await wait(() => reopened.evaluate(() => window.writeSelectionChunk && !!document.querySelector('#pending .streaming-answer p')));
+  const coordinates = await reopened.evaluate(selectionCoordinates);
+  const frameBox = await (await reopened.frameElement()).boundingBox();
+  await page.mouse.move(frameBox.x + coordinates.end.x, frameBox.y + coordinates.end.y);
+  await page.mouse.down();
+  await page.mouse.move(frameBox.x + coordinates.start.x, frameBox.y + coordinates.start.y, { steps: 12 });
+  const selected = await reopened.evaluate(selectionState);
+  check('real Firefox mouse dragging selects answer text backwards', selected.text === 'Select this' && selected.backward);
+  await reopened.evaluate(() => window.writeSelectionChunk('More details keep arriving in the same paragraph. '));
+  await wait(() => reopened.evaluate(() => document.querySelector('#pending .streaming-answer p').textContent.includes('More details')));
+  check('Firefox retains a held mouse selection as text is appended', (await reopened.evaluate(selectionState)).text === selected.text);
+  await page.mouse.up();
+  await reopened.evaluate(() => window.writeSelectionChunk('\n\n' + 'Another paragraph makes the answer longer. '.repeat(30)));
+  await wait(() => reopened.evaluate(() => document.querySelectorAll('#pending .streaming-answer p').length === 2));
+  const growing = await reopened.evaluate(selectionState);
+  check('Firefox keeps selection direction and reading position as the answer grows', growing.text === selected.text && growing.backward && Math.abs(growing.top - selected.top) < 2);
+  await reopened.evaluate(() => window.finishSelectionStream());
+  await wait(() => reopened.evaluate(() => !document.querySelector('#pending')));
+  const completed = await reopened.evaluate(selectionState);
+  check('Firefox preserves selected text and direction when the answer is saved', completed.text === selected.text && completed.backward);
+  await reopened.evaluate(async () => {
+    const { chats } = await chrome.storage.local.get('chats');
+    chats[0].title = 'Updated chat title';
+    await chrome.storage.local.set({ chats });
+  });
+  await wait(() => reopened.evaluate(() => document.querySelector('.chat-title')?.textContent === 'Updated chat title'));
+  check('Firefox retains text selection through a background panel redraw', (await reopened.evaluate(selectionState)).text === selected.text);
+
   await browser.installExtension(archive);
   await reloadAfterInstall(page);
   const retained = await wait(async () => {

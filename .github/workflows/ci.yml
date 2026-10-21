@@ -92,12 +92,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [ui, chat-streaming, syllabi, discussions, discussion-recovery, gradescope, discussion-search-chromium, discussion-search-firefox]
+        suite: [ui, chat-streaming, chat-narration, data-lifecycle, syllabi, discussions, discussion-recovery, gradescope, discussion-search-chromium, discussion-search-firefox]
         include:
           - suite: ui
             script: scripts/verify.mjs
           - suite: chat-streaming
             script: scripts/verify-chat-streaming.mjs
+          - suite: chat-narration
+            script: scripts/verify-chat-narration.mjs
+          - suite: data-lifecycle
+            script: scripts/verify-data-lifecycle.mjs
           - suite: syllabi
             script: scripts/verify-syllabi.mjs
           - suite: discussions

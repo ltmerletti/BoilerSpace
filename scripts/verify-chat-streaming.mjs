@@ -5,20 +5,21 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright';
 import { snapshotFixture } from '../tests/helpers.mjs';
+import { installSelectionStream, selectionCoordinates, selectionState } from '../tests/text-selection-browser.mjs';
 const profile = mkdtempSync(path.join(tmpdir(), 'boilerspace-stream-'));
 const out = process.env.VERIFY_OUT ?? '.verify-tmp/chat-streaming';
 mkdirSync(out, { recursive: true });
 const checks = [], errors = [];
 const extension = path.resolve(process.env.VERIFY_EXTENSION ?? 'extension');
 const check = (name, result) => { assert.ok(result, name); checks.push(name); console.log(`PASS  ${name}`); };
-let context;
+let context, page;
 try {
   context = await chromium.launchPersistentContext(profile, { headless: true, channel: 'chromium', viewport: { width: 400, height: 750 }, args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`] });
   await context.route('https://**/*', route => route.abort());
   let [worker] = context.serviceWorkers();
   worker ??= await context.waitForEvent('serviceworker');
   const origin = `chrome-extension://${new URL(worker.url()).host}`;
-  const page = await context.newPage();
+  page = await context.newPage();
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(`${origin}/document.html`);
   await page.evaluate(async snapshot => {
@@ -50,7 +51,7 @@ try {
       if (turn === 2) await new Promise(resolve => { window.releaseSecondTurn = resolve; });
       if (turn === 3) await new Promise(resolve => { window.releaseThirdTurn = resolve; });
       const deltas = isFinal
-        ? Array.from({ length: 130 }, (_, index) => ({ content: `\n\nParagraph ${index + 1}. These are the posted course dates and instructions, with context from the source.` }))
+        ? Array.from({ length: 180 }, (_, index) => ({ content: `\n\nParagraph ${index + 1}. These are the posted course dates and instructions, with context from the source.` }))
         : turn === 1
           ? [{ content: 'Let me find ' }, { content: 'the posted deadlines.' }]
           : turn === 2
@@ -63,8 +64,10 @@ try {
           if (turn === 2 && delta.tool_calls) await new Promise(resolve => { window.releaseToolCall = resolve; });
           if (turn === 3 && index === 1) await new Promise(resolve => { window.releaseThirdText = resolve; });
           await new Promise(resolve => setTimeout(resolve, isFinal ? 55 : 200));
+          while (isFinal && window.syntheticPauseFinal) await new Promise(resolve => setTimeout(resolve, 10));
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta }] })}\n\n`));
         }
+        if (isFinal) await new Promise(resolve => { window.releaseDone = resolve; });
         controller.enqueue(encoder.encode('data: [DONE]\n\n'));
         controller.close();
       } });
@@ -106,21 +109,41 @@ try {
   await page.locator('#pending > .trace > summary').click();
   await page.evaluate(() => window.releaseSecondTurn());
   await page.waitForFunction(() => typeof window.releaseToolCall === 'function');
-  check('candidate writing automatically collapses the research log', !(await page.locator('#pending > .trace').evaluate(el => el.open)) && await page.locator('.streaming-answer').isVisible());
+  check('candidate writing leaves the research log open instead of collapsing it each round', await page.locator('#pending > .trace').evaluate(el => el.open) && await page.locator('.streaming-answer').isVisible());
   await page.evaluate(() => window.releaseToolCall());
   await page.waitForFunction(() => typeof window.releaseThirdTurn === 'function');
-  check('a candidate followed by a tool becomes commentary and reopens research', await page.locator('#pending > .trace').evaluate(el => el.open) && await page.locator('#pending .trace-commentary').count() === 2 && await page.locator('.streaming-answer').count() === 0);
+  check('a candidate followed by a tool becomes commentary without changing the research disclosure', await page.locator('#pending > .trace').evaluate(el => el.open) && await page.locator('#pending .trace-commentary').count() === 2 && await page.locator('.streaming-answer').count() === 0);
   await page.locator('#pending > .trace > summary').click();
   await page.evaluate(() => window.releaseThirdTurn());
   await page.waitForFunction(() => typeof window.releaseThirdText === 'function');
   check('more reasoning preserves a manually closed research log', !(await page.locator('#pending > .trace').evaluate(el => el.open)));
   await page.evaluate(() => window.releaseThirdText());
   await page.waitForFunction(() => typeof window.releaseFinal === 'function');
-  check('subsequent tools reopen the work log without standalone narration copies', await page.locator('#pending > .trace').evaluate(el => el.open) && await page.locator('#pending > .live-commentary').count() === 0);
+  check('subsequent tools preserve a manually closed work log without standalone narration copies', !(await page.locator('#pending > .trace').evaluate(el => el.open)) && await page.locator('#pending > .live-commentary').count() === 0);
   check('multiple narration rounds remain interleaved with their tools during generation', JSON.stringify(await page.locator('#pending .trace-steps > li').evaluateAll(elements => elements.map(element => element.dataset.tool ?? element.textContent))) === JSON.stringify(['Let me find the posted deadlines.', 'I will check the upcoming course work.', 'list_upcoming', 'I will check the saved assignments too.', 'list_items']));
   await page.evaluate(() => window.releaseFinal());
+  await page.waitForFunction(() => (document.querySelector('.streaming-answer')?.textContent.length ?? 0) > 100);
+  const messages = page.locator('.messages');
+  const position = () => messages.evaluate(el => ({ top: el.scrollTop, gap: el.scrollHeight - el.scrollTop - el.clientHeight }));
+  const pauseTokens = async () => {
+    await page.evaluate(() => { window.syntheticPauseFinal = true; });
+    await page.waitForTimeout(100);
+  };
+  const advanceTokens = async () => {
+    const length = await page.locator('.streaming-answer').evaluate(el => el.textContent.length);
+    await page.evaluate(() => { window.syntheticPauseFinal = false; });
+    await page.waitForFunction(length => document.querySelector('.streaming-answer').textContent.length > length + 180, length);
+    await pauseTokens();
+  };
+  await pauseTokens();
+  await page.locator('#pending > .trace > summary').click();
+  const disclosureTop = (await position()).top;
+  await advanceTokens();
+  check('opening a visible activity block pauses following without moving its summary away', Math.abs((await position()).top - disclosureTop) < 1 && await page.locator('#pending > .trace').evaluate(el => el.open));
+  await page.locator('#pending > .trace > summary').click();
+  await page.evaluate(() => { window.syntheticPauseFinal = false; });
   await page.waitForFunction(() => (document.querySelector('.streaming-answer')?.textContent.length ?? 0) > 700);
-  check('the first final-answer text folds all prior narration into the activity block', !(await page.locator('#pending > .trace').evaluate(el => el.open)) && await page.locator('#pending > .live-commentary').count() === 0 && !(await page.locator('#pending .trace-commentary').first().isVisible()));
+  check('final-answer text preserves a manually closed activity block with all prior narration inside it', !(await page.locator('#pending > .trace').evaluate(el => el.open)) && await page.locator('#pending > .live-commentary').count() === 0 && !(await page.locator('#pending .trace-commentary').first().isVisible()));
   const heldClick = async locator => {
     await locator.scrollIntoViewIfNeeded();
     const element = await locator.elementHandle();
@@ -143,18 +166,70 @@ try {
   check('tool details close while tokens arrive', !(await page.locator('#pending .tool-call').first().evaluate(el => el.open)));
   await heldClick(page.locator('#pending .trace > summary'));
   check('the activity block closes while tokens arrive', !(await page.locator('#pending .trace').evaluate(el => el.open)));
-  const messages = page.locator('.messages');
+  await pauseTokens();
+  await messages.hover();
+  await page.mouse.wheel(0, 100000);
+  await page.waitForTimeout(120);
+  check('a deliberate downward wheel can return to the bottom', (await position()).gap < 1);
+  await page.mouse.wheel(0, -5);
+  await page.waitForTimeout(120);
+  const smallScroll = await position();
+  check('a small upward wheel actually moves the conversation before more tokens', smallScroll.gap >= 4 && smallScroll.gap <= 6);
+  await advanceTokens();
+  check('a five-pixel upward gesture stays paused while tokens arrive', Math.abs((await position()).top - smallScroll.top) < 1);
+  await messages.evaluate(el => { el.scrollTop = el.scrollHeight; el.dispatchEvent(new Event('scroll')); });
+  await page.waitForTimeout(80);
+  const programmaticTop = (await position()).top;
+  await advanceTokens();
+  check('programmatic scrolling to the bottom does not resume paused following', Math.abs((await position()).top - programmaticTop) < 1 && (await position()).gap > 5);
+  await page.mouse.wheel(0, 100000);
+  await page.waitForTimeout(120);
+  await advanceTokens();
+  check('a deliberate downward return resumes following the live answer', (await position()).gap < 1);
+  await messages.evaluate(el => { el.tabIndex = -1; el.focus({ preventScroll: true }); });
+  await messages.press('ArrowUp');
+  await page.waitForTimeout(300);
+  const keyboardTop = (await position()).top;
+  await advanceTokens();
+  check('upward keyboard navigation pauses following while tokens arrive', Math.abs((await position()).top - keyboardTop) < 1);
+  await messages.press('End');
+  await page.waitForTimeout(400);
+  await advanceTokens();
+  check('End deliberately resumes following after keyboard navigation', (await position()).gap < 1);
+  await page.mouse.wheel(0, -5);
+  await page.waitForTimeout(120);
+  await messages.evaluate(el => { el.scrollTop = el.scrollHeight - el.clientHeight - 400; });
+  await page.setViewportSize({ width: 720, height: 750 });
+  await page.waitForTimeout(120);
+  const resized = await position();
+  check('widening the panel clamps the paused reading position to the new bottom', resized.gap < 1);
+  await advanceTokens();
+  check('a resize that clamps the reading position cannot resume following', Math.abs((await position()).top - resized.top) < 1);
+  await page.setViewportSize({ width: 400, height: 750 });
+  await page.waitForTimeout(120);
+  await page.mouse.wheel(0, 100000);
+  await page.waitForTimeout(120);
   await messages.hover();
   await page.mouse.wheel(0, -500);
   await page.waitForTimeout(150);
   const before = await messages.evaluate(el => el.scrollTop);
-  await page.waitForTimeout(700);
+  await advanceTokens();
   const after = await messages.evaluate(el => el.scrollTop);
   check('scrolling up stays at the chosen position while tokens arrive', Math.abs(after - before) < 3);
-  await messages.evaluate(el => { el.scrollTop = el.scrollHeight; el.dispatchEvent(new Event('scroll')); });
-  await page.waitForTimeout(200);
+  await page.mouse.wheel(0, 100000);
+  await page.waitForTimeout(120);
+  await advanceTokens();
   check('returning to the bottom resumes following the live answer', await messages.evaluate(el => el.scrollHeight - el.scrollTop - el.clientHeight < 5));
+  await page.evaluate(() => { window.syntheticPauseFinal = false; });
+  await page.waitForFunction(() => typeof window.releaseDone === 'function');
+  await messages.hover();
+  await page.mouse.wheel(0, -40);
+  await page.waitForTimeout(120);
+  const completionTop = (await position()).top;
+  check('the reader is above the bottom before completion', (await position()).gap >= 39 && (await position()).gap <= 41);
+  await page.evaluate(() => window.releaseDone());
   await page.locator('#pending').waitFor({ state: 'detached' });
+  check('completion preserves an explicitly paused reading position within eighty pixels of the bottom', Math.abs((await position()).top - completionTop) < 1);
   const answer = page.locator('.message.assistant').last();
   check('interim commentary is collapsed with the work log after the final answer', !(await answer.locator('.trace-commentary').first().isVisible()) && !(await answer.innerText()).includes('I will check'));
   await answer.locator('.trace > summary').click();
@@ -172,7 +247,45 @@ try {
   await page.getByRole('button', { name: 'Stop', exact: true }).click();
   await page.locator('#pending').waitFor({ state: 'detached' });
   check('a stopped request saves a resumable message', await page.getByRole('button', { name: 'Continue', exact: true }).count() === 1);
+  await page.evaluate(installSelectionStream);
+  await page.getByLabel('Question', { exact: true }).fill('Explain the course material.');
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await page.waitForFunction(() => window.writeSelectionChunk && document.querySelector('#pending .streaming-answer p'));
+  const coordinates = await page.evaluate(selectionCoordinates);
+  await page.mouse.move(coordinates.end.x, coordinates.end.y);
+  await page.mouse.down();
+  await page.mouse.move(coordinates.start.x, coordinates.start.y, { steps: 12 });
+  const selected = await page.evaluate(selectionState);
+  check('mouse dragging backwards selects the actual answer text', selected.text === 'Select this' && selected.backward);
+  await page.evaluate(() => window.writeSelectionChunk('More details keep arriving in the same paragraph. '));
+  await page.waitForFunction(() => document.querySelector('#pending .streaming-answer p').textContent.includes('More details'));
+  check('an active mouse selection survives a token appended to its text node', (await page.evaluate(selectionState)).text === selected.text);
+  await page.mouse.up();
+  await page.evaluate(() => window.writeSelectionChunk('\n\n' + 'Another paragraph makes the answer longer. '.repeat(30)));
+  await page.waitForFunction(() => document.querySelectorAll('#pending .streaming-answer p').length === 2);
+  const growing = await page.evaluate(selectionState);
+  check('selection direction and scroll position survive further streamed paragraphs', growing.text === selected.text && growing.backward && Math.abs(growing.top - selected.top) < 1);
+  await page.evaluate(() => window.finishSelectionStream());
+  await page.locator('#pending').waitFor({ state: 'detached' });
+  const completed = await page.evaluate(selectionState);
+  check('saving the completed answer preserves selected text and direction', completed.text === selected.text && completed.backward);
+  await page.evaluate(async () => {
+    const { chats } = await chrome.storage.local.get('chats');
+    chats[0].title = 'Updated chat title';
+    await chrome.storage.local.set({ chats });
+  });
+  await page.waitForFunction(() => document.querySelector('.chat-title')?.textContent === 'Updated chat title');
+  check('a background chat update preserves selection through a full panel redraw', (await page.evaluate(selectionState)).text === selected.text);
   check('no browser page errors', errors.length === 0);
   await page.screenshot({ path: path.join(out, 'chat-streaming.png') });
   writeFileSync(path.join(out, 'results.json'), JSON.stringify({ checks, errors }, null, 2));
+} catch (error) {
+  const layout = await page?.evaluate(() => {
+    const el = document.querySelector('.messages');
+    return { top: el?.scrollTop, height: el?.scrollHeight, viewport: el?.clientHeight,
+      activeElement: document.activeElement?.tagName, traceOpen: document.querySelector('#pending > .trace')?.open };
+  }).catch(() => null);
+  writeFileSync(path.join(out, 'failure.json'), JSON.stringify({ error: error.stack, checks, errors, layout }, null, 2));
+  await page?.screenshot({ path: path.join(out, 'failure.png'), timeout: 5000 }).catch(() => {});
+  throw error;
 } finally { await context?.close(); rmSync(profile, { recursive: true, force: true }); }

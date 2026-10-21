@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { saveSyllabusEntryHere } from '../extension/lib/syllabus-store.js';
+import { chooseSyllabusHere, clearLocalDataHere, saveChatsHere } from '../extension/lib/data-lifecycle.js';
+import { handleGenaiDataRequest } from '../extension/lib/genai-store.js';
 
 const ORIGIN = 'https://purdue.brightspace.com';
 export const FIXTURES = process.env.BOILERSPACE_FIXTURES_DIR
@@ -18,12 +20,23 @@ export function installChrome({ executeScript = async () => [{ result: null }], 
     runtime: {
       getURL: (path) => new URL(`../extension/${path}`, import.meta.url).href,
       sendMessage: async (message) => {
-        if (message.type !== 'boilerspace-save-syllabus') return;
-        await saveSyllabusEntryHere(message.key, message.courseId, message.entry);
-        return { ok: true };
+        try {
+          if (message.type === 'boilerspace-save-syllabus') {
+            await saveSyllabusEntryHere(message.key, message.courseId, message.entry, message.epoch);
+            return { ok: true };
+          }
+          if (message.type !== 'boilerspace-data') return;
+          const data = message.action.startsWith('genai-') ? await handleGenaiDataRequest(message)
+            : message.action === 'clear' ? await clearLocalDataHere()
+            : message.action === 'save-chats' ? await saveChatsHere(message.chats, message.epoch)
+            : message.action === 'syllabus-choice' ? await chooseSyllabusHere(message.courseId, message.choice, message.epoch)
+            : undefined;
+          return { ok: true, data };
+        } catch (error) { return { ok: false, error: error.message, code: error.code }; }
       },
     },
     storage: {
+      session: { remove: async () => {} },
       local: {
         async get(key) {
           if (key === null) return structuredClone(data);

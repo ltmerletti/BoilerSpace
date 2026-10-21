@@ -341,6 +341,44 @@ test('a reply with no lookup is sent back to look the course up, and a PDF is li
   assert.ok(!titles.includes('Lecture 12 slides.pptx'));
 });
 
+test('duplicate attachment titles prefer the PDF link even when the title has no extension', async () => {
+  const snapshot = snapshotFixture();
+  const topic = snapshot.data[0].content[1];
+  snapshot.data[0].content = ['rtf', 'pptx', 'pdf'].map((ext, index) => ({ ...topic, id: 700 + index, title: 'Week 07 slides', fileHref: `/content/enforced/course/Week%2007%20slides.${ext}?download=1` }));
+  const tools = createTools({ snapshot, syllabi: {}, now: NOW });
+  const files = await tools.run('list_course_files', { course_id: 1600001, query: 'Week 07' });
+  assert.equal(files.total, 1);
+  assert.equal(files.files[0].file_key, 'content:702');
+  snapshot.data[0].content.push({ ...topic, id: 703, title: 'Week 07 slides', modulePath: ['Supplemental notes'], fileHref: '/content/enforced/course/other.rtf' });
+  const separate = await createTools({ snapshot, syllabi: {}, now: NOW }).run('list_course_files', { course_id: 1600001, query: 'Week 07' });
+  assert.deepEqual(separate.files.map(file => file.file_key), ['content:702', 'content:703']);
+});
+
+test('an RTF-only lecture can be opened, searched and cited without substituting another file', async () => {
+  const { readCourseFile, getCachedCourseFile } = await import('../extension/lib/files.js');
+  const { RTF_LECTURE } = await import('./rtf-fixture.mjs');
+  const snapshot = snapshotFixture();
+  const topic = snapshot.data[0].content[1];
+  topic.id = 707;
+  topic.title = 'Week 07 slides.rtf';
+  const downloads = [];
+  const readFile = (file, options) => readCourseFile(file, { ...options, download: async path => {
+    downloads.push(path);
+    return { bytes: new TextEncoder().encode(RTF_LECTURE), fileName: 'Week 07 slides.rtf', contentType: 'application/rtf' };
+  } });
+  const tools = createTools({ snapshot, syllabi: {}, now: NOW, readFile, cachedFile: getCachedCourseFile });
+  const result = await tools.run('read_course_file', { file_key: 'content:707', query: 'fraction exponent' });
+  assert.match(result.excerpts[0].text, /23-bit fraction and an exponent bias of 127/);
+  assert.equal(result.excerpts[0].file_key, 'content:707');
+  assert.equal(result.excerpts[0].location, 'part 1');
+  assert.equal(tools.sources.get(result.excerpts[0].source).url, topic.url);
+  const full = await tools.run('read_course_file', { file_key: 'content:707', location: 'part 1' });
+  assert.equal(full.excerpts[0].complete_page, true);
+  assert.equal(downloads.length, 1, 'the extracted text is reused for follow-up reads');
+  const search = await tools.run('search_course_material', { course_id: 1600001, query: 'fraction exponent' });
+  assert.ok(search.results.some(hit => hit.file_key === 'content:707'));
+});
+
 test('read_quiz reports the questions and does not pass a score through', async () => {
   const snapshot = snapshotFixture();
   const tools = createTools({

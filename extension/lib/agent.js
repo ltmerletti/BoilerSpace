@@ -893,15 +893,21 @@ const UNFINISHED_READING = /\bcut[ -]off\b|\btruncat(?:ed|ion)\b|\bif you (?:wan
 
 // A lecture posted as both a PDF and a PowerPoint is one file. Keep the PDF.
 function oneCopy(files) {
-  const rank = (title) => (/\.pdf$/i.test(title) ? 0 : /\.pptx?$/i.test(title) ? 1 : /\.rtf$/i.test(title) ? 2 : 0);
+  // Brightspace titles often omit the extension even when three attachment formats exist.
+  const rank = (file) => {
+    let path = '';
+    try { path = decodeURIComponent(new URL(file.fileHref, 'https://purdue.brightspace.com').pathname); } catch { /* use the title instead */ }
+    if (!/\.(pdf|pptx|rtf)$/i.test(path)) path = file.title;
+    return /\.pdf$/i.test(path) ? 0 : /\.pptx$/i.test(path) ? 1 : /\.rtf$/i.test(path) ? 2 : 3;
+  };
   const stem = (title) => title.replace(/\.(pdf|pptx?|rtf|docx?)$/i, '').replace(/\s+/g, ' ').trim().toLowerCase();
   const best = new Map();
   for (const file of files) {
-    const key = stem(file.title);
+    const key = `${file.courseId}|${JSON.stringify(file.modulePath ?? [])}|${stem(file.title)}`;
     const prev = best.get(key);
-    if (!prev || rank(file.title) < rank(prev.title)) best.set(key, file);
+    if (!prev || rank(file) < rank(prev)) best.set(key, file);
   }
-  return files.filter((file) => best.get(stem(file.title)) === file);
+  return [...best.values()];
 }
 
 const historyMessage = ({ role, content, tool_calls }) => ({

@@ -10,6 +10,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { fakeBrightspace, MODEL_OUTPUT, pdfWithPages, pdfWithJpxImage, snapshotFixture, SYLLABUS_PAGES } from '../tests/helpers.mjs';
 import { validateExtraction } from '../extension/lib/syllabus.js';
+import { COURSE_FILE_FIXTURES, checkCourseFileFormats } from '../tests/file-formats-fixture.mjs';
 
 async function showSources(answer) {
   const details = answer.locator('[data-disclosure^="sources-"]');
@@ -181,6 +182,8 @@ try {
     if (pathname.endsWith('/content/topics/77/file')) {
       return route.fulfill({ contentType: 'application/pdf', headers: { 'Content-Disposition': 'attachment; filename="CS 25200 Syllabus Fall 2026.pdf"' }, body: syllabusPdf });
     }
+    const fixture = COURSE_FILE_FIXTURES.find(file => pathname.endsWith(`/content/topics/${file.id}/file`));
+    if (fixture) return route.fulfill({ contentType: fixture.contentType || 'application/octet-stream', headers: fixture.fileName ? { 'Content-Disposition': `attachment; filename="${fixture.fileName}"` } : {}, body: Buffer.from(fixture.bytes) });
     const headers = request.headers();
     const res = await brightspace.fetchImpl(request.url(), {
       method: request.method(),
@@ -477,6 +480,8 @@ try {
   }
   check('syllabus is downloaded through the page and read', syllabus?.status === 'done' && syllabus.kind === 'pdf', syllabus?.error ?? `${syllabus?.deadlines?.length} dates`);
   check('grades never reach the model from the real sync', modelRequests.length > 0 && !JSON.stringify(modelRequests).includes('9 / 10'));
+  const fileResults = await frame.evaluate(checkCourseFileFormats, { snapshot: snapshotFixture(), fixtures: COURSE_FILE_FIXTURES });
+  for (const result of fileResults) check(`Ask reads and cites ${result.name} through the Brightspace bridge`, result.pass && result.tools.join(',') === 'list_course_files,read_course_file', JSON.stringify(result));
   await frame.locator('.agenda').waitFor();
   await sleep(300);
   await bs.screenshot({ path: path.join(outDir, '9-brightspace-panel.png') });
@@ -495,6 +500,13 @@ try {
   check('a syllabus citation opens the PDF at the cited page', /\/content\/enforced\/1600001-CS25200\/.+\.pdf#page=\d+$/.test(citeHref ?? ''), citeHref);
 
   // Brightspace links open in the same tab, and the panel comes back where it was.
+  // The upstream fixture deadlines can fall outside the current agenda window.
+  await worker.evaluate(async () => {
+    const { snapshot } = await chrome.storage.local.get('snapshot');
+    const course = snapshot.data.find(data => snapshot.courses.some(course => course.current && course.id === data.courseId));
+    course.assignments.push({ kind: 'assignment', id: 991200, courseId: course.courseId, title: 'Navigation fixture', dueAt: new Date(Date.now() + 86_400_000).toISOString(), url: `https://purdue.brightspace.com/d2l/le/lessons/${course.courseId}/topics/991200` });
+    await chrome.storage.local.set({ snapshot });
+  });
   await frame.locator('.tabs button[data-view="week"]').click();
   const itemLink = frame.locator('.agenda a.item-title[href*="/d2l/"]').first();
   const itemHref = await itemLink.getAttribute('href');

@@ -52,7 +52,7 @@
       return sync.syncHere({ xsrfToken: token });
     }
     if (action === 'discover-syllabus') return sync.discoverSyllabusHere({ ...args, xsrfToken: token });
-    if (action === 'download') return sync.downloadHere(args.path, { xsrfToken: token, seeImages: args.seeImages, location: args.location, refresh: args.refresh });
+    if (action === 'download') return sync.downloadHere(args.path, { xsrfToken: token, seeImages: args.seeImages, location: args.location, refresh: args.refresh, fileName: args.fileName });
     if (action === 'read-quiz') return sync.readQuizHere({ ...args, xsrfToken: token });
     throw new Error(`Unknown request ${action}`);
   }

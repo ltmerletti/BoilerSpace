@@ -4,6 +4,10 @@ What changed, what prompted it, and what it means when you use BoilerSpace. Each
 
 [Back to the README](README.md) · [Full commit history](https://github.com/ltmerletti/BoilerSpace/commits/main)
 
+## October 21, 2026
+
+- **Read more course files without converting them first.** Ask can read RTF, Jupyter notebook cells, source code and common text datasets, plus compatible modern Word and PowerPoint variants. Code keeps its indentation; citations identify lines, cells or document parts. Notebook outputs and embedded objects are skipped. Office files are recognized from their contents, so a missing filename no longer turns a slide deck into a failed Word read. The readers reuse the bundled ZIP library and add no dependencies.
+
 ## In progress
 
 - **Read earlier text while an answer is writing.** Scrolling up pauses automatic following, even for a small movement near the bottom. Opening the work log and finishing an answer keep your reading position. Scroll back to the bottom to resume following, or press End to jump to the latest text.

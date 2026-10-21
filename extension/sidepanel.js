@@ -1142,7 +1142,7 @@ function syllabusPicker(course, raw, data) {
         'label',
         { class: 'button secondary upload' },
         'Upload the syllabus',
-        h('input', { type: 'file', accept: '.pdf,.docx,.pptx,.html,.htm,.txt', disabled: state.busy.syllabi, onchange: (e) => uploadSyllabus(course.id, e.target.files?.[0]) }),
+        h('input', { type: 'file', accept: '.pdf,.docx,.docm,.dotx,.dotm,.pptx,.pptm,.ppsx,.ppsm,.potx,.potm,.rtf,.html,.htm,.txt,.md', disabled: state.busy.syllabi, onchange: (e) => uploadSyllabus(course.id, e.target.files?.[0]) }),
       ),
       raw?.source !== 'upload' && h('button', { class: 'button secondary', type: 'button', disabled: state.busy.syllabi, onclick: () => processSyllabi({ force: true, courseId: course.id }) }, raw?.topicId ? 'Read again' : raw ? 'Check again' : 'Check for syllabus'),
     ),

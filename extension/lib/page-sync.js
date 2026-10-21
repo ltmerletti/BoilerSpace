@@ -25,6 +25,6 @@ export function readQuizHere({ xsrfToken = null, courseId, quizId, dueAt = null,
   return runInPage('read-quiz', { xsrfToken, courseId, quizId, dueAt, endAt });
 }
 
-export function downloadHere(path, { xsrfToken = null, seeImages = false, location = null, refresh = false } = {}) {
-  return runInPage('download', { path, xsrfToken, seeImages, location, refresh });
+export function downloadHere(path, { xsrfToken = null, seeImages = false, location = null, refresh = false, fileName = null } = {}) {
+  return runInPage('download', { path, xsrfToken, seeImages, location, refresh, fileName });
 }

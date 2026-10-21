@@ -44,6 +44,10 @@ Choose a course, or leave **All my courses** selected. Name the lecture, file, p
 
 Ask can search syllabi, course files, announcements, connected discussion history, and saved Gradescope assignment names and dates. It can also read questions from finished or closed quizzes when Brightspace makes them available. It excludes quiz scores and stays off active quiz attempt pages.
 
+Course files can be PDF, modern Word or PowerPoint files, RTF, HTML, Markdown, source code, CSV/TSV, JSON and other common text formats. Compatible Office templates, slideshows and macro-enabled variants use the same text readers; macros never run. When a lecture has several copies in the same folder, Ask prefers the PDF.
+
+Jupyter notebooks (`.ipynb`, version 4) provide Markdown, code and raw cell text, cited by original cell number. Saved outputs and attachments are skipped. Source and text files preserve indentation and use line-range citations. These citations link back to the Brightspace item. RTF citations use parts, with embedded objects and pictures skipped.
+
 During a lookup, the work log opens to show narration and tool calls in order. It collapses when answer text starts and reopens if the model returns to research. You can open or close it while text is streaming. Expand a tool's **Details** to inspect its arguments and a short result preview. You can scroll back, stop generation, copy an answer, or retry it.
 
 Citations open the original material. Overview PDFs may open in BoilerSpace's document reader at the cited page. **Show original PDF** loads the source through your signed-in session.

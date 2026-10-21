@@ -169,7 +169,7 @@ test('a fresh automatic attempt bypasses a failed lookup and download just like 
   });
   assert.equal(record.status, 'done');
   assert.equal(lookups, 1);
-  assert.deepEqual(requests, [{ path: '/current-syllabus', options: { open: false, refresh: true } }]);
+  assert.deepEqual(requests, [{ path: '/current-syllabus', options: { open: false, refresh: true, fileName: 'Syllabus' } }]);
 });
 
 test('an automatic download retry requests fresh bytes and bypasses the recent error record', async () => {

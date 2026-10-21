@@ -10,6 +10,7 @@ import puppeteer from 'puppeteer-core';
 import { getInstalledBrowsers } from '@puppeteer/browsers';
 import { fakeBrightspace, pdfWithPages, pdfWithJpxImage, snapshotFixture } from '../tests/helpers.mjs';
 import { installSelectionStream, selectionCoordinates, selectionState } from '../tests/text-selection-browser.mjs';
+import { COURSE_FILE_FIXTURES, checkCourseFileFormats } from '../tests/file-formats-fixture.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
 const out = process.env.VERIFY_OUT ?? path.join(root, '.verify-tmp/release-firefox');
@@ -99,6 +100,8 @@ try {
   page.on('request', async request => {
     if (!/^https?:/.test(request.url())) return request.continue();
     if (request.url() === 'https://purdue.brightspace.com/d2l/home') return request.respond({ status: 200, contentType: 'text/html', body: '<!doctype html><title>Packaged Firefox test</title><d2l-navigation-main-header><div slot="right"></div></d2l-navigation-main-header><main>Release verification</main>' });
+    const fixture = COURSE_FILE_FIXTURES.find(file => new URL(request.url()).pathname.endsWith(`/content/topics/${file.id}/file`));
+    if (fixture) return request.respond({ status: 200, contentType: fixture.contentType || 'application/octet-stream', headers: fixture.fileName ? { 'Content-Disposition': `attachment; filename="${fixture.fileName}"` } : {}, body: Buffer.from(fixture.bytes) });
     if (request.url().startsWith('https://purdue.brightspace.com/d2l/api/')) {
       const response = await fake.fetchImpl(request.url());
       return request.respond({ status: response.status, contentType: 'application/json', body: await response.text() });
@@ -133,6 +136,8 @@ try {
   }, snapshotFixture());
   const pdf = await panel.evaluate(async bytes => (await import('./lib/extract.js')).extractText({ bytes: new Uint8Array(bytes), fileName: 'release.pdf', contentType: 'application/pdf' }), [...pdfWithPages([['Packaged PDF reading works.']])]);
   check('bundled PDF.js and its worker read a real PDF under the release CSP', pdf.pages[0].text.includes('Packaged PDF reading works'));
+  const fileResults = await panel.evaluate(checkCourseFileFormats, { snapshot: snapshotFixture(), fixtures: COURSE_FILE_FIXTURES });
+  for (const result of fileResults) check(`Ask reads and cites ${result.name} under the release CSP`, result.pass && result.tools.join(',') === 'list_course_files,read_course_file');
   const pixels = await panel.evaluate(async bytes => {
     const picture = await (await import('./lib/extract.js')).pagePicture(new Uint8Array(bytes), 'page 1');
     const image = await createImageBitmap(await (await fetch(`data:${picture.mediaType};base64,${picture.data}`)).blob());

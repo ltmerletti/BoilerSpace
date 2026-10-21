@@ -794,7 +794,7 @@ async function readSyllabusTabText(client, tab, readTab, href) {
   const fromFile = await syllabusFileText(client, tab.fileHref);
   if (fromFile?.length >= SYLLABUS_TEXT_MIN) return withSyllabusText(tab, fromFile);
   // Let the normal file reader handle PDFs and Office files, without loading a viewer tab.
-  if (tab.fileHref && /\.(pdf|docx?|pptx?)($|\?)/i.test(tab.fileHref)) return tab;
+  if (tab.fileHref && /\.(pdf|doc[xm]|dot[xm]|ppt[xm]|pps[xm]|pot[xm]|rtf|txt|md)($|\?)/i.test(tab.fileHref)) return tab;
   if (!readTab?.page) return tab;
   const text = await readTab.page(href);
   if (text?.notFound) return null;
@@ -1078,9 +1078,9 @@ export async function runInPage(action, args = {}, { onProgress = () => {} } = {
       // The import stays inside this branch so a PDF download does not depend on it.
       if (!isPdf) {
         const { extractText, slidePictures } = await import('./extract.js');
-        const extracted = await extractText(file);
+        const extracted = await extractText({ ...file, fileName: file.fileName || args.fileName });
         const images = [];
-        if (args.seeImages && args.location) {
+        if (args.seeImages && args.location && extracted.kind === 'pptx') {
           for (const picture of slidePictures(file.bytes, args.location)) {
             try {
               const shrunk = await shrinkPicture(picture.bytes, picture.mediaType);
@@ -1097,7 +1097,7 @@ export async function runInPage(action, args = {}, { onProgress = () => {} } = {
             pages: extracted.pages,
             warning: extracted.warning,
             contentType: file.contentType,
-            fileName: file.fileName,
+            fileName: file.fileName || args.fileName,
             ...(images.length ? { images } : {}),
           },
         };

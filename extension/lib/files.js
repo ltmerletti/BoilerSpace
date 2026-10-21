@@ -38,7 +38,7 @@ async function loadText(topic, syllabi, download) {
   }
   const key = `${topic.courseId ?? ''}:${topic.id}|${topic.updatedAt ?? ''}`;
   if (!cache.has(key)) {
-    const loading = download(topic.fileUrl, { open: false }).then((file) => (Array.isArray(file.pages) ? file : extractText(file)));
+    const loading = download(topic.fileUrl, { open: false, fileName: topic.title }).then((file) => (Array.isArray(file.pages) ? file : extractText({ ...file, fileName: file.fileName || topic.title })));
     cache.set(key, loading);
     loading.catch(() => cache.delete(key));
     while (cache.size > MAX_CACHED_FILES) cache.delete(cache.keys().next().value);
@@ -50,9 +50,9 @@ export async function readCourseFile(topic, { syllabi = {}, download = downloadT
   const text = await loadText(topic, syllabi, download);
   if (!seeImages || !location || !topic.fileUrl) return text;
   try {
-    const extra = await download(topic.fileUrl, { open: false, seeImages: true, location });
+    const extra = await download(topic.fileUrl, { open: false, seeImages: true, location, fileName: topic.title });
     let images = extra.images ?? [];
-    if (!images.length && extra.bytes) {
+    if (!images.length && extra.bytes && text.kind === 'pdf') {
       const picture = await pagePicture(extra.bytes, location);
       if (picture) images = [picture];
     }

@@ -469,7 +469,7 @@ export async function processCourse(snapshot, courseId, { force = false, openTab
     onStatus(`Reading the ${shortCourseLabel(course)} syllabus…`);
     let file;
     try {
-      file = topic.text ? textFile(topic.text) : await download(topic.fileUrl, { open: openTab, refresh: true });
+      file = topic.text ? textFile(topic.text) : await download(topic.fileUrl, { open: openTab, refresh: true, fileName: topic.title });
     } catch (err) {
       if (err.status === 404 && !topic.chosen) {
         const at = unavailableSources.findIndex((source) => sourceMatches(source, topic));

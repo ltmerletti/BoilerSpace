@@ -1,9 +1,26 @@
 // Text extraction for course files, kept page by page (or part / slide) so answers can cite a location.
 
 import { strFromU8, unzipSync } from '../vendor/fflate/fflate.js';
+import { rtfToText } from './rtf.js';
+import { decodeText, notebookPages, textPages } from './text-files.js';
 
 const DOCX_PART_CHARS = 3500;
 const SCANNED_PDF_CHARS_PER_PAGE = 40;
+const MAX_XML_BYTES = 16_000_000;
+const TEXT_EXTENSION = /\.(txt|md|markdown|csv|tsv|json|jsonl|xml|yaml|yml|toml|ini|cfg|log|tex|py|pyi|r|rmd|c|h|cc|cpp|cxx|hpp|s|asm|v|sv|vhd|vhdl|java|js|mjs|cjs|jsx|ts|tsx|css|sql|sh|bash|zsh|m|rs|go|rb|jl|scala|hs)$/i;
+
+// Inspect entry names without inflating payloads. Reuse the same limits when reading XML.
+function readArchive(bytes, select = () => false) {
+  if (bytes.length > 64_000_000) throw new Error('This document exceeds the 64 MB reading limit.');
+  let entries = 0, size = 0;
+  return unzipSync(bytes, { filter(file) {
+    if (++entries > 10_000) throw new Error('This document contains too many archive entries.');
+    if (!select(file.name)) return false;
+    size += file.originalSize;
+    if (size > MAX_XML_BYTES) throw new Error('This document exceeds the 16 MB extracted-text limit.');
+    return true;
+  } });
+}
 
 let pdfjsPromise = null;
 function loadPdfJs() {
@@ -37,13 +54,25 @@ function looksLikeHtml(bytes) {
 }
 
 export function detectKind(bytes, fileName = '', contentType = '') {
+  fileName ??= '';
+  contentType ??= '';
   if (bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46) return 'pdf';
   if (bytes[0] === 0x50 && bytes[1] === 0x4b) {
-    if (/\.pptx$/i.test(fileName) || /presentation/i.test(contentType)) return 'pptx';
-    return 'docx';
+    let word = false, slides = false;
+    readArchive(bytes, name => {
+      word ||= name === 'word/document.xml';
+      slides ||= /^ppt\/slides\/slide\d+\.xml$/.test(name);
+      return false;
+    });
+    return word && !slides ? 'docx' : slides && !word ? 'pptx' : 'unknown';
   }
+  // Do not decode legacy Office binaries even if the server calls them text/plain.
+  if (bytes[0] === 0xd0 && bytes[1] === 0xcf && bytes[2] === 0x11 && bytes[3] === 0xe0) return 'unknown';
   if (/html/i.test(contentType) || /\.html?$/i.test(fileName) || looksLikeHtml(bytes)) return 'html';
-  if (/^text\//i.test(contentType) || /\.(txt|md)$/i.test(fileName)) return 'text';
+  const head = String.fromCharCode(...bytes.subarray(0, 40));
+  if (/^(?:\xef\xbb\xbf)?\s*\{\\rtf\d/.test(head) || /^(application|text)\/(?:x-)?rtf(?:\s*;|$)/i.test(contentType) || /\.rtf$/i.test(fileName)) return 'rtf';
+  if (/\.ipynb$/i.test(fileName) || /application\/x-ipynb\+json/i.test(contentType)) return 'notebook';
+  if (/^text\//i.test(contentType) || /application\/(?:[^;]+\+)?(?:json|xml)(?:\s*;|$)|application\/(?:javascript|x-python|sql|yaml|toml)(?:\s*;|$)/i.test(contentType) || TEXT_EXTENSION.test(fileName) || /^(makefile|dockerfile)$/i.test(fileName)) return 'text';
   return 'unknown';
 }
 
@@ -100,7 +129,7 @@ function splitIntoParts(text) {
 }
 
 function extractDocx(bytes) {
-  const files = unzipSync(bytes, { filter: (file) => file.name === 'word/document.xml' });
+  const files = readArchive(bytes, name => name === 'word/document.xml');
   const xml = files['word/document.xml'];
   if (!xml) throw new Error('This file is not a Word document.');
   return { pages: splitIntoParts(docxXmlToText(strFromU8(xml))), warning: null };
@@ -108,14 +137,12 @@ function extractDocx(bytes) {
 
 function extractPptx(bytes) {
   let pictures = 0;
-  const files = unzipSync(bytes, {
-    filter(file) {
-      if (/^ppt\/media\//.test(file.name)) {
-        pictures += 1;
-        return false;
-      }
-      return /^ppt\/slides\/slide\d+\.xml$/.test(file.name);
-    },
+  const files = readArchive(bytes, name => {
+    if (/^ppt\/media\//.test(name)) {
+      pictures += 1;
+      return false;
+    }
+    return /^ppt\/slides\/slide\d+\.xml$/.test(name);
   });
   const slides = Object.entries(files)
     .map(([name, data]) => ({ number: Number(/slide(\d+)\.xml$/.exec(name)[1]), xml: strFromU8(data) }))
@@ -228,9 +255,16 @@ export async function extractText({ bytes, fileName = '', contentType = '' }) {
   if (kind === 'pdf') return { kind, ...(await extractPdf(bytes)) };
   if (kind === 'docx') return { kind, ...extractDocx(bytes) };
   if (kind === 'pptx') return { kind, ...extractPptx(bytes) };
-  if (kind === 'html' || kind === 'text') {
-    const raw = new TextDecoder().decode(bytes);
-    return { kind, pages: splitIntoParts(kind === 'html' ? htmlToText(raw) : tidy(raw)), warning: null };
+  if (kind === 'rtf') {
+    const { text, pictures } = rtfToText(bytes);
+    const pages = splitIntoParts(tidy(text));
+    const warning = [!pages.length ? 'This RTF has no readable text.' : null, pictures ? 'Pictures and embedded objects in this RTF were skipped.' : null].filter(Boolean).join(' ') || null;
+    return { kind, pages, warning };
+  }
+  if (kind === 'html' || kind === 'text' || kind === 'notebook') {
+    const raw = decodeText(bytes, contentType);
+    if (kind === 'notebook') return { kind, ...notebookPages(raw) };
+    return { kind, pages: kind === 'html' ? splitIntoParts(htmlToText(raw)) : textPages(raw), warning: null };
   }
   return { kind, pages: [], warning: `BoilerSpace cannot read this file type (${contentType || fileName || 'unknown'}).` };
 }

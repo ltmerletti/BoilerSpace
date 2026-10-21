@@ -360,7 +360,7 @@ async function connectDiscussions(platform = DISCUSSION_ACCESS, url = PARAMS.get
           signInTab = await chrome.tabs.create({ url: 'about:blank', active: true });
           await chrome.tabs.update(signInTab.id, { url: platform === 'ed' ? 'https://edstem.org/us/' : url || 'https://piazza.com/' });
         }
-        else if (!(await chrome.tabs.get(signInTab.id).catch(() => null))) throw new Error('Sign-in was closed. You can connect again whenever you are ready.');
+        else if (!(await chrome.tabs.get(signInTab.id).catch(() => null))) throw new Error('Sign-in was closed. You can connect again whenever you are ready.', { cause: error });
         state.discussionConnecting = `Finish signing in to ${discussionName(platform)}${platform === 'piazza' ? ' and open your class' : ''}. Connection continues automatically.`;
         render();
         await new Promise(resolve => setTimeout(resolve, 2000));
@@ -1348,10 +1348,24 @@ function traceView(trace, { key, live = false, seconds = 0, open = false, ontogg
 // Messages saved before the work log existed only have step labels.
 const messageTrace = (message) => message.trace ?? (message.steps ?? []).map((label) => ({ type: 'tool', label }));
 
+const messageSnapshots = new WeakMap();
+const messageKey = (message, index) => message.id ?? `i${index}`;
+// Chrome storage can reorder object keys; that alone does not change an answer.
+const chatSignature = message => JSON.stringify(message, (_key, value) => value && typeof value === 'object' && !Array.isArray(value)
+  ? Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right))) : value);
+
 function messageView(message, index) {
+  const node = savedMessageView(message, index);
+  node.dataset.messageKey = messageKey(message, index);
+  messageSnapshots.set(node, chatSignature(message));
+  return node;
+}
+
+function savedMessageView(message, index) {
   const key = message.id ?? `i${index}`;
   const selectionKey = `message-${state.activeChatId}-${key}`;
   if (message.role === 'user') return h('div', { class: 'message user', 'data-selection-key': selectionKey }, message.content);
+  const currentIndex = () => message.id ? chatMessages().findIndex(item => item.id === message.id) : index;
   const trace = traceView(messageTrace(message), {
     key: `trace-${state.activeChatId}-${key}`,
     seconds: message.seconds ?? 0,
@@ -1367,7 +1381,7 @@ function messageView(message, index) {
     h(
       'div',
       { class: 'message-actions' },
-      message.stopped && h('button', { class: 'text-button', type: 'button', disabled: Boolean(state.pending), onclick: () => continueMessage(index) }, icon('continue'), 'Continue'),
+      message.stopped && h('button', { class: 'text-button', type: 'button', disabled: Boolean(state.pending), onclick: () => continueMessage(currentIndex()) }, icon('continue'), 'Continue'),
       !message.error && h('button', { class: 'icon-button', type: 'button', title: 'Copy answer', 'aria-label': 'Copy answer', onclick: async (event) => {
         const button = event.currentTarget;
         try {
@@ -1382,7 +1396,7 @@ function messageView(message, index) {
           }, 1500);
         } catch { setStatus('Could not copy the answer. Select its text to copy it.'); }
       } }, icon('copy')),
-      h('button', { class: 'icon-button', type: 'button', title: 'Retry', 'aria-label': 'Retry', disabled: Boolean(state.pending), onclick: () => retryMessage(index) }, icon('retry'), h('span', { class: 'sr-only' }, 'Retry')),
+      h('button', { class: 'icon-button', type: 'button', title: 'Retry', 'aria-label': 'Retry', disabled: Boolean(state.pending), onclick: () => retryMessage(currentIndex()) }, icon('retry'), h('span', { class: 'sr-only' }, 'Retry')),
     );
   if (message.error || message.stopped) {
     return h(
@@ -1423,8 +1437,8 @@ function pendingView() {
   trace.dataset.pendingTrace = 'true';
   return h(
     'div',
-    { class: 'message assistant pending', id: 'pending', style: `--activity-delay:-${(Date.now() - p.startedAt) % 1200}ms`, onclick: event => {
-      if (event.target.closest('summary')) p.manualDisclosure = true;
+    { class: 'message assistant pending', id: 'pending', 'data-message-key': p.runId, style: `--activity-delay:-${(Date.now() - p.startedAt) % 1200}ms`, onclick: event => {
+      if (state.pending?.runId === event.currentTarget.dataset.messageKey && event.target.closest('summary')) state.pending.manualDisclosure = true;
     } },
     trace,
     p.text && h('div', { class: 'streaming-answer' }, answerBody(p.text, [], `message-${p.chatId}-${p.runId}`)),
@@ -1630,6 +1644,12 @@ function thinkingPicker() {
   return h('div', { class: 'thinking-picker' }, button, menu);
 }
 
+function sendControl() {
+  return state.pending
+    ? h('button', { class: 'send', type: 'button', 'aria-label': 'Stop', title: 'Stop', onclick: () => state.abort?.abort() }, icon('stop'))
+    : h('button', { class: 'send', type: 'submit', 'aria-label': 'Send', title: 'Send', disabled: !state.draft.trim() }, icon('send'));
+}
+
 function askView() {
   if (state.quizLocked) {
     return [h('section', { class: 'section' }, h('h2', { class: 'heading' }, 'Ask is off during quizzes'), h('p', { class: 'muted', style: 'margin-top:4px' }, 'A quiz attempt is open in this window. Ask comes back when you leave the quiz.'))];
@@ -1646,7 +1666,7 @@ function askView() {
       state.draft = e.target.value;
       e.target.style.height = 'auto';
       e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
-      send.disabled = !state.draft.trim() && !state.pending;
+      e.target.form.querySelector('.send').disabled = !state.draft.trim() && !state.pending;
     },
     onkeydown: (e) => {
       if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
@@ -1655,9 +1675,7 @@ function askView() {
       }
     },
   });
-  const send = state.pending
-    ? h('button', { class: 'send', type: 'button', 'aria-label': 'Stop', title: 'Stop', onclick: () => state.abort?.abort() }, icon('stop'))
-    : h('button', { class: 'send', type: 'submit', 'aria-label': 'Send', title: 'Send', disabled: !state.draft.trim() }, icon('send'));
+  const send = sendControl();
   textarea.dataset.focusKey = 'question';
 
   const messages = chatMessages();
@@ -1731,7 +1749,7 @@ async function connectGradescope(permission = chrome.permissions.request({ origi
         if (!signInTab) {
           const existing = (await chrome.tabs.query({ url: `${GRADESCOPE_ORIGIN}/*` }))[0];
           signInTab = existing ? await chrome.tabs.update(existing.id, { active: true }) : await chrome.tabs.create({ url: `${GRADESCOPE_ORIGIN}/account`, active: true });
-        } else if (!(await chrome.tabs.get(signInTab.id).catch(() => null))) throw new Error('Sign-in was closed. Connect again when you are ready.');
+        } else if (!(await chrome.tabs.get(signInTab.id).catch(() => null))) throw new Error('Sign-in was closed. Connect again when you are ready.', { cause: error });
         await new Promise(resolve => setTimeout(resolve, 2000));
       }
     }
@@ -2032,6 +2050,120 @@ function syncLine() {
 
 const VIEWS = { week: weekView, courses: coursesView, ask: askView, settings: settingsView };
 const expandedSections = new Map();
+let mountedAsk = null;
+
+function askCanStayMounted() {
+  return state.view === 'ask' && !state.showChats && state.snapshot && state.genai && !state.quizLocked
+    && !CONNECT_PAGE && !ACCESS_PAGE && !DISCUSSION_ACCESS && !GRADESCOPE_ACCESS;
+}
+
+function askRegionKeys() {
+  return {
+    scope: JSON.stringify([state.askScope, courses().map(course => [course.id, shortCourseLabel(course)])]),
+    thinking: JSON.stringify([state.genai?.model, Boolean(state.pending)]),
+    notices: JSON.stringify([state.syllabusAccess, state.hostAccess, Object.values(state.syllabi).some(record => isSyllabusAccessError(record?.error))]),
+    empty: Boolean(state.discussions.sources.length),
+  };
+}
+
+function rememberAskMount(main) {
+  mountedAsk = askCanStayMounted() ? {
+    root: main.querySelector('.ask'), chatId: state.activeChatId, epoch: state.dataEpoch,
+    keys: askRegionKeys(), pending: Boolean(state.pending),
+  } : null;
+}
+
+function finishPendingNode(node, next) {
+  const body = node.querySelector('.streaming-answer');
+  if (body) {
+    const blocks = [...next.children].filter(child => child.dataset.selectionKey);
+    patchPendingNode(body, h('div', { class: 'streaming-answer' }, blocks));
+    // Retain the streamed paragraphs when removing their temporary wrapper.
+    const footer = next.querySelector('.answer-footer');
+    for (const block of [...body.childNodes]) next.insertBefore(block, footer);
+  }
+  for (const attribute of [...node.attributes]) node.removeAttribute(attribute.name);
+  for (const attribute of next.attributes) node.setAttribute(attribute.name, attribute.value);
+  node.replaceChildren(...next.childNodes);
+}
+
+function updateAskMessages(list) {
+  const messages = chatMessages();
+  const existing = new Map([...list.children].filter(node => node.dataset.messageKey).map(node => [node.dataset.messageKey, node]));
+  const desired = [];
+  messages.forEach((message, index) => {
+    const key = messageKey(message, index), signature = chatSignature(message);
+    let node = existing.get(key);
+    if (!node || messageSnapshots.get(node) !== signature) {
+      const next = messageView(message, index);
+      if (node?.id === 'pending') {
+        finishPendingNode(node, next);
+        messageSnapshots.set(node, signature);
+      } else node = next;
+    }
+    if (message.role === 'assistant') {
+      const latest = index === messages.length - 1;
+      let actions = node.querySelector('.message-actions');
+      if (!latest) actions?.remove();
+      else {
+        if (!actions) {
+          actions = savedMessageView(message, index).querySelector('.message-actions');
+          (node.querySelector('.answer-footer') ?? node).append(actions);
+        }
+        for (const button of actions.querySelectorAll('button')) {
+          if (button.getAttribute('aria-label') !== 'Copy answer' && button.getAttribute('aria-label') !== 'Copied') button.disabled = Boolean(state.pending);
+        }
+      }
+    }
+    desired.push(node);
+  });
+  const pending = state.pending?.chatId === state.activeChatId ? state.pending : null;
+  if (pending) desired.push(existing.get(pending.runId) ?? pendingView());
+  if (!desired.length) {
+    let empty = list.querySelector('.empty-chat');
+    if (!empty || mountedAsk.keys.empty !== Boolean(state.discussions.sources.length)) empty = askView().querySelector('.empty-chat');
+    desired.push(empty);
+  }
+  desired.forEach((node, index) => { if (list.children[index] !== node) list.insertBefore(node, list.children[index] ?? null); });
+  for (const node of [...list.children]) if (!desired.includes(node)) node.remove();
+}
+
+function updateMountedAsk() {
+  if (!askCanStayMounted() || !mountedAsk?.root.isConnected || mountedAsk.chatId !== state.activeChatId || mountedAsk.epoch !== state.dataEpoch) return false;
+  const root = mountedAsk.root, keys = askRegionKeys();
+  if (keys.notices !== mountedAsk.keys.notices) {
+    for (const notice of [...root.parentElement.children]) if (notice !== root) notice.remove();
+    for (const notice of [syllabusAccessNotice(), hostAccessNotice()].filter(Boolean)) root.before(notice);
+  }
+  const replaceControl = (selector, make) => {
+    const previous = root.querySelector(selector), next = make();
+    const focused = previous?.contains(document.activeElement);
+    if (previous) next ? previous.replaceWith(next) : previous.remove();
+    else if (next) root.querySelector('.composer-tools .send').before(next);
+    if (focused) next?.querySelector('[data-focus-key]')?.focus({ preventScroll: true });
+  };
+  if (keys.scope !== mountedAsk.keys.scope) replaceControl('.scope', coursePicker);
+  if (keys.thinking !== mountedAsk.keys.thinking) replaceControl('.thinking-picker', thinkingPicker);
+  const pending = Boolean(state.pending);
+  if (pending !== mountedAsk.pending) root.querySelector('.composer .send').replaceWith(sendControl());
+  root.querySelector('.ask-bar button[aria-label="New chat"]').disabled = pending;
+  const title = root.querySelector('.chat-title'), chat = activeChat();
+  const text = chat ? chatTitle(chat.title) : 'New chat';
+  if (title.textContent !== text) title.textContent = text;
+  if (chat) title.title = chat.title;
+  const input = root.querySelector('.composer textarea');
+  input.placeholder = state.askScope ? `Ask about ${labelFor(Number(state.askScope))}` : 'Ask about your courses';
+  if (input.value !== state.draft) {
+    input.value = state.draft;
+    input.style.height = 'auto';
+    if (input.value) input.style.height = `${Math.min(input.scrollHeight, 160)}px`;
+  }
+  root.querySelector('.composer .send').disabled = !pending && !state.draft.trim();
+  updateAskMessages(root.querySelector('.messages'));
+  mountedAsk.keys = keys;
+  mountedAsk.pending = pending;
+  return true;
+}
 
 function render({ top = false, bottom = false } = {}) {
   if (state.view === 'ask' && (top || bottom)) answerScroll.reset();
@@ -2048,18 +2180,22 @@ function render({ top = false, bottom = false } = {}) {
   for (const details of main.querySelectorAll('details[data-disclosure]')) {
     if (!details.hasAttribute('data-pending-trace')) expandedSections.set(details.dataset.disclosure, details.open);
   }
-  const content = GRADESCOPE_ACCESS ? gradescopeAccessView() : DISCUSSION_ACCESS ? discussionAccessView() : ACCESS_PAGE ? syllabusAccessPage() : CONNECT_PAGE ? connectPageView() : [syllabusAccessNotice(), state.view === 'settings' ? null : hostAccessNotice(), VIEWS[state.view]()];
-  main.replaceChildren(h('div', { class: state.view === 'ask' && !CONNECT_PAGE ? 'view ask-view' : 'view' }, content));
+  const stable = updateMountedAsk();
+  if (!stable) {
+    const content = GRADESCOPE_ACCESS ? gradescopeAccessView() : DISCUSSION_ACCESS ? discussionAccessView() : ACCESS_PAGE ? syllabusAccessPage() : CONNECT_PAGE ? connectPageView() : [syllabusAccessNotice(), state.view === 'settings' ? null : hostAccessNotice(), VIEWS[state.view]()];
+    main.replaceChildren(h('div', { class: state.view === 'ask' && !CONNECT_PAGE ? 'view ask-view' : 'view' }, content));
+    rememberAskMount(main);
+  }
   for (const details of main.querySelectorAll('details[data-disclosure]')) {
     if (!details.hasAttribute('data-pending-trace')) details.open = expandedSections.get(details.dataset.disclosure) ?? false;
   }
   const focused = focusKey && [...main.querySelectorAll('[data-focus-key]')].find(element => element.dataset.focusKey === focusKey);
-  if (focused) {
+  if (focused && focused !== active) {
     focused.focus({ preventScroll: true });
     if (selection) focused.setSelectionRange(...selection);
   } else if (top && state.view === 'ask') main.querySelector('textarea')?.focus({ preventScroll: true });
   const textarea = main.querySelector('.composer textarea');
-  if (textarea?.value) { textarea.style.height = 'auto'; textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`; }
+  if (!stable && textarea?.value) { textarea.style.height = 'auto'; textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`; }
   restoreSelection();
   const nextScroller = main.querySelector('.messages') ?? main;
   if (state.view === 'ask') answerScroll.restore(nextScroller, top || bottom || answerScroll.following ? nextScroller.scrollHeight : scroll);
@@ -2181,10 +2317,11 @@ async function init() {
       render();
       return;
     }
+    if (changes.genai && !changes.genai.newValue) state.abort?.abort();
     if (changes.theme) applyTheme(changes.theme.newValue ?? 'system');
     if (changes.chats && !state.pending) {
       const chats = changes.chats.newValue ?? [];
-      if (JSON.stringify(chats) !== JSON.stringify(state.chats)) {
+      if (chatSignature(chats) !== chatSignature(state.chats)) {
         state.chats = chats;
         if (!chats.some((c) => c.id === state.activeChatId)) state.activeChatId = null;
         if (state.view === 'ask') render();
@@ -2202,7 +2339,7 @@ async function init() {
     const linked = keys.includes('genai') && !changes.genai.oldValue && changes.genai.newValue;
     const newDiscussion = changes.discussions?.newValue?.sources?.some(source => !changes.discussions.oldValue?.sources?.some(previous => previous.id === source.id));
     await loadState();
-    if (!state.pending) render();
+    if (!state.pending || state.view === 'ask') render();
     if (CONNECT_PAGE && linked) setTimeout(() => window.close(), 1500);
     if (!ACCESS_PAGE && !CONNECT_PAGE && !DISCUSSION_ACCESS && !GRADESCOPE_ACCESS && (snapshotChanged || linked || accessGranted)) processSyllabi();
     if (!GRADESCOPE_ACCESS && !DISCUSSION_ACCESS && (snapshotChanged || (newDiscussion && !state.busy.discussionConnect))) refreshDiscussions();

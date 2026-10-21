@@ -233,7 +233,7 @@ test('clearing data while a batch is in flight does not restore cancelled posts'
 });
 
 test('disconnecting the final Ed source clears its session credential', async () => {
-  const { session } = setup(async () => ({ courses: [{ remoteId: '1' }] }));
+  setup(async () => ({ courses: [{ remoteId: '1' }] }));
   await handleDiscussionRequest({ action: 'connect', platform: 'ed' });
   await chrome.storage.local.set({ discussionAuth: { ed: 'fixture-token' } });
   await handleDiscussionRequest({ action: 'remove', sourceId: 'ed:1' });

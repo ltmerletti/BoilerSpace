@@ -51,7 +51,7 @@ try {
   const baselineSamples = []; for (let i = 0; i < 3; i++) baselineSamples.push(await sample());
   const baselineRss = cdp ? baselineSamples.reduce((a, b) => a + b, 0) / 3 : null;
   let sampling = false;
-  timer = setInterval(async () => { if (sampling || !cdp) return; sampling = true; try { peakRss = Math.max(peakRss, await sample()); } catch {} finally { sampling = false; } }, 50);
+  timer = setInterval(async () => { if (sampling || !cdp) return; sampling = true; try { peakRss = Math.max(peakRss, await sample()); } catch { /* A process may exit between memory samples. */ } finally { sampling = false; } }, 50);
   if (useWorker) {
     const result = await page.evaluate(async () => {
       const { DiscussionSearchClient } = await import('/extension/lib/discussion-search.js');

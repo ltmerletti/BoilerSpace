@@ -385,7 +385,7 @@ test('read_quiz reports the questions and does not pass a score through', async 
     snapshot,
     syllabi: {},
     now: NOW,
-    readQuiz: async (quiz) => ({ questions: [{ number: 1, text: 'What does fork return?' }], score: 8, note: undefined }),
+    readQuiz: async () => ({ questions: [{ number: 1, text: 'What does fork return?' }], score: 8, note: undefined }),
   });
   const result = await tools.run('read_quiz', { item_key: 'quiz:21' });
   assert.equal(result.title, 'Quiz 5');

@@ -6,7 +6,13 @@ Bug reports, fixes, and focused improvements are welcome. For a larger change, o
 
 The extension runs directly from `extension/`. There is no bundler or production dependency install. Load that directory using the [README instructions](README.md#get-started), reload the extension after edits, and refresh Brightspace.
 
-Development checks use Node.js 22 or newer. The browser checks below use Playwright 1.58.2, the version used for the current live verification. Playwright is a development tool, not part of the extension.
+Development checks use Node.js 22.13 or newer. The browser checks below use Playwright 1.58.2, the version used for the current live verification. Playwright is a development tool, not part of the extension.
+
+### Linting
+
+Run `npm ci --ignore-scripts`, then `npm run lint`. ESLint checks our JavaScript and CSS for mistakes such as undefined names, unused variables, invalid CSS values and duplicate keyframes. It covers the extension, tests, scripts and JavaScript experiments. Bundled libraries, generated packages and private verification files are excluded. Formatting is left alone.
+
+CI runs the same command on Node.js 22 and 24, with warnings treated as failures. The Firefox add-on validator remains a separate release check.
 
 ### Release packages
 
@@ -51,6 +57,7 @@ node scripts/verify-gradescope.mjs
 node scripts/verify-discussion-recovery.mjs
 node scripts/verify-chat-streaming.mjs
 node scripts/verify-chat-narration.mjs
+node scripts/verify-ask-updates.mjs
 node scripts/verify-data-lifecycle.mjs
 ```
 
@@ -66,6 +73,8 @@ These scripts use throwaway Chromium profiles. The broader interface check runs 
 
 `verify-chat-narration.mjs` records a complete narration, tool and answer sequence for both following and paused readers. It checks that streamed drafts do not repeatedly toggle the work log and that finishing preserves a paused reader's open details. Videos and observations stay in the ignored verification directory.
 
+`verify-ask-updates.mjs` checks native undo, open menus and saved messages during background updates, including a full 40-message history and two simultaneous panels. It checks edits, history eviction, Retry and Continue after message positions change, quiz locking and disconnects. Set `VERIFY_VIDEO=1` to retain a recording. The full-history cases also run in the packaged Firefox suite.
+
 `verify.mjs` checks 320, 400 and 720 pixel panel widths, dark mode, active navigation, keyboard text selection and drafts surviving background changes. It also checks quiet background refreshes and visible recovery from a saved-data read error. Course checks cover dark hover and the collapsed AI policy. Discussion checks exercise the class Options controls and manual course-link overrides. Ask checks include the pinned composer, scrollable history, expandable sources, answer copying and cancellation of a pending model request. Screenshots use reduced motion so transient tab highlights do not enter captures.
 
 Use `VERIFY_OUT=/tmp/boilerspace-verification` to choose a screenshot directory. The broader script otherwise writes to `verification/`; the focused script defaults to a temporary directory. Review screenshots before committing them, since existing demonstration assets are tracked.
@@ -74,7 +83,7 @@ Use `VERIFY_OUT=/tmp/boilerspace-verification` to choose a screenshot directory.
 
 ### Continuous integration
 
-[CI](https://github.com/ltmerletti/BoilerSpace/actions/workflows/ci.yml) runs on pushes and pull requests, and can also be started manually from GitHub Actions. It runs the unit suite on Node.js 22 and 24; the interface, chat streaming, syllabus, discussion, Gradescope and recovery Chromium suites; and the discussion-worker checks in Chromium and Firefox. The interface, discussion and worker suites run headlessly; the syllabus suite uses visible Chromium under `xvfb-run`. The broader interface suite saves a Playwright trace and page state if it throws.
+[CI](https://github.com/ltmerletti/BoilerSpace/actions/workflows/ci.yml) runs on pushes and pull requests, and can also be started manually from GitHub Actions. It runs lint and the unit suite on Node.js 22 and 24; the interface, chat streaming, syllabus, discussion, Gradescope and recovery Chromium suites; and the discussion-worker checks in Chromium and Firefox. The interface, discussion and worker suites run headlessly; the syllabus suite uses visible Chromium under `xvfb-run`. The broader interface suite saves a Playwright trace and page state if it throws.
 
 CI installs from `package-lock.json` and checks out the public fixtures at the same pinned commit shown above. It needs no Purdue credentials, API keys, or repository secrets. Each browser job uploads any generated fixture-test screenshots for seven days, including on failure. New runs cancel older runs on the same branch or pull request.
 

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { currentGradescopeCourse, gradescopeAssignments, gradescopeDate, gradescopeDocuments, linkGradescopeCourse, parseGradescopeAssignments, parseGradescopeCourses } from '../extension/lib/gradescope.js';
+import { currentGradescopeCourse, gradescopeDate, gradescopeDocuments, linkGradescopeCourse, parseGradescopeAssignments, parseGradescopeCourses } from '../extension/lib/gradescope.js';
 import { createGradescopeSync, fetchGradescopePage } from '../extension/lib/gradescope-sync.js';
 import { agendaItems, calendarEvents } from '../extension/lib/planner.js';
 import { ask, createTools } from '../extension/lib/agent.js';

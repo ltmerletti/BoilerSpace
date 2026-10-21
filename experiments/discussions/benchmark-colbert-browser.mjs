@@ -17,7 +17,7 @@ for (const [file, expected] of Object.entries({ ...json(`${directory}/sealed.jso
   if (createHash('sha256').update(readFileSync(file)).digest('hex') !== expected) throw new Error(`Changed benchmark input: ${file}`);
 }
 const assets = '.verify-tmp/discussion-retrieval/models/mixedbread-ai/mxbai-edge-colbert-v0-17m';
-const config = json(`${assets}/onnx_config.json`), tokenizer = json(`${assets}/tokenizer.json`);
+const config = json(`${assets}/onnx_config.json`);
 const spec = { directory: assets, file: 'model_int8.onnx', maxTokens: 512 };
 const probeFile = `${directory}/extended/colbert-public-parity.json`;
 const characterize = process.argv.includes('--characterize');

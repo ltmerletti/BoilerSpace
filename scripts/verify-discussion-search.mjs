@@ -1,7 +1,7 @@
 // Exercise bundled retrieval in real browser workers with synthetic, public-safe data.
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { readFileSync, createReadStream, statSync, writeFileSync, mkdirSync } from 'node:fs';
+import { createReadStream, statSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, firefox } from 'playwright';

@@ -40,7 +40,7 @@ export function snapshotSyllabus(courseId, root) {
     let notFound = false;
     const visit = (node, depth) => {
       if (!node || depth > 5) return;
-      let text = '';
+      let text;
       try {
         const path = node.location?.pathname ?? '';
         const file = /^\/content\/enforced\//.test(path);

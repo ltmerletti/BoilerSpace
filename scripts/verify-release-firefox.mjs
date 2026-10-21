@@ -12,6 +12,7 @@ import { fakeBrightspace, pdfWithPages, pdfWithJpxImage, snapshotFixture } from 
 import { installSelectionStream, selectionCoordinates, selectionState } from '../tests/text-selection-browser.mjs';
 import { COURSE_FILE_FIXTURES, checkCourseFileFormats } from '../tests/file-formats-fixture.mjs';
 import { updateAskMetadata, checkAskBackgroundUpdates, checkAskHistoryUpdates } from '../tests/ask-updates-browser.mjs';
+import { checkChatRecovery } from '../tests/chat-recovery-browser.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
 const out = process.env.VERIFY_OUT ?? path.join(root, '.verify-tmp/release-firefox');
@@ -318,6 +319,7 @@ try {
   await undo();
   check('Firefox native undo survives a background update', await question.evaluate(input => input.value === ''));
 
+  for (const result of await reopened.evaluate(checkChatRecovery)) check(`Firefox: ${result.name}`, result.pass);
   await browser.installExtension(archive);
   await reloadAfterInstall(page);
   const retained = await wait(async () => {

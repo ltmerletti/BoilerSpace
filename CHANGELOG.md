@@ -6,6 +6,8 @@ What changed, what prompted it, and what it means when you use BoilerSpace. Each
 
 ## October 21, 2026
 
+- **Recover from stalled chat requests.** A finished stream no longer waits for its connection to close. Stop works while a request is queued or silent, keepalive messages cannot hide a stalled answer, and the request deadline covers response reading. Failed chat saves also release Ask so you can try again.
+
 - **Read more course files without converting them first.** Ask can read RTF, Jupyter notebook cells, source code and common text datasets, plus compatible modern Word and PowerPoint variants. Code keeps its indentation; citations identify lines, cells or document parts. Notebook outputs and embedded objects are skipped. Office files are recognized from their contents, so a missing filename no longer turns a slide deck into a failed Word read. The readers reuse the bundled ZIP library and add no dependencies.
 
 ## October 19, 2026

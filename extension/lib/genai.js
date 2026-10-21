@@ -145,6 +145,17 @@ export async function linkAccount({ onStatus = () => {} } = {}) {
 let queue = Promise.resolve();
 let lastRequestAt = 0;
 
+function withSignal(promise, signal) {
+  if (!signal) return promise;
+  return new Promise((resolve, reject) => {
+    const finish = (settle, value) => { signal.removeEventListener('abort', abort); settle(value); };
+    const abort = () => finish(reject, signal.reason);
+    signal.addEventListener('abort', abort, { once: true });
+    Promise.resolve(promise).then(value => finish(resolve, value), error => finish(reject, error));
+    if (signal.aborted) abort();
+  });
+}
+
 function waitForRequest(ms, signal) {
   signal?.throwIfAborted();
   if (ms <= 0) return Promise.resolve();
@@ -160,26 +171,30 @@ function schedule(task, signal) {
   const run = queue.then(async () => {
     const wait = lastRequestAt + MIN_REQUEST_SPACING_MS - Date.now();
     await waitForRequest(wait, signal);
+    signal?.throwIfAborted();
     lastRequestAt = Date.now();
-    return task();
+    return withSignal(task(), signal);
   });
   queue = run.catch(() => {});
-  return run;
+  return withSignal(run, signal);
 }
 
 // Reads an OpenAI-style event stream into one message. onDelta(content, reasoning) gets the text so far;
 // reasoning arrives as reasoning_content (or reasoning) depending on the backend.
-export async function readEventStream(body, onDelta = () => {}, { idleMs = STREAM_IDLE_MS } = {}) {
+export async function readEventStream(body, onDelta = () => {}, { idleMs = STREAM_IDLE_MS, signal = null } = {}) {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
   let content = '';
   let reasoning = '';
+  let finished = false;
+  let lastProgressAt = Date.now();
   const calls = [];
   const handle = (line) => {
     if (!line.startsWith('data:')) return;
     const data = line.slice(5).trim();
-    if (!data || data === '[DONE]') return;
+    if (data === '[DONE]') { finished = true; return; }
+    if (!data) return;
     let chunk;
     try {
       chunk = JSON.parse(data);
@@ -189,6 +204,7 @@ export async function readEventStream(body, onDelta = () => {}, { idleMs = STREA
     if (chunk.error) throw new GenAIError(chunk.error.message ?? String(chunk.error));
     const delta = chunk.choices?.[0]?.delta ?? chunk.choices?.[0]?.message ?? {};
     const thought = delta.reasoning_content ?? delta.reasoning ?? delta.thinking;
+    if (thought || delta.content || delta.tool_calls?.length) lastProgressAt = Date.now();
     if (thought) reasoning += thought;
     if (delta.content) content += delta.content;
     if (thought || delta.content) onDelta(content, reasoning);
@@ -200,72 +216,87 @@ export async function readEventStream(body, onDelta = () => {}, { idleMs = STREA
       if (call.function?.arguments) calls[index].function.arguments += call.function.arguments;
     }
   };
-  for (;;) {
-    let timer;
-    const idle = new Promise((_, reject) => {
-      timer = setTimeout(() => reject(new GenAIError('GenAI Studio stopped responding. Try again, or pick a smaller model in Settings.')), idleMs);
-    });
-    let result;
-    try {
-      result = await Promise.race([reader.read(), idle]);
-    } catch (err) {
-      reader.cancel().catch(() => {});
-      throw err;
-    } finally {
-      clearTimeout(timer);
+  try {
+    while (!finished) {
+      signal?.throwIfAborted();
+      let timer;
+      const idle = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new GenAIError('GenAI Studio stopped responding. Try again, or pick a smaller model in Settings.', { code: 'stream-idle' })), Math.max(0, lastProgressAt + idleMs - Date.now()));
+      });
+      let result;
+      try {
+        result = await withSignal(Promise.race([reader.read(), idle]), signal);
+      } finally {
+        clearTimeout(timer);
+      }
+      const { value, done } = result;
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let newline;
+      while (!finished && (newline = buffer.indexOf('\n')) >= 0) {
+        handle(buffer.slice(0, newline).trim());
+        buffer = buffer.slice(newline + 1);
+      }
     }
-    const { value, done } = result;
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let newline;
-    while ((newline = buffer.indexOf('\n')) >= 0) {
-      handle(buffer.slice(0, newline).trim());
-      buffer = buffer.slice(newline + 1);
-    }
+    if (!finished) handle(buffer.trim());
+    const message = { role: 'assistant', content, ...(reasoning ? { reasoning } : {}) };
+    const toolCalls = calls.filter((c) => c?.function.name).map((c, i) => ({ ...c, id: c.id ?? `call_${i}` }));
+    if (toolCalls.length) message.tool_calls = toolCalls;
+    return message;
+  } finally {
+    reader.cancel().catch(() => {});
+    reader.releaseLock();
   }
-  handle(buffer.trim());
-  const message = { role: 'assistant', content, ...(reasoning ? { reasoning } : {}) };
-  const toolCalls = calls.filter((c) => c?.function.name).map((c, i) => ({ ...c, id: c.id ?? `call_${i}` }));
-  if (toolCalls.length) message.tool_calls = toolCalls;
-  return message;
 }
 
 // onDelta streams the answer text; signal lets the student stop a request.
 export async function chatCompletion(body, { onDelta = null, signal = null } = {}) {
-  const connection = await getConnection();
-  if (!connection?.key) throw new GenAIError('Connect Purdue GenAI Studio first.', { code: 'not-linked' });
   const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
   const requestSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
-
-  for (let attempt = 0; ; attempt++) {
-    const res = await schedule(() =>
-      fetch(`${GENAI_BASE}/api/chat/completions`, {
-        method: 'POST',
-        credentials: 'omit',
-        headers: { Authorization: `Bearer ${connection.key}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: connection.model ?? DEFAULT_MODEL, ...body, ...(onDelta ? { stream: true } : {}) }),
-        signal: requestSignal,
-      }),
-      requestSignal,
-    );
-    // Purdue's gateway also reports an explicit rate limit as HTTP 400.
-    const problem = res.status === 400 ? await res.clone().json().catch(() => null) : null;
-    const detail = problem?.detail ?? problem?.error?.message ?? problem?.message;
-    const rateLimited = res.status === 429 || (res.status === 400 && typeof detail === 'string' && /\brate limit (?:exceeded|reached)\b|\btoo many requests\b/i.test(detail));
-    if (rateLimited && attempt < MAX_RATE_LIMIT_RETRIES) {
-      const header = res.headers.get('retry-after');
-      const retryMs = header && (/^\d+(?:\.\d+)?$/.test(header) ? Number(header) * 1000 : Date.parse(header) - Date.now());
-      await waitForRequest(retryMs > 0 ? retryMs : 15_000 * 2 ** attempt, requestSignal);
-      continue;
+  try {
+    const connection = await withSignal(getConnection(), requestSignal);
+    if (!connection?.key) throw new GenAIError('Connect Purdue GenAI Studio first.', { code: 'not-linked' });
+    for (let attempt = 0; ; attempt++) {
+      const res = await schedule(() =>
+        fetch(`${GENAI_BASE}/api/chat/completions`, {
+          method: 'POST',
+          credentials: 'omit',
+          headers: { Authorization: `Bearer ${connection.key}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: connection.model ?? DEFAULT_MODEL, ...body, ...(onDelta ? { stream: true } : {}) }),
+          signal: requestSignal,
+        }),
+        requestSignal,
+      );
+      // Purdue's gateway also reports an explicit rate limit as HTTP 400.
+      try {
+        const problem = res.status === 400 ? await withSignal(res.json(), requestSignal).catch(error => {
+          requestSignal.throwIfAborted();
+          if (error instanceof SyntaxError) return null;
+          throw error;
+        }) : null;
+        const detail = problem?.detail ?? problem?.error?.message ?? problem?.message;
+        const rateLimited = res.status === 429 || (res.status === 400 && typeof detail === 'string' && /\brate limit (?:exceeded|reached)\b|\btoo many requests\b/i.test(detail));
+        if (rateLimited && attempt < MAX_RATE_LIMIT_RETRIES) {
+          const header = res.headers.get('retry-after');
+          const retryMs = header && (/^\d+(?:\.\d+)?$/.test(header) ? Number(header) * 1000 : Date.parse(header) - Date.now());
+          await waitForRequest(retryMs > 0 ? retryMs : 15_000 * 2 ** attempt, requestSignal);
+          continue;
+        }
+        if (rateLimited) throw new GenAIError('GenAI Studio’s request limit was reached. Wait a minute and try again.', { status: res.status, code: 'rate-limited' });
+        if (res.status === 401) throw new GenAIError('GenAI Studio rejected the saved key. Connect your account again.', { status: 401, code: 'not-linked' });
+        if (!res.ok) throw new GenAIError(`GenAI Studio request failed (HTTP ${res.status}).`, { status: res.status });
+        if (onDelta && (res.headers.get('content-type') ?? '').includes('event-stream')) return await readEventStream(res.body, onDelta, { signal: requestSignal });
+        const json = await withSignal(res.json(), requestSignal);
+        const message = json.choices?.[0]?.message;
+        if (!message) throw new GenAIError('GenAI Studio returned no message.');
+        const reasoning = message.reasoning_content ?? message.reasoning;
+        return reasoning ? { ...message, reasoning } : message;
+      } finally {
+        res.body?.cancel().catch(() => {});
+      }
     }
-    if (rateLimited) throw new GenAIError('GenAI Studio’s request limit was reached. Wait a minute and try again.', { status: res.status, code: 'rate-limited' });
-    if (res.status === 401) throw new GenAIError('GenAI Studio rejected the saved key. Connect your account again.', { status: 401, code: 'not-linked' });
-    if (!res.ok) throw new GenAIError(`GenAI Studio request failed (HTTP ${res.status}).`, { status: res.status });
-    if (onDelta && (res.headers.get('content-type') ?? '').includes('event-stream')) return readEventStream(res.body, onDelta);
-    const json = await res.json();
-    const message = json.choices?.[0]?.message;
-    if (!message) throw new GenAIError('GenAI Studio returned no message.');
-    const reasoning = message.reasoning_content ?? message.reasoning;
-    return reasoning ? { ...message, reasoning } : message;
+  } catch (error) {
+    if (timeout.aborted && !signal?.aborted) throw new GenAIError('GenAI Studio took too long to respond. Try again, or choose another model in Settings.', { code: 'request-timeout' });
+    throw error;
   }
 }

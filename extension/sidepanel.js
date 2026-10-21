@@ -562,18 +562,16 @@ async function sendQuestion(question, { reuse = false, resume = null } = {}) {
   state.abort = new AbortController();
   const pending = state.pending;
   const epoch = state.dataEpoch;
-  if (!reuse && !resume) {
-    try { await addMessage(chatId, { id: crypto.randomUUID(), role: 'user', content: text }, epoch); }
-    catch (error) { if (error.code === 'data-cleared') return; throw error; }
-  }
-  if (state.pending !== pending) return;
-  render({ bottom: true });
-  const ticker = setInterval(() => {
-    const clock = document.querySelector('#pending .trace-time');
-    if (clock && state.pending) clock.textContent = duration(Math.floor((Date.now() - state.pending.startedAt) / 1000));
-  }, 1000);
+  let ticker;
   let reply;
   try {
+    if (!reuse && !resume) await addMessage(chatId, { id: crypto.randomUUID(), role: 'user', content: text }, epoch);
+    if (state.pending !== pending) return;
+    render({ bottom: true });
+    ticker = setInterval(() => {
+      const clock = document.querySelector('#pending .trace-time');
+      if (clock && state.pending) clock.textContent = duration(Math.floor((Date.now() - state.pending.startedAt) / 1000));
+    }, 1000);
     const run = () => ask({
       question: text,
       history,
@@ -630,7 +628,10 @@ async function sendQuestion(question, { reuse = false, resume = null } = {}) {
   state.pending = null;
   state.abort = null;
   try { await addMessage(chatId, reply, epoch); }
-  catch (error) { if (error.code === 'data-cleared') return; throw error; }
+  catch (error) {
+    if (error.code === 'data-cleared') return;
+    setStatus(`Could not save this conversation: ${error.message}`);
+  }
   render();
   const retryDiscussions = discussionRetryQueued;
   discussionRetryQueued = false;

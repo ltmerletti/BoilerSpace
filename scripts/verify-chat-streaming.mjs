@@ -6,6 +6,7 @@ import path from 'node:path';
 import { chromium } from 'playwright';
 import { snapshotFixture } from '../tests/helpers.mjs';
 import { installSelectionStream, selectionCoordinates, selectionState } from '../tests/text-selection-browser.mjs';
+import { checkChatRecovery } from '../tests/chat-recovery-browser.mjs';
 const profile = mkdtempSync(path.join(tmpdir(), 'boilerspace-stream-'));
 const out = process.env.VERIFY_OUT ?? '.verify-tmp/chat-streaming';
 mkdirSync(out, { recursive: true });
@@ -276,6 +277,7 @@ try {
   });
   await page.waitForFunction(() => document.querySelector('.chat-title')?.textContent === 'Updated chat title');
   check('a background chat update preserves selection through a full panel redraw', (await page.evaluate(selectionState)).text === selected.text);
+  for (const result of await page.evaluate(checkChatRecovery)) check(result.name, result.pass);
   check('no browser page errors', errors.length === 0);
   await page.screenshot({ path: path.join(out, 'chat-streaming.png') });
   writeFileSync(path.join(out, 'results.json'), JSON.stringify({ checks, errors }, null, 2));

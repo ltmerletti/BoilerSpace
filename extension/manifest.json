@@ -29,7 +29,7 @@
   "background": { "service_worker": "background.js", "scripts": ["background-firefox.js"], "type": "module" },
   "permissions": ["storage", "unlimitedStorage", "scripting", "sidePanel"],
   "host_permissions": ["https://purdue.brightspace.com/*", "https://genai.rcac.purdue.edu/*", "https://purdue.simplesyllabus.com/*"],
-  "optional_host_permissions": ["https://edstem.org/*", "https://us.edstem.org/*", "https://piazza.com/*", "https://www.gradescope.com/*"],
+  "optional_host_permissions": ["https://*/*", "http://localhost/*", "http://127.0.0.1/*"],
   "content_scripts": [
     {
       "matches": ["https://purdue.brightspace.com/d2l/*"],

@@ -8,11 +8,12 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import puppeteer from 'puppeteer-core';
 import { getInstalledBrowsers } from '@puppeteer/browsers';
-import { fakeBrightspace, pdfWithPages, pdfWithJpxImage, snapshotFixture } from '../tests/helpers.mjs';
+import { fakeBrightspace, MODEL_OUTPUT, pdfWithPages, pdfWithJpxImage, snapshotFixture, SYLLABUS_PAGES } from '../tests/helpers.mjs';
 import { installSelectionStream, selectionCoordinates, selectionState } from '../tests/text-selection-browser.mjs';
 import { COURSE_FILE_FIXTURES, checkCourseFileFormats } from '../tests/file-formats-fixture.mjs';
 import { updateAskMetadata, checkAskBackgroundUpdates, checkAskHistoryUpdates } from '../tests/ask-updates-browser.mjs';
 import { checkChatRecovery } from '../tests/chat-recovery-browser.mjs';
+import { checkCustomLlm } from '../tests/custom-llm-browser.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
 const out = process.env.VERIFY_OUT ?? path.join(root, '.verify-tmp/release-firefox');
@@ -320,6 +321,27 @@ try {
   check('Firefox native undo survives a background update', await question.evaluate(input => input.value === ''));
 
   for (const result of await reopened.evaluate(checkChatRecovery)) check(`Firefox: ${result.name}`, result.pass);
+  await reopened.evaluate(() => (import('./lib/genai.js')).then(module => module.setProvider('custom')));
+  // BiDi cannot drive a privileged setup tab. Load the same form in a test frame,
+  // with approval backed by the background's real host-permission check.
+  await page.evaluate(url => {
+    const frame = document.createElement('iframe');
+    frame.id = 'custom-api-test';
+    frame.src = url;
+    document.body.append(frame);
+  }, await reopened.evaluate(() => chrome.runtime.getURL('sidepanel.html?llm-setup=1')));
+  const customFrame = await wait(async () => {
+    for (const frame of page.frames().filter(frame => frame.parentFrame())) {
+      if (await frame.evaluate(() => location.search.includes('llm-setup') && !!document.querySelector('select[aria-label="Model provider"]')).catch(() => false)) return frame;
+    }
+  });
+  await customFrame.evaluate(() => {
+    window.fetch = async () => new Response('{}', { status: 404, headers: { 'content-type': 'application/json' } });
+    chrome.permissions = { contains: async permission => (await chrome.runtime.sendMessage({ type: 'boilerspace-data', action: 'genai-api-access', baseUrl: permission.origins[0].replace(/\*$/, '') })).data };
+  });
+  for (const result of await customFrame.evaluate(checkCustomLlm, { modelOutput: MODEL_OUTPUT, pages: SYLLABUS_PAGES, permissionMode: 'pregranted' })) check(`Firefox: ${result.name}`, result.pass);
+  await page.evaluate(() => document.getElementById('custom-api-test').remove());
+  await reopened.evaluate(() => (import('./lib/genai.js')).then(module => module.setProvider('purdue')));
   await browser.installExtension(archive);
   await reloadAfterInstall(page);
   const retained = await wait(async () => {

@@ -64,6 +64,16 @@ Temporary network or loading failures get one retry after the other courses fini
 
 Clear syllabus dates are added to the agenda and calendar automatically. If syllabus dates conflict with Brightspace, the agenda uses Brightspace and keeps the discrepancy available to inspect.
 
+## Choose a model provider
+
+Purdue GenAI Studio remains the default. To use another service, expand the model connection under **Settings** and choose **OpenAI-compatible API** under **Provider**. In the embedded Brightspace panel, **Set up API connection** opens an extension tab for the browser's permission prompt.
+
+Enter the API base URL, API key and model ID, then choose **Save and use** and allow access to that host. For OpenAI, the base is `https://api.openai.com/v1`. The request format follows [Chat Completions](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create). A complete URL ending in `/chat/completions` is also accepted. HTTPS is required except for local servers on `http://localhost` or `http://127.0.0.1`, which may omit the key. **Load models** is optional; a service without a model-list endpoint can still use the model ID you enter.
+
+Ask needs Chat Completions with tool calling and standard streamed responses. Syllabus extraction needs JSON schema output. Vision depends on the chosen model. Responses-only APIs and Azure deployment URLs that require a query-string API version are not supported. A provider can still reject a model or unsupported capability; Settings does not spend tokens to validate a saved connection.
+
+The selected provider handles Ask, chat titles and automatic syllabus reading. Questions, chat context and relevant course material are sent there, including saved discussion excerpts used by Ask. Its charges and data policy apply. Switching providers keeps both saved connections. Removing the custom API deletes its key without silently switching back to Purdue. A blank key field keeps the saved key only when the API base URL is unchanged.
+
 ## Theme
 
 Choose **Light**, **Dark**, or **System** under **Settings → Theme**. System is the default and follows your system appearance as it changes. Your choice is saved for this browser profile and applies across all panel tabs and other open BoilerSpace panels.

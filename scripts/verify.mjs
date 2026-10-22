@@ -414,7 +414,7 @@ try {
   await page.waitForSelector('.field select option >> nth=2', { state: 'attached', timeout: 5000 });
   const options = await page.locator('.field select option').allTextContents();
   check('model picker lists GenAI Studio chat models', options.includes('qwen3.8:27b (recommended)') && options.includes('llama3.3:70b') && !options.some((o) => o.includes('embed')), options.join(', '));
-  await page.selectOption('.field select', 'llama3.3:70b');
+  await page.selectOption('[data-focus-key="model"]', 'llama3.3:70b');
   await sleep(300);
   const picked = (await page.evaluate(() => chrome.storage.local.get('genai'))).genai;
   check('picking a model sticks', picked.model === 'llama3.3:70b' && picked.modelChosen === true);

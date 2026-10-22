@@ -25,6 +25,7 @@ try {
   await page.goto(`${origin}/document.html`);
   await page.evaluate(async snapshot => {
     const at = new Date().toISOString();
+    snapshot.data[0].assignments[1].dueAt = new Date(Date.now() + 2 * 86400000).toISOString();
     const messages = Array.from({ length: 8 }, (_, index) => [
       { role: 'user', content: `Earlier question ${index}` },
       { role: 'assistant', content: 'Earlier course discussion. '.repeat(40) },

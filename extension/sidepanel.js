@@ -4,7 +4,8 @@ import * as store from './lib/store.js';
 import { DATA_EPOCH_KEY, dataRequest } from './lib/data-lifecycle.js';
 import { AUTO_SYNC_INTERVAL_MS, BRIGHTSPACE_ORIGIN, canReachBrightspace, connectParentPage, syncNow } from './lib/sync.js';
 import { lockIsFresh } from './lib/sync-store.js';
-import { DEFAULT_MODEL, getConnection, linkAccount, refreshModels, setModel, unlink } from './lib/genai.js';
+import { DEFAULT_MODEL, getConnection, linkAccount, refreshModels, saveCustomConnection, setModel, setProvider, unlink } from './lib/genai.js';
+import { isCustomLlm, normalizeApiBase } from './lib/llm-config.js';
 import { choosableFiles, chooseSyllabus, pendingReviews, processCurrentSyllabi, readUploadedSyllabus, usableRecord, withSyllabusSources } from './lib/syllabus.js';
 import { agendaItems, calendarEvents, courseTitle, currentCourses, groupByDay, itemDayKey, shortCourseLabel } from './lib/planner.js';
 import { buildCalendar } from './lib/ics.js';
@@ -61,6 +62,10 @@ const state = {
   changes: [],
   genai: null,
   genaiError: '',
+  llmProvider: 'purdue',
+  customLlm: null,
+  customDraft: null,
+  customStatus: '',
   syllabi: {},
   reviews: {},
   discussions: { sources: [] },
@@ -188,7 +193,7 @@ let stateLoadVersion = 0;
 async function loadState({ includeChat = false } = {}) {
   const version = ++stateLoadVersion;
   const all = await store.getAll();
-  const genai = all.genai ? await getConnection() : null;
+  const genai = all.genai || all.customLlm ? await getConnection() : null;
   let chats;
   try { if (includeChat) chats = await loadChats(all); }
   catch (error) { if (error.code === 'data-cleared') return; throw error; }
@@ -208,6 +213,8 @@ async function loadState({ includeChat = false } = {}) {
   state.syncMeta = all.syncMeta ?? null;
   state.changes = all.changes ?? [];
   state.genai = genai;
+  state.llmProvider = all.llmProvider ?? 'purdue';
+  state.customLlm = all.customLlm ?? null;
   state.syllabi = all.syllabi ?? {};
   state.syllabusAccess = all.syllabusAccess ?? null;
   state.reviews = all.reviews ?? {};
@@ -738,8 +745,9 @@ async function saveBenchmarkData() {
 }
 
 async function clearData() {
-  if (!confirm('Delete all BoilerSpace data on this device? This also disconnects GenAI Studio.')) return;
+  if (!confirm('Delete all BoilerSpace data on this device? This also removes saved model connections and API keys.')) return;
   state.abort?.abort();
+  state.customDraft = null;
   state.pending = null;
   state.abort = null;
   queuedSyllabusRun = null;
@@ -837,11 +845,12 @@ function setupView() {
     h(
       'div',
       null,
-      h('div', { class: 'step-title' }, connected ? 'GenAI Studio connected' : 'Purdue GenAI Studio'),
+      h('div', { class: 'step-title' }, connected ? (isCustomLlm(state.genai) ? 'Model connected' : 'GenAI Studio connected') : 'Purdue GenAI Studio'),
       !connected && h('p', null, 'Read syllabi and ask questions using your Purdue account.'),
       state.linkStatus && h('p', { class: 'small', style: 'margin-top:6px' }, state.linkStatus),
       state.linkError && h('p', { class: 'small error-text', style: 'margin-top:6px' }, state.linkError),
       !connected && h('div', { class: 'button-row' }, h('button', { class: synced ? 'button' : 'button secondary', type: 'button', disabled: state.busy.link, onclick: connectGenAI }, state.busy.link ? 'Connecting…' : 'Connect')),
+      !connected && modelSettingsButton(),
     ),
   );
   return h(
@@ -863,6 +872,7 @@ function connectReminder() {
     state.linkStatus && h('p', { class: 'small', style: 'margin-top:6px' }, state.linkStatus),
     state.linkError && h('p', { class: 'small error-text', style: 'margin-top:6px' }, state.linkError),
     h('div', { class: 'button-row' }, h('button', { class: 'button', type: 'button', disabled: state.busy.link, onclick: connectGenAI }, state.busy.link ? 'Connecting…' : 'Connect GenAI Studio')),
+    modelSettingsButton(),
   );
 }
 
@@ -1092,7 +1102,7 @@ function policyBlock(record) {
 }
 
 function syllabusStatusLine(raw) {
-  if (!raw) return state.genai ? (state.busy.syllabi ? 'Reading…' : 'Not read yet.') : 'Connect GenAI Studio to read it.';
+  if (!raw) return state.genai ? (state.busy.syllabi ? 'Reading…' : 'Not read yet.') : 'Connect a model provider to read it.';
   if (raw.status === 'none') return 'No syllabus was found for this course. Some courses do not post one.';
   if (raw.status === 'external') return `The syllabus is a link to ${raw.externalUrl ? new URL(raw.externalUrl).hostname : 'another site'}, which BoilerSpace can't open. Upload a copy to read it.`;
   if (raw.status === 'unreadable') return raw.warning;
@@ -1898,7 +1908,7 @@ function discussionAccessView() {
   return [h('section', { class: 'setup' },
     h('h2', { class: 'setup-intro' }, state.discussionAccessDone ? `${name} connected` : `Connect ${name}`),
     h('p', null, state.discussionAccessDone ? 'Your posts are being added in the background. You can return to BoilerSpace.' : 'Allow access and sign in if needed. Your courses are found and matched automatically.'),
-    h('p', { class: 'meta', style: 'margin-top:12px' }, 'Relevant post text goes to Purdue GenAI Studio when you ask. BoilerSpace reads public text and replies; it does not post or reply.'),
+    h('p', { class: 'meta', style: 'margin-top:12px' }, 'Relevant post text goes to your selected model provider when you ask. BoilerSpace reads public text and replies; it does not post or reply.'),
     state.discussionError && h('p', { class: 'error-text' }, state.discussionError),
     state.discussionConnecting && h('p', { class: 'connection-progress', role: 'status' }, state.discussionConnecting),
     !state.discussionAccessDone && h('div', { class: 'button-row' }, h('button', { type: 'button', class: 'button', disabled: state.busy.discussionConnect, onclick: () => connectDiscussions() }, state.busy.discussionConnect ? 'Connecting…' : `Allow ${name} and connect`)),
@@ -1907,14 +1917,91 @@ function discussionAccessView() {
   )];
 }
 
+function modelSettingsButton() {
+  return h('button', { class: 'text-button', type: 'button', onclick: () => {
+    state.view = 'settings';
+    expandedSections.set('genai-details', true);
+    saveUi();
+    render({ top: true });
+  } }, 'Use an OpenAI-compatible API');
+}
+
+function providerField() {
+  return h('label', { class: 'field' }, 'Provider', h('select', { 'aria-label': 'Model provider', value: state.llmProvider, disabled: state.busy.link || Boolean(state.pending), onchange: async event => {
+    state.genaiError = '';
+    state.linkError = '';
+    state.customStatus = '';
+    state.modelsLoaded = false;
+    await setProvider(event.target.value);
+    await loadState();
+    render();
+  } }, h('option', { value: 'purdue', selected: state.llmProvider === 'purdue' }, 'Purdue GenAI Studio'), h('option', { value: 'custom', selected: state.llmProvider === 'custom' }, 'OpenAI-compatible API')));
+}
+
+function customLlmForm() {
+  if (EMBEDDED) return h('div', null,
+    h('p', { class: 'meta' }, 'Set up the API in an extension tab so the browser can ask for site access.'),
+    h('div', { class: 'button-row' }, h('button', { class: 'button secondary', type: 'button', onclick: async () => {
+      const reply = await chrome.runtime.sendMessage({ type: 'boilerspace-open-llm-setup' });
+      if (!reply?.ok) { state.linkError = reply?.error ?? 'Could not open API setup. Try the browser toolbar panel.'; render(); }
+    } }, 'Set up API connection')));
+  const saved = state.customLlm;
+  const draft = state.customDraft ??= { baseUrl: saved?.baseUrl ?? 'https://api.openai.com/v1', key: '', model: saved?.model ?? '' };
+  const input = (name, title, props = {}) => h('label', { class: 'field' }, title, h('input', {
+    ...props, value: draft[name], disabled: state.busy.link, oninput: event => { draft[name] = event.target.value; },
+  }));
+  return h('form', { class: 'custom-api-form', onsubmit: async event => {
+    event.preventDefault();
+    state.linkError = '';
+    state.customStatus = '';
+    let connecting;
+    try {
+      const baseUrl = normalizeApiBase(draft.baseUrl);
+      // A blank field retains the key only for exactly the same API base.
+      const key = draft.key || (saved?.baseUrl === baseUrl ? saved.key : '');
+      connecting = saveCustomConnection({ baseUrl, key, model: draft.model });
+      state.busy.link = true;
+      render();
+      const connection = await connecting;
+      draft.key = '';
+      state.customLlm = connection;
+      state.customDraft = { baseUrl: connection.baseUrl, key: '', model: connection.model };
+      state.customStatus = 'Saved. Ask and syllabus reading now use this API.';
+      state.genaiError = '';
+      state.modelsLoaded = true;
+    } catch (error) { state.linkError = error.message; }
+    finally { state.busy.link = false; await loadState(); render(); }
+  } },
+    input('baseUrl', 'API base URL', { type: 'url', required: true, placeholder: 'https://api.openai.com/v1', autocomplete: 'off', spellcheck: 'false' }),
+    input('key', 'API key', { type: 'password', autocomplete: 'new-password', placeholder: saved?.key ? 'Leave blank to keep the saved key' : 'Optional for localhost', spellcheck: 'false' }),
+    input('model', 'Model ID', { type: 'text', required: true, list: 'api-models', autocomplete: 'off', placeholder: 'Model ID from your provider', spellcheck: 'false' }),
+    h('datalist', { id: 'api-models' }, (saved?.models ?? []).map(model => h('option', { value: model }))),
+    h('p', { class: 'meta' }, 'Uses Chat Completions with tool calling. Syllabus reading also requires JSON schema output. Your questions, chat context and relevant course material go to this API. Its usage charges and data policy apply.'),
+    h('div', { class: 'button-row' },
+      h('button', { class: 'button secondary', type: 'submit', disabled: state.busy.link || Boolean(state.pending) }, state.busy.link ? 'Saving…' : 'Save and use'),
+      saved && h('button', { class: 'text-button', type: 'button', disabled: state.busy.link, onclick: async () => {
+        try { await refreshModels(); await loadState(); state.customStatus = 'Models loaded. You can also enter a model ID.'; }
+        catch (error) { state.customStatus = error.message; }
+        render();
+      } }, 'Load models'),
+      saved && h('button', { class: 'text-button danger-text', type: 'button', disabled: state.busy.link || Boolean(state.pending), onclick: async () => {
+        await unlink('custom'); state.customDraft = null; state.customStatus = ''; await loadState(); render();
+      } }, 'Remove API connection'),
+    ),
+    state.customStatus && h('p', { class: 'meta', role: 'status' }, state.customStatus),
+  );
+}
+
 function modelField() {
   const models = state.genai.models?.length ? state.genai.models : [state.genai.model];
   if (!state.modelsLoaded) {
     state.modelsLoaded = true;
+    const connection = state.genai;
     refreshModels()
       .then(() => loadState())
       .then(() => state.view === 'settings' && render())
       .catch(error => {
+        if (state.llmProvider !== 'purdue' || state.genai?.key !== connection.key || state.genai?.generation !== connection.generation) return;
         state.genaiError = error.message;
         if (state.view === 'settings') render();
       });
@@ -1928,7 +2015,8 @@ function modelField() {
       {
         'data-focus-key': 'model',
         onchange: async (e) => {
-          await setModel(e.target.value);
+          try { await setModel(e.target.value, 'purdue'); }
+          catch (error) { setStatus(error.message); }
           await loadState();
           render();
         },
@@ -1980,17 +2068,17 @@ function settingsView() {
         h('div', { class: 'button-row' }, h('button', { class: 'button secondary', type: 'button', disabled: state.busy.sync, onclick: runSync }, state.busy.sync ? 'Syncing…' : 'Sync now')),
       ],
     }),
-    connectionCard('genai-details', 'genai', 'Purdue GenAI Studio', state.genaiError ? 'Connection needs attention' : connected ? 'Connected' : 'Course answers, with your Purdue account', connected && !state.genaiError, {
-      action: (!connected || state.genaiError) && h('button', { class: 'button secondary', type: 'button', 'aria-label': `${state.genaiError ? 'Reconnect' : 'Connect'} Purdue GenAI Studio`, disabled: state.busy.link, onclick: connectGenAI }, state.busy.link ? 'Connecting…' : state.genaiError ? 'Reconnect' : 'Connect'),
+    connectionCard('genai-details', 'genai', state.llmProvider === 'custom' ? 'OpenAI-compatible API' : 'Purdue GenAI Studio', state.genaiError ? 'Connection needs attention' : connected ? (isCustomLlm(state.genai) ? new URL(state.genai.baseUrl).host : 'Connected') : 'Course answers and syllabus reading', connected && !state.genaiError, {
+      action: state.llmProvider !== 'custom' && (!connected || state.genaiError) && h('button', { class: 'button secondary', type: 'button', 'aria-label': `${state.genaiError ? 'Reconnect' : 'Connect'} Purdue GenAI Studio`, disabled: state.busy.link, onclick: connectGenAI }, state.busy.link ? 'Connecting…' : state.genaiError ? 'Reconnect' : 'Connect'),
       notices: [
         state.linkStatus && h('p', { class: 'connection-progress', role: 'status' }, state.linkStatus),
         state.linkError && h('p', { class: 'small error-text', role: 'alert' }, state.linkError),
       ],
-      children: [connected && [
+      children: [providerField(), state.llmProvider === 'custom' ? customLlmForm() : connected && [
         state.genaiError && h('p', { class: 'small error-text' }, state.genaiError),
         h('p', { class: 'meta', style: 'margin-top:10px' }, `Connected as ${state.genai.name}.`),
         modelField(),
-        h('div', { class: 'button-row' }, h('button', { class: 'text-button', type: 'button', onclick: async () => { await unlink(); await loadState(); render(); } }, 'Disconnect GenAI Studio')),
+        h('div', { class: 'button-row' }, h('button', { class: 'text-button', type: 'button', onclick: async () => { await unlink('purdue'); await loadState(); render(); } }, 'Disconnect GenAI Studio')),
         h('p', { class: 'meta', style: 'margin-top:8px' }, 'Disconnect removes the saved key from this browser. You can revoke it in GenAI Studio under Settings, Account.'),
       ]],
     }),
@@ -2296,6 +2384,7 @@ async function init() {
   }
 
   await loadState({ includeChat: true });
+  if (PARAMS.has('llm-setup')) { state.view = 'settings'; expandedSections.set('genai-details', true); }
   render();
   document.documentElement.removeAttribute('data-panel-loading');
 
@@ -2311,6 +2400,7 @@ async function init() {
     const keys = Object.keys(changes);
     if (changes[DATA_EPOCH_KEY]) {
       state.abort?.abort();
+      state.customDraft = null;
       state.pending = null;
       state.abort = null;
       queuedSyllabusRun = null;
@@ -2318,7 +2408,9 @@ async function init() {
       render();
       return;
     }
-    if (changes.genai && !changes.genai.newValue) state.abort?.abort();
+    const activeConnection = changes[state.llmProvider === 'custom' ? 'customLlm' : 'genai'];
+    if (changes.llmProvider || (activeConnection && (!activeConnection.newValue || activeConnection.oldValue?.generation !== activeConnection.newValue.generation || activeConnection.oldValue?.key !== activeConnection.newValue.key))) state.abort?.abort();
+    if (changes.llmProvider || changes.customLlm) { state.modelsLoaded = false; state.genaiError = ''; }
     if (changes.theme) applyTheme(changes.theme.newValue ?? 'system');
     if (changes.chats && !state.pending) {
       const chats = changes.chats.newValue ?? [];
@@ -2337,7 +2429,7 @@ async function init() {
     }
     const accessGranted = changes.syllabusAccess?.newValue === true && changes.syllabusAccess.oldValue !== true;
     const snapshotChanged = keys.includes('snapshot');
-    const linked = keys.includes('genai') && !changes.genai.oldValue && changes.genai.newValue;
+    const linked = (keys.includes('genai') && !changes.genai.oldValue && changes.genai.newValue) || (keys.includes('customLlm') && changes.customLlm.newValue);
     const newDiscussion = changes.discussions?.newValue?.sources?.some(source => !changes.discussions.oldValue?.sources?.some(previous => previous.id === source.id));
     await loadState();
     if (!state.pending || state.view === 'ask') render();

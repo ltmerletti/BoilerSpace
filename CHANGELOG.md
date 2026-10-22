@@ -4,6 +4,10 @@ What changed, what prompted it, and what it means when you use BoilerSpace. Each
 
 [Back to the README](README.md) · [Full commit history](https://github.com/ltmerletti/BoilerSpace/commits/main)
 
+## October 22, 2026
+
+- **Use your own model API.** Settings accepts an OpenAI-compatible API URL, key and model alongside Purdue GenAI Studio. Switch between saved providers, grant access only to the chosen API host, and use that provider for Ask and syllabus reading. Keys stay out of exports. The privacy policy and setup guide explain what goes to the provider and how to remove the connection.
+
 ## October 21, 2026
 
 - **Recover from stalled chat requests.** A finished stream no longer waits for its connection to close. Stop works while a request is queued or silent, keepalive messages cannot hide a stalled answer, and the request deadline covers response reading. Failed chat saves also release Ask so you can try again.

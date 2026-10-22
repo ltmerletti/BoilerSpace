@@ -119,6 +119,8 @@ jobs:
             script: scripts/verify-chat-streaming.mjs
           - suite: ask-updates
             script: scripts/verify-ask-updates.mjs
+          - suite: custom-llm
+            script: scripts/verify-custom-llm.mjs
           - suite: chat-narration
             script: scripts/verify-chat-narration.mjs
           - suite: data-lifecycle

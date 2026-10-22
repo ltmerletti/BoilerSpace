@@ -146,6 +146,10 @@ export function handleMessage(message, sender, sendResponse) {
     chrome.tabs.create({ url: chrome.runtime.getURL('sidepanel.html?syllabus-access=1'), active: true }).then(() => sendResponse({ ok: true }), (err) => sendResponse({ ok: false, error: err.message }));
     return true;
   }
+  if (message?.type === 'boilerspace-open-llm-setup') {
+    chrome.tabs.create({ url: chrome.runtime.getURL('sidepanel.html?llm-setup=1'), active: true }).then(tab => sendResponse({ ok: true, tabId: tab.id }), error => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
   if (message?.type === 'boilerspace-syllabus-access') {
     reportSyllabusAccess().then((granted) => sendResponse({ ok: true, granted }), (err) => sendResponse({ ok: false, error: err.message }));
     return true;

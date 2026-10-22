@@ -1,6 +1,7 @@
 // Purdue GenAI Studio (Open WebUI 0.11) connection: account linking and rate-limited model requests.
 
 import { dataRequest } from './data-lifecycle.js';
+import { apiPermission, customConnection, isCustomLlm, llmLabel } from './llm-config.js';
 
 export const GENAI_BASE = 'https://genai.rcac.purdue.edu';
 export const DEFAULT_MODEL = 'qwen3.8:27b';
@@ -28,10 +29,38 @@ export async function getConnection() {
   return dataRequest('genai-read');
 }
 
+export const setProvider = provider => dataRequest('genai-provider', { provider });
+
+export async function saveCustomConnection(values) {
+  const connection = customConnection(values);
+  // Request permission before the first await to retain the browser's user gesture.
+  const permission = chrome.permissions.request({ origins: [apiPermission(connection.baseUrl)] }).then(granted => ({ granted }), error => ({ error }));
+  const attempt = await dataRequest('genai-link-begin');
+  try {
+    const access = await permission;
+    if (access.error) throw access.error;
+    if (!access.granted) throw new Error('Site access was not allowed. Your connection was not saved.');
+    return await dataRequest('genai-custom-finish', { ...attempt, connection });
+  } finally {
+    await dataRequest('genai-link-cancel', attempt).catch(() => {});
+  }
+}
+
+async function requireApiAccess(connection) {
+  if (isCustomLlm(connection) && !await dataRequest('genai-api-access', { baseUrl: connection.baseUrl })) {
+    throw new GenAIError('API site access was removed. Open Settings and save the connection to allow access again.', { code: 'site-access' });
+  }
+}
+
+const apiHeaders = key => ({ ...(key ? { Authorization: `Bearer ${key}` } : {}), 'Content-Type': 'application/json' });
+
 const isChatModel = (id) => !/embed|arena|whisper|tts|rerank/i.test(id);
 
-async function fetchModelIds(key) {
-  const res = await fetch(`${GENAI_BASE}/api/models`, { headers: { Authorization: `Bearer ${key}` }, credentials: 'omit', signal: AbortSignal.timeout(CONNECTION_TIMEOUT_MS) });
+async function fetchModelIds(key, connection = null) {
+  if (connection) await requireApiAccess(connection);
+  const custom = isCustomLlm(connection);
+  const res = await fetch(custom ? `${connection.baseUrl}/models` : `${GENAI_BASE}/api/models`, { headers: apiHeaders(key), credentials: 'omit', redirect: custom ? 'error' : 'follow', signal: AbortSignal.timeout(CONNECTION_TIMEOUT_MS) });
+  if (custom && !res.ok) throw new GenAIError(`The API could not list models (HTTP ${res.status}). You can enter a model ID instead.`, { status: res.status });
   if (res.status === 401) throw new GenAIError('GenAI Studio rejected the saved key. Connect your account again.', { status: 401, code: 'not-linked' });
   if (!res.ok) throw new GenAIError(`GenAI Studio could not list models (HTTP ${res.status}).`, { status: res.status });
   return ((await res.json()).data ?? []).map((m) => m.id).filter(isChatModel).sort();
@@ -39,17 +68,17 @@ async function fetchModelIds(key) {
 
 export async function refreshModels() {
   const { connection, epoch, identity } = await dataRequest('genai-refresh-begin');
-  if (!connection?.key) return [];
-  const models = await fetchModelIds(connection.key);
+  if (!connection || (!connection.key && !isCustomLlm(connection))) return [];
+  const models = await fetchModelIds(connection.key, connection);
   return dataRequest('genai-refresh', { epoch, identity, models });
 }
 
-export async function setModel(model) {
-  await dataRequest('genai-set-model', { model });
+export async function setModel(model, provider = null) {
+  await dataRequest('genai-set-model', { model, provider });
 }
 
-export async function unlink() {
-  await dataRequest('genai-unlink');
+export async function unlink(provider = null) {
+  await dataRequest('genai-unlink', { provider });
 }
 
 // ---------- Linking ----------
@@ -167,9 +196,9 @@ function waitForRequest(ms, signal) {
   });
 }
 
-function schedule(task, signal) {
+function schedule(task, signal, spacing = MIN_REQUEST_SPACING_MS) {
   const run = queue.then(async () => {
-    const wait = lastRequestAt + MIN_REQUEST_SPACING_MS - Date.now();
+    const wait = lastRequestAt + spacing - Date.now();
     await waitForRequest(wait, signal);
     signal?.throwIfAborted();
     lastRequestAt = Date.now();
@@ -181,7 +210,7 @@ function schedule(task, signal) {
 
 // Reads an OpenAI-style event stream into one message. onDelta(content, reasoning) gets the text so far;
 // reasoning arrives as reasoning_content (or reasoning) depending on the backend.
-export async function readEventStream(body, onDelta = () => {}, { idleMs = STREAM_IDLE_MS, signal = null } = {}) {
+export async function readEventStream(body, onDelta = () => {}, { idleMs = STREAM_IDLE_MS, signal = null, label = 'GenAI Studio' } = {}) {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
@@ -221,7 +250,7 @@ export async function readEventStream(body, onDelta = () => {}, { idleMs = STREA
       signal?.throwIfAborted();
       let timer;
       const idle = new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new GenAIError('GenAI Studio stopped responding. Try again, or pick a smaller model in Settings.', { code: 'stream-idle' })), Math.max(0, lastProgressAt + idleMs - Date.now()));
+        timer = setTimeout(() => reject(new GenAIError(`${label} stopped responding. Try again, or pick a smaller model in Settings.`, { code: 'stream-idle' })), Math.max(0, lastProgressAt + idleMs - Date.now()));
       });
       let result;
       try {
@@ -255,17 +284,28 @@ export async function chatCompletion(body, { onDelta = null, signal = null } = {
   const requestSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
   try {
     const connection = await withSignal(getConnection(), requestSignal);
-    if (!connection?.key) throw new GenAIError('Connect Purdue GenAI Studio first.', { code: 'not-linked' });
+    const custom = isCustomLlm(connection);
+    const label = llmLabel(connection);
+    if (!connection || (!connection.key && !custom)) throw new GenAIError('Connect a model provider in Settings first.', { code: 'not-linked' });
+    await withSignal(requireApiAccess(connection), requestSignal);
+    const payload = { model: connection.model ?? DEFAULT_MODEL, ...body, ...(onDelta ? { stream: true } : {}) };
+    if (custom) {
+      // Reasoning APIs can reject temperature. Let custom providers use their default.
+      delete payload.temperature;
+      payload.store = false;
+    }
     for (let attempt = 0; ; attempt++) {
       const res = await schedule(() =>
-        fetch(`${GENAI_BASE}/api/chat/completions`, {
+        fetch(custom ? `${connection.baseUrl}/chat/completions` : `${GENAI_BASE}/api/chat/completions`, {
           method: 'POST',
           credentials: 'omit',
-          headers: { Authorization: `Bearer ${connection.key}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model: connection.model ?? DEFAULT_MODEL, ...body, ...(onDelta ? { stream: true } : {}) }),
+          redirect: custom ? 'error' : 'follow',
+          headers: apiHeaders(connection.key),
+          body: JSON.stringify(payload),
           signal: requestSignal,
         }),
         requestSignal,
+        custom ? 0 : MIN_REQUEST_SPACING_MS,
       );
       // Purdue's gateway also reports an explicit rate limit as HTTP 400.
       try {
@@ -282,13 +322,13 @@ export async function chatCompletion(body, { onDelta = null, signal = null } = {
           await waitForRequest(retryMs > 0 ? retryMs : 15_000 * 2 ** attempt, requestSignal);
           continue;
         }
-        if (rateLimited) throw new GenAIError('GenAI Studio’s request limit was reached. Wait a minute and try again.', { status: res.status, code: 'rate-limited' });
-        if (res.status === 401) throw new GenAIError('GenAI Studio rejected the saved key. Connect your account again.', { status: 401, code: 'not-linked' });
-        if (!res.ok) throw new GenAIError(`GenAI Studio request failed (HTTP ${res.status}).`, { status: res.status });
-        if (onDelta && (res.headers.get('content-type') ?? '').includes('event-stream')) return await readEventStream(res.body, onDelta, { signal: requestSignal });
+        if (rateLimited) throw new GenAIError(`${label}'s request limit was reached. Wait a minute and try again.`, { status: res.status, code: 'rate-limited' });
+        if (res.status === 401) throw new GenAIError(`${label} rejected the saved key. Update the connection in Settings.`, { status: 401, code: 'not-linked' });
+        if (!res.ok) throw new GenAIError(`${label} request failed (HTTP ${res.status}).`, { status: res.status });
+        if (onDelta && (res.headers.get('content-type') ?? '').includes('event-stream')) return await readEventStream(res.body, onDelta, { signal: requestSignal, label });
         const json = await withSignal(res.json(), requestSignal);
         const message = json.choices?.[0]?.message;
-        if (!message) throw new GenAIError('GenAI Studio returned no message.');
+        if (!message) throw new GenAIError(`${label} returned no message.`);
         const reasoning = message.reasoning_content ?? message.reasoning;
         return reasoning ? { ...message, reasoning } : message;
       } finally {
@@ -296,7 +336,7 @@ export async function chatCompletion(body, { onDelta = null, signal = null } = {
       }
     }
   } catch (error) {
-    if (timeout.aborted && !signal?.aborted) throw new GenAIError('GenAI Studio took too long to respond. Try again, or choose another model in Settings.', { code: 'request-timeout' });
+    if (timeout.aborted && !signal?.aborted) throw new GenAIError('The model took too long to respond. Try again, or choose another model in Settings.', { code: 'request-timeout' });
     throw error;
   }
 }

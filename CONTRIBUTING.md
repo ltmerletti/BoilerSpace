@@ -58,6 +58,7 @@ node scripts/verify-discussion-recovery.mjs
 node scripts/verify-chat-streaming.mjs
 node scripts/verify-chat-narration.mjs
 node scripts/verify-ask-updates.mjs
+node scripts/verify-custom-llm.mjs
 node scripts/verify-data-lifecycle.mjs
 ```
 
@@ -70,6 +71,8 @@ These scripts use throwaway Chromium profiles. The broader interface check runs 
 `verify-chat-streaming.mjs` feeds incremental SSE to the actual panel and checks manual scrolling, resumed scrolling at the bottom, narration across multiple assistant/tool rounds, folding narration when the final answer starts, saved activity after reopening, and tool previews. It holds pointer clicks across streamed tokens to check that activity and tool disclosures remain interactive, checks the thinking control at narrow panel widths, and simulates Purdue’s HTTP 400 rate-limit response. Held tokens and a held completion check that small upward scrolls, resized panels and answer completion preserve a paused reading position. These checks use synthetic data.
 
 `verify-data-lifecycle.mjs` delays model-list requests and syllabus downloads while you change models, disconnect or clear data through the actual Settings controls. It checks that late results cannot restore cleared records or overwrite newer choices, and that a website content script cannot invoke the protected background writer. It uses a disposable profile and synthetic data; CI runs it against the built Chrome package.
+
+`verify-custom-llm.mjs` checks the custom API form, permission denial, URL edits, credential exports, switching providers, streamed tool calls, citations and syllabus extraction. The successful permission case uses a synthetic API path on an already-granted host, so CI can call the native permission API without a first-use prompt. The same form and API flow run in a frame of the unmodified Firefox package, with permission approval simulated after verifying the background's real host grant. WebDriver cannot drive the privileged setup tab, so a first-use Firefox permission prompt still needs a manual release check. No real API key or live model is used.
 
 `verify-chat-narration.mjs` records a complete narration, tool and answer sequence for both following and paused readers. It checks that streamed drafts do not repeatedly toggle the work log and that finishing preserves a paused reader's open details. Videos and observations stay in the ignored verification directory.
 

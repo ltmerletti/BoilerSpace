@@ -26,9 +26,9 @@ The build only accepts runtime asset paths in `extension/` and adds the root lic
 
 ## Firefox permissions and compatibility
 
-The Firefox package requires desktop Firefox 140 or newer, including compatible Zen releases. This supports Firefox's native data-consent prompt. The required data categories cover credentials sent to their original services, questions and discussion excerpts sent to Purdue GenAI Studio, and course/site content used by the assistant. There is no telemetry. The Chrome package requires Chrome 124 or newer. Private browsing is disabled because the extension retains course material and conversation history locally.
+The Firefox package requires desktop Firefox 140 or newer, including compatible Zen releases. This supports Firefox's native data-consent prompt. The required data categories cover credentials sent to their original services, questions and discussion excerpts sent to the selected model provider, and course/site content used by the assistant. There is no telemetry. The Chrome package requires Chrome 124 or newer. Private browsing is disabled because the extension retains course material and conversation history locally.
 
-Brightspace, Simple Syllabus and GenAI Studio are required hosts. Ed, Piazza and Gradescope are optional and requested only on connection. Routine discussion and Gradescope refreshes make direct requests; they do not open site tabs. Syllabus discovery still uses temporary rendered Brightspace/Simple Syllabus tabs, which it closes after reading.
+Brightspace, Simple Syllabus and GenAI Studio are required hosts. Ed, Piazza and Gradescope are optional and requested only on connection. Custom model APIs use optional HTTPS host access, plus HTTP for localhost and 127.0.0.1. The setup form requests only the entered host. No remote code is loaded. The same Firefox data categories cover user-selected model providers. Routine discussion and Gradescope refreshes make direct requests; they do not open site tabs. Syllabus discovery still uses temporary rendered Brightspace/Simple Syllabus tabs, which it closes after reading.
 
 ## Notes for Mozilla reviewers
 
@@ -77,7 +77,7 @@ To repeat an upgrade check, build the previous published release separately and 
 
 **Description:** BoilerSpace adds a compact panel beside your Purdue Brightspace courses. Keep assignments and upcoming dates in view, ask questions about lecture slides and syllabi, and follow citations back to the material behind an answer. Connect Ed and Piazza to search saved public discussions and instructor replies. Connect Gradescope to include assignments and published deadlines.
 
-Uses your existing sign-ins. Course answers and syllabus extraction use your connected Purdue GenAI Studio account. Relevant questions, course material and discussion excerpts are sent there; saved course data and conversations stay in this browser. Optional services can be disconnected in Settings. Gradescope scores, submissions and feedback are not read.
+Uses your existing sign-ins. Course answers and syllabus extraction use Purdue GenAI Studio or an OpenAI-compatible API you configure. Relevant questions, course material and discussion excerpts are sent to the selected provider; saved course data and conversations stay in this browser. Optional services can be disconnected in Settings. Gradescope scores, submissions and feedback are not read.
 
 **Privacy URL:** https://github.com/ltmerletti/BoilerSpace/blob/main/PRIVACY.md
 

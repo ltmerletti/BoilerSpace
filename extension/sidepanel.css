@@ -1386,6 +1386,21 @@ a.cite:hover {
   min-width: 0;
 }
 
+.custom-api-form .field input {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--mica);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ferrite);
+  font-size: var(--text-ui);
+  font-weight: 400;
+}
+
+.custom-api-form > .meta { margin-top: 12px; }
+
 .error-list {
   margin: 8px 0 0;
   padding-left: 18px;

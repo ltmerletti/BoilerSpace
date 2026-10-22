@@ -12,6 +12,8 @@ export const KEYS = {
   syllabusAccess: 'syllabusAccess',
   changes: 'changes',
   genai: 'genai',
+  customLlm: 'customLlm',
+  llmProvider: 'llmProvider',
   syllabi: 'syllabi',
   reviews: 'reviews',
   chat: 'chat',
@@ -54,6 +56,6 @@ export function onChange(listener) {
 // Credentials and transient UI state never belong in a user data export.
 export async function getExportData() {
   const data = await getAll();
-  for (const key of ['genai', 'genaiLinkAttempt', '_dataEpoch', 'discussionAuth', 'syncLock', 'syncProgress', 'drawerOpen', 'drawerWidth', 'ui']) delete data[key];
+  for (const key of ['genai', 'customLlm', 'genaiLinkAttempt', '_dataEpoch', 'discussionAuth', 'syncLock', 'syncProgress', 'drawerOpen', 'drawerWidth', 'ui']) delete data[key];
   return data;
 }

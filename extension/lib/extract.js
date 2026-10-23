@@ -10,8 +10,8 @@ const MAX_XML_BYTES = 16_000_000;
 const TEXT_EXTENSION = /\.(txt|md|markdown|csv|tsv|json|jsonl|xml|yaml|yml|toml|ini|cfg|log|tex|py|pyi|r|rmd|c|h|cc|cpp|cxx|hpp|s|asm|v|sv|vhd|vhdl|java|js|mjs|cjs|jsx|ts|tsx|css|sql|sh|bash|zsh|m|rs|go|rb|jl|scala|hs)$/i;
 
 // Inspect entry names without inflating payloads. Reuse the same limits when reading XML.
-function readArchive(bytes, select = () => false) {
-  if (bytes.length > 64_000_000) throw new Error('This document exceeds the 64 MB reading limit.');
+function readArchive(bytes, select = () => false, maxArchiveBytes = 64_000_000) {
+  if (bytes.length > maxArchiveBytes) throw new Error(`This document exceeds the ${maxArchiveBytes / 1_000_000} MB reading limit.`);
   let entries = 0, size = 0;
   return unzipSync(bytes, { filter(file) {
     if (++entries > 10_000) throw new Error('This document contains too many archive entries.');
@@ -53,7 +53,7 @@ function looksLikeHtml(bytes) {
   return start.startsWith('<!doctype html') || start.startsWith('<html') || start.startsWith('<head') || start.startsWith('<body');
 }
 
-export function detectKind(bytes, fileName = '', contentType = '') {
+export function detectKind(bytes, fileName = '', contentType = '', { maxArchiveBytes } = {}) {
   fileName ??= '';
   contentType ??= '';
   if (bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46) return 'pdf';
@@ -63,7 +63,7 @@ export function detectKind(bytes, fileName = '', contentType = '') {
       word ||= name === 'word/document.xml';
       slides ||= /^ppt\/slides\/slide\d+\.xml$/.test(name);
       return false;
-    });
+    }, maxArchiveBytes);
     return word && !slides ? 'docx' : slides && !word ? 'pptx' : 'unknown';
   }
   // Do not decode legacy Office binaries even if the server calls them text/plain.
@@ -128,14 +128,14 @@ function splitIntoParts(text) {
   return parts.map((partText, i) => ({ page: i + 1, label: `part ${i + 1}`, text: partText }));
 }
 
-function extractDocx(bytes) {
-  const files = readArchive(bytes, name => name === 'word/document.xml');
+function extractDocx(bytes, maxArchiveBytes) {
+  const files = readArchive(bytes, name => name === 'word/document.xml', maxArchiveBytes);
   const xml = files['word/document.xml'];
   if (!xml) throw new Error('This file is not a Word document.');
   return { pages: splitIntoParts(docxXmlToText(strFromU8(xml))), warning: null };
 }
 
-function extractPptx(bytes) {
+function extractPptx(bytes, maxArchiveBytes) {
   let pictures = 0;
   const files = readArchive(bytes, name => {
     if (/^ppt\/media\//.test(name)) {
@@ -143,7 +143,7 @@ function extractPptx(bytes) {
       return false;
     }
     return /^ppt\/slides\/slide\d+\.xml$/.test(name);
-  });
+  }, maxArchiveBytes);
   const slides = Object.entries(files)
     .map(([name, data]) => ({ number: Number(/slide(\d+)\.xml$/.exec(name)[1]), xml: strFromU8(data) }))
     .sort((a, b) => a.number - b.number);
@@ -250,11 +250,11 @@ export function htmlToText(html) {
   );
 }
 
-export async function extractText({ bytes, fileName = '', contentType = '' }) {
-  const kind = detectKind(bytes, fileName, contentType);
+export async function extractText({ bytes, fileName = '', contentType = '' }, options = {}) {
+  const kind = detectKind(bytes, fileName, contentType, options);
   if (kind === 'pdf') return { kind, ...(await extractPdf(bytes)) };
-  if (kind === 'docx') return { kind, ...extractDocx(bytes) };
-  if (kind === 'pptx') return { kind, ...extractPptx(bytes) };
+  if (kind === 'docx') return { kind, ...extractDocx(bytes, options.maxArchiveBytes) };
+  if (kind === 'pptx') return { kind, ...extractPptx(bytes, options.maxArchiveBytes) };
   if (kind === 'rtf') {
     const { text, pictures } = rtfToText(bytes);
     const pages = splitIntoParts(tidy(text));

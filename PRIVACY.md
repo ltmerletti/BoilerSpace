@@ -72,6 +72,18 @@ Calendar exports contain event titles, dates, and links. Screenshots can reveal 
 
 Browser test profiles and benchmark captures are ignored by Git. The README images were captured from the running extension after renaming course names, course identifiers, and the greeting in the page HTML; that did not change stored course data.
 
+## Standalone companion
+
+The optional `mcp/` companion runs separately from the browser extension. It opens a dedicated Chromium profile for Purdue sign-in, verifies that session, and stores Purdue cookies and an XSRF token in its own local data directory. The dedicated profile can also retain Purdue SSO state. The companion does not collect your password. After sign-in it uses direct HTTPS requests to Purdue Brightspace, without a background browser. A short-lived Brightspace API bearer can be minted in memory; it is not saved in the session file or returned through tools.
+
+Its default directory is `~/.local/share/boilerspace-companion`, or `$XDG_DATA_HOME/boilerspace-companion` when set. `BOILERSPACE_DATA_DIR` and `--data-dir` can choose another location. The directory contains credentials, the dedicated browser profile, and a SQLite index of current course metadata, downloaded document text, page hashes, local semantic vectors and job progress. Raw downloaded documents are not retained by the index. Unix directories and session/index files use owner-only permissions. They are not encrypted. Windows users must protect the directory through their account's access controls.
+
+The companion reads course content, posted assignment and quiz instructions, announcements and calendar metadata. Grade endpoints, submissions, quiz attempts and answer keys are outside its request allowlist. Account data used to verify sign-in is discarded rather than indexed. Course documents can themselves contain names or other personal information. The companion does not connect the extension's Ed, Piazza, Gradescope or model accounts.
+
+The companion has no model-provider connection and sends no course text to a project server. MCP tools return requested evidence to the client you connect, such as a local agent application. That client may send it to its own model provider under the client's settings and policy. Cached search and page reads work locally without contacting Purdue. Sync and document indexing contact Purdue, and its normal access logging can apply.
+
+`logout` removes the saved companion session and dedicated browser profile but retains indexed material. To delete the index and all companion credentials, stop its processes and remove its data directory. Extension clearing controls do not affect the companion, and companion logout does not sign you out of your personal browser. Keep this directory, test profiles and live reports out of version control and shared folders.
+
 ## Delete local data
 
 Use **Settings → Advanced → Clear local data** to clear BoilerSpace's extension storage in the current browser profile. This also removes its saved model connections and API keys. Exported files, test profiles, and data already sent to Purdue or another model provider are not removed by that control. Clearing extension storage does not sign you out of Purdue websites.

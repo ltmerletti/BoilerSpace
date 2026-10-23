@@ -888,7 +888,7 @@ export function normalizeOverview(overview, courseId, le) {
   };
 }
 
-export async function syncCurrentCourses(client, { origin, now = new Date(), onProgress = () => {} } = {}) {
+export async function syncCurrentCourses(client, { origin, now = new Date(), onProgress = () => {}, includeGrades = true } = {}) {
   const started = Date.now();
   const versions = await discoverVersions(client);
   const { lp, le } = versions;
@@ -939,8 +939,8 @@ export async function syncCurrentCourses(client, { origin, now = new Date(), onP
         (await client.getAll(
           withQuery(`${base}/calendar/events/myEvents/`, { startDateTime: calendarStart, endDateTime: calendarEnd }),
         )).map((e) => normalizeCalendarEvent(e, course.id, origin))),
-      section(errors, course.id, 'grades', async () =>
-        (await client.getAll(`${base}/grades/values/myGradeValues/`)).map(normalizeGrade)),
+      includeGrades ? section(errors, course.id, 'grades', async () =>
+        (await client.getAll(`${base}/grades/values/myGradeValues/`)).map(normalizeGrade)) : [],
       section(errors, course.id, 'overview', async () => normalizeOverview(await client.getJson(`${base}/overview`), course.id, le), { empty: null, missingOk: true }),
     ]);
     completed++;

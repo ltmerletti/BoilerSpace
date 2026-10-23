@@ -1,7 +1,7 @@
 import { readFile, rm, lstat } from 'node:fs/promises';
 import path from 'node:path';
 import { CookieJar, Cookie } from 'tough-cookie';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { chromium } from 'playwright';
 import { createClient, fileByteLimit } from '../../extension/lib/brightspace.js';
@@ -9,6 +9,17 @@ import { ORIGIN, MAX_FILE_BYTES, allowedPath, atomicJson, privateDirectory } fro
 import { CompanionError } from './errors.mjs';
 
 const credentialWriters = new Map();
+
+async function accountBinding(directory) {
+  try {
+    const binding = JSON.parse(await readFile(path.join(directory, 'account.json'), 'utf8'));
+    if (!/^[a-f0-9]{64}$/.test(binding.key)) throw new Error('Invalid account binding');
+    return binding;
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw new CompanionError('account-binding-unreadable', 'The account binding could not be read. Use a new --data-dir rather than mixing this cache with another account.');
+  }
+}
 
 // Serialize the generation check and file replacement across CLI/MCP processes.
 // SQLite releases this lock on a crash; no stale lock-file removal is needed.
@@ -49,8 +60,11 @@ export class BrightspaceSession {
         stored = JSON.parse(await readFile(this.file, 'utf8'));
       } catch { throw new CompanionError('sign-in-required', 'Run boilerspace-companion login to sign into Purdue in the separate browser.'); }
       if (stored.origin !== ORIGIN) throw new CompanionError('sign-in-required', 'The saved connection is not a Purdue Brightspace session. Sign in again.');
+      const binding = await accountBinding(this.directory);
+      if (binding && binding.key !== stored.accountKey) throw new CompanionError('sign-in-required', 'This session does not match the data directory. Sign into its original Purdue account again.');
       this.jar = await CookieJar.deserialize(stored.cookies);
       this.xsrf = stored.xsrf ?? null;
+      this.accountKey = stored.accountKey;
       this.generation = stored.generation;
       this.modified = modified;
     })();
@@ -58,11 +72,17 @@ export class BrightspaceSession {
   }
   async save({ login = false } = {}) {
     await credentialWrite(this.directory, async () => {
+      if (login && this.accountKey) {
+        const accountFile = path.join(this.directory, 'account.json');
+        const binding = await accountBinding(this.directory);
+        if (binding && binding.key !== this.accountKey) throw new CompanionError('different-account', 'This data directory belongs to another Purdue account. Use a different --data-dir for this account.');
+        if (!binding) await atomicJson(accountFile, { key: this.accountKey });
+      }
       if (!login) {
         const current = await readFile(this.file, 'utf8').then(JSON.parse).catch(() => null);
         if (current?.generation !== this.generation) return;
       }
-      await atomicJson(this.file, { origin: ORIGIN, cookies: await this.jar.serialize(), xsrf: this.xsrf, generation: this.generation, savedAt: new Date(this.now()).toISOString() });
+      await atomicJson(this.file, { origin: ORIGIN, cookies: await this.jar.serialize(), xsrf: this.xsrf, accountKey: this.accountKey, generation: this.generation, savedAt: new Date(this.now()).toISOString() });
       const stat = await lstat(this.file);
       this.modified = `${stat.ino}:${stat.mtimeMs}:${stat.size}`;
     });
@@ -91,8 +111,9 @@ export class BrightspaceSession {
             }, { url, options: { method: options.method, headers: options.headers, body: options.body } });
             return new Response(response.body, { status: response.status, headers: response.headers });
           } });
-          const valid = await verification.getJson('/d2l/api/lp/1.62/users/whoami').then(value => value && ['string', 'number'].includes(typeof value.Identifier)).catch(() => false);
-          if (valid) {
+          const identifier = await verification.getJson('/d2l/api/lp/1.62/users/whoami').then(value => value && ['string', 'number'].includes(typeof value.Identifier) ? String(value.Identifier) : null).catch(() => null);
+          if (identifier) {
+            this.accountKey = createHash('sha256').update(`${ORIGIN}:${identifier}`).digest('hex');
             this.jar = new CookieJar();
             for (const cookie of await context.cookies(ORIGIN)) {
               const value = new Cookie({ key: cookie.name, value: cookie.value, domain: cookie.domain.replace(/^\./, ''), path: cookie.path,
@@ -108,6 +129,9 @@ export class BrightspaceSession {
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
       throw new CompanionError('sign-in-timeout', 'Sign-in did not finish within five minutes. Run login to try again.');
+    } catch (error) {
+      this.jar = null; this.modified = null;
+      throw error;
     } finally { await context.close(); }
   }
 

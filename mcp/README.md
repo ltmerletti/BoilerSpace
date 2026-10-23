@@ -96,6 +96,8 @@ This version does not connect Ed, Piazza, Gradescope or Simple Syllabus. It does
 
 The default data directory is `~/.local/share/boilerspace-companion`, or `$XDG_DATA_HOME/boilerspace-companion` when set. Override it with `BOILERSPACE_DATA_DIR` or `--data-dir`. Use the same directory for login, CLI calls and the MCP client.
 
+Each directory is bound to one Purdue account using a local hash of its Brightspace identifier. Signing into a different account is refused before replacing the saved connection. Use another data directory for another account. Logout keeps the binding with the cache.
+
 | Situation | What happens |
 | --- | --- |
 | Purdue sign-in expires | Cached searches and reads still work. Run `login` again, then resume the failed job. An already-running MCP process detects the new sign-in. |

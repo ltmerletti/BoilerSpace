@@ -96,6 +96,30 @@ test('concurrent credential writers cannot restore an older login or recreate cr
   } finally { await f.close(); }
 });
 
+test('a data directory remains bound to its account after logout and rejects a different account', async () => {
+  const f = await fixture();
+  try {
+    await f.session.load();
+    f.session.accountKey = 'a'.repeat(64);
+    await f.session.save({ login: true });
+    await f.session.logout();
+    const replacement = new BrightspaceSession(f.directory);
+    replacement.jar = new CookieJar(); replacement.generation = 'new'; replacement.accountKey = 'b'.repeat(64);
+    await assert.rejects(replacement.save({ login: true }), { code: 'different-account' });
+    await assert.rejects(readFile(f.file), { code: 'ENOENT' });
+    assert.equal(JSON.parse(await readFile(path.join(f.directory, 'account.json'))).key, 'a'.repeat(64));
+  } finally { await f.close(); }
+});
+
+test('an unreadable account binding cannot silently authorize rebinding an existing cache', async () => {
+  const f = await fixture();
+  try {
+    await f.session.load(); f.session.accountKey = 'a'.repeat(64);
+    await atomicJson(path.join(f.directory, 'account.json'), { invalid: true });
+    await assert.rejects(f.session.save({ login: true }), { code: 'account-binding-unreadable' });
+  } finally { await f.close(); }
+});
+
 test('bearer minting is the only allowed POST and never leaks the credential in tool results', async () => {
   let minted = false;
   const f = await fixture({ fetchImpl: async (url, options) => {

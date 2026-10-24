@@ -22,7 +22,9 @@ test('a real MCP client uses the CLI subprocess, strict schemas, evidence, resou
   try {
     await client.connect(transport);
     const tools = await client.listTools();
-    assert.equal(tools.tools.length, 12);
+    assert.equal(tools.tools.length, 28);
+    assert.equal(tools.tools.find(tool => tool.name === 'disconnect_integration').annotations.destructiveHint, true);
+    assert.equal(tools.tools.find(tool => tool.name === 'read_quiz').annotations.openWorldHint, true);
     assert.equal(tools.tools.find(tool => tool.name === 'read_document').annotations.readOnlyHint, true);
     const courses = await client.callTool({ name: 'list_courses', arguments: {} });
     assert.equal(courses.structuredContent.courses.length, 2);

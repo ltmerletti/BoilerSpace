@@ -64,6 +64,8 @@ export class CourseDatabase {
       const failed = new Set(snapshot.errors.map(error => `${error.courseId}:${error.section}`));
       const section = { file: 'content', assignment: 'assignments', quiz: 'quizzes', announcement: 'announcements', event: 'calendar' };
       for (const existing of this.sources()) {
+        if (['discussion', 'gradescope'].includes(existing.kind)) continue;
+        if (existing.metadata.fileKey && currentIds.has(existing.courseId)) continue;
         if (incoming.has(existing.id)) continue;
         const sourceSection = existing.id.endsWith(':overview') || existing.id.endsWith(':overview-attachment') ? 'overview' : section[existing.kind];
         if (currentIds.has(existing.courseId) && failed.has(`${existing.courseId}:${sourceSection}`)) continue;
@@ -104,6 +106,20 @@ export class CourseDatabase {
   }
 
   savePages(id, revision, pages, warning) { this.transaction(() => { this.replacePages(id, revision, pages, warning); this.set('corpusEpoch', (this.get('corpusEpoch') ?? 0) + 1); }); }
+  replaceIntegration(kind, records) {
+    const incoming = new Set(records.map(record => record.id));
+    for (const source of this.sources(null, kind)) if (!incoming.has(source.id)) {
+      this.removePassages(source.id); this.db.prepare('DELETE FROM sources WHERE id=?').run(source.id);
+    }
+    for (const record of records) {
+      const previous = this.source(record.id);
+      this.db.prepare(`INSERT INTO sources(id,course_id,kind,title,url,metadata,revision) VALUES (?,?,?,?,?,?,?)
+        ON CONFLICT(id) DO UPDATE SET course_id=excluded.course_id,title=excluded.title,url=excluded.url,metadata=excluded.metadata,revision=excluded.revision`)
+        .run(record.id, record.courseId ?? 0, kind, record.title, record.url, JSON.stringify(record.metadata), record.revision);
+      if (previous?.indexedRevision !== record.revision) this.replacePages(record.id, record.revision, record.pages);
+    }
+    this.set('corpusEpoch', (this.get('corpusEpoch') ?? 0) + 1);
+  }
   removePassages(id) {
     this.db.prepare('DELETE FROM vectors WHERE passage_id IN (SELECT rowid FROM passages WHERE source_id=?)').run(id);
     this.db.prepare('DELETE FROM passages WHERE source_id=?').run(id);
@@ -120,11 +136,11 @@ export class CourseDatabase {
       }
     });
   }
-  vectorSearch(vector, model, { courseId = null, limit = 40 } = {}) {
+  vectorSearch(vector, model, { courseId = null, integrationId = null, limit = 40 } = {}) {
     const rows = this.db.prepare(`SELECT passages.source_id,passages.ordinal,passages.start,passages.text,vector,pages.label,pages.hash
       FROM vectors JOIN passages ON passages.rowid=vectors.passage_id JOIN sources ON sources.id=passages.source_id
       JOIN pages ON pages.source_id=passages.source_id AND pages.ordinal=passages.ordinal
-      WHERE vectors.model=? AND sources.indexed_revision=sources.revision AND (? IS NULL OR sources.course_id=?)`).iterate(model, courseId, courseId);
+      WHERE vectors.model=? AND sources.indexed_revision=sources.revision AND (? IS NULL OR sources.course_id=?) AND (? IS NULL OR json_extract(sources.metadata,'$.integrationId')=?)`).iterate(model, courseId, courseId, integrationId ?? null, integrationId ?? null);
     const best = [];
     for (const row of rows) {
       const stored = new DataView(row.vector.buffer, row.vector.byteOffset, row.vector.byteLength);
@@ -148,10 +164,12 @@ export class CourseDatabase {
       totalCharacters: page.text.length, nextOffset: offset + limit < page.text.length ? offset + limit : null };
   }
   evidence(source, ordinal, label, hash) {
-    return { id: `${source.id}#${ordinal}:${hash.slice(0, 12)}`, sourceId: source.id, courseId: source.courseId, title: source.title,
+    return { id: `${source.id}#${ordinal}:${hash.slice(0, 12)}`, sourceId: source.id, courseId: source.courseId || null, title: source.title,
+      ...(source.metadata.discussionKey ? { discussion_key: source.metadata.discussionKey, platform: source.metadata.platform,
+        reply_id: ordinal > 1 ? source.metadata.replyIds[ordinal - 2] : null } : {}),
       url: source.url, location: label, page: ordinal, hash, documentHash: source.contentHash, indexedAt: source.indexedAt, revision: source.revision };
   }
-  search(query, { courseId = null, limit = 10 } = {}) {
+  search(query, { courseId = null, integrationId = null, limit = 10 } = {}) {
     const terms = [...new Set(query.normalize('NFKD').toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [])].slice(0, 24);
     if (!terms.length) return [];
     const match = terms.map(term => `"${term}"`).join(' OR ');
@@ -159,7 +177,7 @@ export class CourseDatabase {
       pages.label,pages.hash FROM passages JOIN sources ON sources.id=passages.source_id
       JOIN pages ON pages.source_id=passages.source_id AND pages.ordinal=passages.ordinal
       WHERE passages MATCH ? AND sources.indexed_revision=sources.revision AND (? IS NULL OR sources.course_id=?)
-      ORDER BY rank,passages.source_id,passages.ordinal,passages.start LIMIT ?`).all(match, courseId, courseId, limit);
+      AND (? IS NULL OR json_extract(sources.metadata,'$.integrationId')=?) ORDER BY rank,passages.source_id,passages.ordinal,passages.start LIMIT ?`).all(match, courseId, courseId, integrationId ?? null, integrationId ?? null, limit);
     return rows.map(row => ({ source: this.evidence(this.source(row.source_id), row.ordinal, row.label, row.hash), text: row.text, offset: row.start, score: -row.rank }));
   }
 
@@ -185,7 +203,10 @@ export class CourseDatabase {
   claim(owner) {
     return this.transaction(() => {
       this.db.prepare("UPDATE jobs SET state='cancelled' WHERE cancelled=1 AND (state='queued' OR lease_until<?)").run(this.now());
-      const row = this.db.prepare("SELECT id FROM jobs WHERE cancelled=0 AND (state='queued' OR (state='running' AND lease_until<?)) ORDER BY created_at LIMIT 1").get(this.now());
+      const row = this.db.prepare(`SELECT id FROM jobs WHERE cancelled=0 AND (state='queued' OR (state='running' AND lease_until<?))
+        AND (kind!='integration' OR NOT EXISTS (SELECT 1 FROM jobs running WHERE running.kind='integration' AND running.state='running' AND running.lease_until>=? AND running.id!=jobs.id
+          AND (json_extract(running.args,'$.platform')='gradescope')=(json_extract(jobs.args,'$.platform')='gradescope')))
+        ORDER BY created_at LIMIT 1`).get(this.now(), this.now());
       if (!row) return null;
       this.db.prepare("UPDATE jobs SET state='running',owner=?,lease_until=? WHERE id=?").run(owner, this.now() + LEASE_MS, row.id);
       return this.job(row.id, { includePlan: true });

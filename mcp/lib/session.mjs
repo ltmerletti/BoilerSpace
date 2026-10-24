@@ -44,8 +44,8 @@ async function credentialWrite(directory, write) {
 }
 
 export class BrightspaceSession {
-  constructor(directory, { fetchImpl = fetch, now = () => Date.now(), responseByteLimit = MAX_FILE_BYTES } = {}) {
-    this.directory = directory; this.file = path.join(directory, 'session.json');
+  constructor(directory, { fetchImpl = fetch, now = () => Date.now(), responseByteLimit = MAX_FILE_BYTES, origin = ORIGIN } = {}) {
+    this.origin = origin; this.directory = path.resolve(directory); this.file = path.join(this.directory, 'session.json');
     this.fetchImpl = fetchImpl; this.now = now; this.jar = null; this.loading = null;
     this.responseByteLimit = responseByteLimit;
   }
@@ -58,12 +58,12 @@ export class BrightspaceSession {
         const stat = await lstat(this.file);
         if (stat.isSymbolicLink() || stat.size > 1_000_000) throw new Error('Unsafe session file');
         stored = JSON.parse(await readFile(this.file, 'utf8'));
-      } catch { throw new CompanionError('sign-in-required', 'Run boilerspace-companion login to sign into Purdue in the separate browser.'); }
-      if (stored.origin !== ORIGIN) throw new CompanionError('sign-in-required', 'The saved connection is not a Purdue Brightspace session. Sign in again.');
+      } catch { throw new CompanionError('sign-in-required', `Run boilerspace-companion login${this.site ? ` --site ${this.site}` : ''} to sign into the service in its separate browser.`); }
+      if (stored.origin !== this.origin) throw new CompanionError('sign-in-required', 'The saved connection belongs to another service. Sign in again.');
       const binding = await accountBinding(this.directory);
-      if (binding && binding.key !== stored.accountKey) throw new CompanionError('sign-in-required', 'This session does not match the data directory. Sign into its original Purdue account again.');
+      if (binding && binding.key !== stored.accountKey) throw new CompanionError('sign-in-required', 'This session does not match the data directory. Sign into its original account again.');
       this.jar = await CookieJar.deserialize(stored.cookies);
-      this.xsrf = stored.xsrf ?? null;
+      this.xsrf = stored.xsrf ?? null; this.token = stored.token;
       this.accountKey = stored.accountKey;
       this.generation = stored.generation;
       this.modified = modified;
@@ -75,14 +75,14 @@ export class BrightspaceSession {
       if (login && this.accountKey) {
         const accountFile = path.join(this.directory, 'account.json');
         const binding = await accountBinding(this.directory);
-        if (binding && binding.key !== this.accountKey) throw new CompanionError('different-account', 'This data directory belongs to another Purdue account. Use a different --data-dir for this account.');
+        if (binding && binding.key !== this.accountKey) throw new CompanionError('different-account', 'This data directory belongs to another account for this service. Use a different --data-dir for this account.');
         if (!binding) await atomicJson(accountFile, { key: this.accountKey });
       }
       if (!login) {
         const current = await readFile(this.file, 'utf8').then(JSON.parse).catch(() => null);
         if (current?.generation !== this.generation) return;
       }
-      await atomicJson(this.file, { origin: ORIGIN, cookies: await this.jar.serialize(), xsrf: this.xsrf, accountKey: this.accountKey, generation: this.generation, savedAt: new Date(this.now()).toISOString() });
+      await atomicJson(this.file, { origin: this.origin, token: this.token, cookies: await this.jar.serialize(), xsrf: this.xsrf, accountKey: this.accountKey, generation: this.generation, savedAt: new Date(this.now()).toISOString() });
       const stat = await lstat(this.file);
       this.modified = `${stat.ino}:${stat.mtimeMs}:${stat.size}`;
     });
@@ -136,6 +136,7 @@ export class BrightspaceSession {
   }
 
   async logout() {
+    if (!(await lstat(this.directory).catch(() => null))) return { connected: false, cachedMaterialKept: true };
     await credentialWrite(this.directory, async () => {
       this.jar = null; this.xsrf = null;
       await rm(this.file, { force: true });
@@ -176,8 +177,8 @@ export class BrightspaceSession {
         throw new CompanionError('sign-in-required', 'Brightspace redirected the request. Run login again; no redirect was followed with your credentials.');
       }
       for (const header of response.headers.getSetCookie()) await this.jar.setCookie(header, url.href);
-      const fileRequest = /\/file$|^\/content\//.test(url.pathname);
-      if (response.ok && !fileRequest && /text\/html/i.test(response.headers.get('content-type') ?? '')) { await response.body?.cancel(); throw new CompanionError('sign-in-required', 'Brightspace returned a web page instead of API data. Check the connection with login if other requests fail too.'); }
+      const fileRequest = /\/file$|\/overview\/attachment$|^\/content\//.test(url.pathname);
+      if (response.ok && url.pathname.startsWith('/d2l/api/') && !fileRequest && /text\/html/i.test(response.headers.get('content-type') ?? '')) { await response.body?.cancel(); throw new CompanionError('sign-in-required', 'Brightspace returned a web page instead of API data. Check the connection with login if other requests fail too.'); }
       let limit = Math.min(this.responseByteLimit, fileRequest ? MAX_FILE_BYTES : 8_000_000);
       if (Number(response.headers.get('content-length')) > limit) { await response.body?.cancel(); throw new CompanionError('file-too-large', `The response exceeds the ${limit / 1_000_000} MB limit.`); }
       const reader = response.body?.getReader();

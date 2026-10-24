@@ -1,6 +1,6 @@
 # BoilerSpace companion
 
-Give a local agent access to your Purdue Brightspace courses, with document search, page citations and a persistent index. Sign in once in a separate browser. The companion then reads Brightspace directly, without installing the extension or keeping a browser open.
+Give a local agent the same course research tools as BoilerSpace: Brightspace files and syllabi, Ed and Piazza discussions, Gradescope deadlines, past quiz questions and page images. The companion has independent sign-ins and a persistent local index. The extension does not need to be installed or running.
 
 MCP and the CLI use the same tools. The companion does not need a GenAI Studio key, call a language model, or run a public server.
 
@@ -19,6 +19,19 @@ node cli.mjs call refresh_courses --wait
 ```
 
 Sign into Purdue in the new window. It closes after the companion verifies the connection. You can pass `--browser /absolute/path/to/chrome` to use an installed Chromium browser for this separate profile.
+
+Connect the other services with their own sign-ins:
+
+```sh
+node cli.mjs login --site ed
+node cli.mjs login --site piazza
+node cli.mjs login --site gradescope
+node cli.mjs call connect_integration --args '{"platform":"ed"}' --wait
+node cli.mjs call connect_integration --args '{"platform":"piazza"}' --wait
+node cli.mjs call connect_integration --args '{"platform":"gradescope"}' --wait
+```
+
+`login --site all` walks through all four sign-ins. Clear course-code and term matches link automatically. Unmatched discussion and Gradescope courses remain available by source ID; `link_integration_course` can correct a match or keep a course independent.
 
 On Linux, Playwright may also need system libraries. Use its [browser installation instructions](https://playwright.dev/docs/browsers#install-system-dependencies).
 
@@ -62,8 +75,15 @@ The `exam-review` MCP prompt provides that workflow. The tools let an agent chec
 | Refresh metadata or index documents | `refresh_courses`, `index_course` |
 | Follow long operations | `job_status`, `cancel_job`, `resume_job` |
 | Retrieve evidence | `search_course_material`, `read_document`, `research_context` |
+| Read assignments and dates | `list_items`, `get_item`, `list_upcoming`, `list_gradescope_assignments` |
+| Read course news | `list_announcements` |
+| Read discussions and replies | `list_discussions`, `read_discussion` |
+| Open files and page images | `list_course_files`, `read_course_file` |
+| Read released quiz questions | `read_quiz` |
+| Read syllabus policies and dates | `discover_syllabus`, `get_syllabus_facts`, `save_syllabus_facts` |
+| Manage outside integrations | `connect_integration`, `link_integration_course`, `disconnect_integration` |
 
-Tool results include the source URL, page or slide label, text hash, document hash and indexing time. `read_document` accepts the document hash from a search result and rejects a read if that document changed. Long pages have continuation offsets instead of silently losing their trailing text.
+Search and `read_document` results include the source URL, page or slide label, text hash, document hash and indexing time. `read_document` accepts the document hash from a search result and rejects a read if that document changed. Long pages have continuation offsets instead of silently losing their trailing text.
 
 `research_context` returns a bounded packet of evidence across matching pages. It does not write an answer. The client model still needs to interpret the evidence, check whether it supports a claim, and cite it.
 
@@ -90,13 +110,23 @@ The first version supports **current Purdue Brightspace courses**. It discovers 
 
 PDFs retain page locations. Modern Word and PowerPoint files, RTF, HTML, plain text, source files, supported text datasets and notebook cells use the shared BoilerSpace readers. Downloads use the shared 100 MB limit, or 200 MB for Office ZIP containers. Parsing is limited to 2,000 pages, eight million text characters and 30 seconds per file. Notebook cells and source files are read as text. They are never executed.
 
-This version does not connect Ed, Piazza, Gradescope or Simple Syllabus. It does not fetch grade endpoints, submissions, quiz attempts or answer keys. It does not submit, post or change coursework. External links remain in the inventory but are not downloaded. Scanned pages, equations and diagrams can need visual reading, which is not included. A file can contain readable text and still have a warning about incomplete extraction.
+Ed and Piazza use the extension's full-history reader and normalizers. Imports retain public post text, available replies, instructor/student roles, endorsements, timestamps and original thread links. They checkpoint their cursor and version map, detect repeated pages, keep earlier posts after a failed request, and remove withdrawn posts after a completed sweep. An import can take several minutes, especially on Piazza. Inspect its job and `history_complete` before treating search as comprehensive. Attachments and discussion images stay on the original sites, as in the extension.
+
+Gradescope uses the same parser as the extension. It imports current-term course links, assignment names and published release, normal due and late due dates. It removes score and submission-status elements before extracting those fields. It does not open submissions or grading feedback, read scores, or infer missing dates.
+
+`read_quiz` uses the extension's completion gate. It can read released question text from a finished attempt or a closed quiz. Only question text and displayed choices are returned; scores, selected student answers, correctness flags and answer keys are excluded. An open quiz without a finished attempt remains hidden.
+
+`read_course_file` accepts the extension's `file_key`, `location`, `offset` and `see_images` arguments. Image reads render a PDF page or extract pictures from the chosen PowerPoint slide locally. MCP returns actual image content blocks. A vision-capable client model must interpret those images; the companion does not send them to an OCR or model API.
+
+For a syllabus, the agent can call `discover_syllabus`, read the discovered file, and extract policies and dates with its own model. `save_syllabus_facts` accepts the structured extraction and the document hash, verifies every supporting quote against the saved text, and reports unsupported claims it dropped. The saved facts feed `get_syllabus_facts`, course AI-use policies and upcoming syllabus dates. Replacing the source invalidates old facts. Discovery reuses an indexed syllabus and returns its indexing time; pass `refresh: true` to read the current portal version again.
+
+Routine syncs and searches use direct requests without site tabs. An explicit syllabus read can launch an isolated headless renderer for the Brightspace LTI/Simple Syllabus page, then close it. It uses a temporary profile with the companion's Purdue cookies and never attaches to a personal browser. Other external links remain in the inventory but are not downloaded. The companion does not submit, post, vote or change coursework.
 
 ## Recovery and data
 
 The default data directory is `~/.local/share/boilerspace-companion`, or `$XDG_DATA_HOME/boilerspace-companion` when set. Override it with `BOILERSPACE_DATA_DIR` or `--data-dir`. Use the same directory for login, CLI calls and the MCP client.
 
-Each directory is bound to one Purdue account using a local hash of its Brightspace identifier. Signing into a different account is refused before replacing the saved connection. Use another data directory for another account. Logout keeps the binding with the cache.
+Each site connection is bound to one verified account using a local identifier hash. Signing into another account for that site is refused before replacing its saved session. Use another data directory for another account. Logout keeps account bindings with the cache. Ed tokens, Piazza/Gradescope cookies and the Brightspace session are saved separately.
 
 | Situation | What happens |
 | --- | --- |
@@ -109,9 +139,9 @@ Each directory is bound to one Purdue account using a local hash of its Brightsp
 
 Refreshes are explicit. Cached material does not update just because an agent searches it. Search results and coverage include the last sync time so the agent can decide when to refresh.
 
-`logout` removes the companion session and its separate browser profile. It **keeps indexed course material**. To remove that too, stop companion processes and delete the chosen data directory. Extension storage is separate.
+`logout` removes the Brightspace session and its separate browser profile. Use `logout --site ed`, `piazza` or `gradescope` for a particular provider, or `logout --site all` to remove every saved sign-in. Logout **keeps indexed course material**. `disconnect_integration` removes both that platform's cached material and its credentials. To remove all Brightspace material as well, stop companion processes and delete the chosen data directory. Extension storage is separate.
 
-Cookies, the XSRF token and the dedicated sign-in profile are local credentials. The data directory uses owner-only Unix permissions; it is not an encrypted vault. Session files and course caches must stay out of Git and shared folders. Windows users should use a directory protected by their account's access controls. The companion does not collect passwords or expose credentials through MCP tools.
+Cookies, the Brightspace XSRF token, the Ed authentication token and the dedicated sign-in profiles are local credentials. The data directory uses owner-only Unix permissions; it is not an encrypted vault. Session files and course caches must stay out of Git and shared folders. Windows users should use a directory protected by their account's access controls. The companion does not collect passwords or expose credentials through MCP tools.
 
 Tool responses go to the MCP client you connect. That client can send course excerpts to its model provider under its own settings and privacy policy. See [the privacy policy](../PRIVACY.md#standalone-companion).
 
@@ -119,8 +149,8 @@ Tool responses go to the MCP client you connect. That client can send course exc
 
 ```mermaid
 flowchart LR
-  Login[Separate Purdue sign-in] --> Session[Local cookie jar]
-  Session --> Reader[Restricted Brightspace transport]
+  Login[Independent site sign-ins] --> Session[Private site sessions]
+  Session --> Reader[Restricted provider transports]
   Reader --> Jobs[Resumable sync and indexing jobs]
   Jobs --> Index[SQLite pages, FTS5 and vectors]
   Index --> Tools[Shared research tools]
@@ -128,7 +158,7 @@ flowchart LR
   Tools --> CLI[JSON CLI]
 ```
 
-- **Transport.** Only pinned Purdue routes are accepted. Redirects are refused, downloads are bounded while streaming, and transient failures have limited retries. The only POST mints Brightspace's short-lived API bearer. It does not alter course data.
+- **Transport.** Authenticated requests are pinned to the service and a read-only route/method allowlist. Downloads are bounded while streaming. Piazza allows only known same-origin page redirects. Its read APIs use POST, as does authentication renewal; write methods are rejected. No session is forwarded to a foreign origin.
 - **Storage.** SQLite publishes metadata and page replacements transactionally. Job leases prevent two processes from owning the same job. Checkpoints preserve the completed file cursor; source revisions prevent stale jobs from publishing an older document.
 - **Retrieval.** SQLite FTS5 BM25 and the bundled local semantic encoder are combined with reciprocal rank fusion. Vectors persist in SQLite. Model assets are checked against pinned hashes, and keyword search stays available if semantic indexing fails.
 - **Parsing.** Document parsing runs in a worker with a time limit. PDF decoding uses local PDF.js assets. The companion shares the other readers with the extension, so formats have one implementation.
@@ -147,7 +177,7 @@ npm run eval -- eval-local.json
 npm audit --audit-level=high
 ```
 
-Run `npm run lint` from the repository root. CI checks the companion on Node 22 and 24, including the actual MCP stdio handshake, document parsers, session isolation, durable jobs and an intercepted browser sign-in. Those browser fixtures do not contact Purdue.
+Run `npm run lint` from the repository root. CI checks the companion on Node 22 and 24, including the actual MCP stdio handshake, document parsers, session isolation, durable jobs and intercepted browser sign-ins for all four services. Those browser fixtures do not contact real accounts. Tests assert that every extension agent tool is exposed, and exercise full history, reply continuations, source scoping, course linking, quiz score exclusion, syllabus quote validation and actual MCP image blocks.
 
 [The retrieval evaluation](eval/README.md) compares keyword and hybrid search on a checked-in synthetic corpus, including multi-document questions and course scoping. Its [recorded baseline](eval/baseline.json) includes per-question rankings and timings. It is a regression check, not a claim about real-course answer accuracy.
 

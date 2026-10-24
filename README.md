@@ -70,7 +70,7 @@ Keep the extracted folder in place. There is no build step or separate BoilerSpa
 
 ## Agent companion
 
-The [standalone companion](mcp/README.md) gives local MCP clients and CLI agents read-only access to Purdue Brightspace. It has its own sign-in, a persistent course index, document search and page-level citations. The browser extension does not need to be installed or running.
+The [standalone companion](mcp/README.md) gives local MCP clients and CLI agents the same course research tools for Brightspace, Ed, Piazza and Gradescope. It has independent sign-ins, persistent search, syllabus facts, released quiz questions and page images with source citations. The browser extension does not need to be installed or running.
 
 ---
 

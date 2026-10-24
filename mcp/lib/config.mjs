@@ -36,8 +36,10 @@ export function allowedPath(value) {
   if (url.origin !== ORIGIN || url.username || url.password || url.hash || /%2f|%5c/i.test(url.pathname)) throw new CompanionError('blocked-request', 'Only Purdue Brightspace course requests are allowed.');
   const pathname = url.pathname;
   const allowed = pathname === '/d2l/api/versions/'
-    || /^\/d2l\/api\/lp\/[\d.]+\/(?:users\/whoami|enrollments\/myenrollments\/|courses\/\d+\/?|auth\/xsrf-tokens)$/.test(pathname)
-    || /^\/d2l\/api\/le\/[\d.]+\/\d+\/(?:dropbox\/folders\/|quizzes\/|news\/|content\/toc|content\/topics\/\d+\/file|calendar\/events\/myEvents\/|overview(?:\/attachment)?)$/.test(pathname)
+    || /^\/d2l\/api\/lp\/[\d.]+\/(?:users\/whoami|enrollments\/myenrollments\/|courses\/\d+\/?|orgstructure\/\d+\/parents|auth\/xsrf-tokens)$/.test(pathname)
+    || /^\/d2l\/api\/le\/[\d.]+\/\d+\/(?:dropbox\/folders\/|quizzes\/|quizzes\/\d+\/(?:attempts\/|attempts\/\d+\/questions\/|questions\/)|news\/|content\/toc|content\/topics\/\d+(?:\/file)?|calendar\/events\/myEvents\/|overview(?:\/attachment)?)$/.test(pathname)
+    || /^\/d2l\/home\/\d+$/.test(pathname) || /^\/d2l\/le\/content\/\d+\/Home$/.test(pathname)
+    || /^\/d2l\/lms\/quizzing\/user\/(?:quiz_submissions(?:_attempt)?\.d2l|attempt\/quiz_review\.d2l)$/.test(pathname)
     || pathname === '/d2l/lp/auth/oauth2/token'
     || /^\/content\//.test(pathname);
   if (!allowed) throw new CompanionError('blocked-request', 'This endpoint is outside the companion’s read-only course access.');

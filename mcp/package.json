@@ -5,8 +5,12 @@
   "type": "module",
   "description": "Local, read-only Brightspace research tools for agents and MCP clients.",
   "license": "GPL-3.0-only",
-  "engines": { "node": ">=22.13.0" },
-  "bin": { "boilerspace-companion": "cli.mjs" },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "bin": {
+    "boilerspace-companion": "cli.mjs"
+  },
   "scripts": {
     "start": "node cli.mjs serve",
     "test": "node --test tests/*.test.mjs",
@@ -15,6 +19,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
+    "@napi-rs/canvas": "1.0.13",
     "pdfjs-dist": "6.4.299",
     "playwright": "1.64.1",
     "tough-cookie": "6.0.2",

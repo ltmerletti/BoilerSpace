@@ -6,7 +6,7 @@ What changed, what prompted it, and what it means when you use BoilerSpace. Each
 
 ## In development
 
-- **Give local agents a course library.** The standalone companion signs into Purdue separately and exposes the same research tools through MCP and a JSON CLI. It keeps a durable course index, searches document text locally, returns page citations and checks whether files are missing before an agent claims a complete review. Interrupted indexing resumes from checkpoints. It does not need the extension or a GenAI Studio key, and grade and submission endpoints are blocked. Setup, recovery and data handling are documented in [the companion guide](mcp/README.md).
+- **Give local agents a course library.** The standalone companion signs into Purdue separately and exposes the same research tools through MCP and a JSON CLI. It keeps a durable course index, searches document text locally, returns page citations and checks whether files are missing before an agent claims a complete review. Interrupted indexing resumes from checkpoints. It does not need the extension or a GenAI Studio key. The same agent tools cover Ed/Piazza histories and replies, Gradescope dates, syllabus facts, released quiz questions and PDF/slide images. Grade endpoints and assignment submissions remain blocked, and quiz readers exclude scores and answer keys. Setup, recovery and data handling are documented in [the companion guide](mcp/README.md).
 
 ## October 22, 2026
 

@@ -5,14 +5,14 @@ import { clearDiscussionAuth } from './discussion-auth.js';
 const eligible = source => source.status === 'syncing' || !source.lastAttemptAt || Date.now() - Date.parse(source.lastAttemptAt) >= 20 * 60_000;
 const selected = (source, sourceId) => !sourceId || (Array.isArray(sourceId) ? sourceId.includes(source.id) : source.id === sourceId);
 
-export function createDiscussionSync(readSite = readDiscussionSite) {
+export function createDiscussionSync(readSite = readDiscussionSite, { storage, clearAuth = clearDiscussionAuth } = {}) {
   let queue = Promise.resolve();
   const pending = new Map();
   return function handleDiscussionRequest(message) {
     const sourceIds = message.sourceId ? [...new Set(Array.isArray(message.sourceId) ? message.sourceId : [message.sourceId])].sort() : null;
     const key = JSON.stringify([message.action, message.platform, message.url, sourceIds, message.courseId, Boolean(message.force)]);
     if (pending.has(key)) return pending.get(key);
-    const task = queue.catch(() => {}).then(() => perform(message, readSite)).finally(() => pending.delete(key));
+    const task = queue.catch(() => {}).then(() => perform(message, readSite, storage ?? chrome.storage.local, clearAuth)).finally(() => pending.delete(key));
     queue = task;
     pending.set(key, task);
     return task;
@@ -21,23 +21,26 @@ export function createDiscussionSync(readSite = readDiscussionSite) {
 
 export const handleDiscussionRequest = createDiscussionSync();
 
-async function perform({ action, platform, url, sourceId, courseId, force = false }, readSite) {
-  const all = await chrome.storage.local.get(['discussions', 'snapshot']);
+async function perform({ action, platform, url, sourceId, courseId, force = false }, readSite, storage, clearAuth) {
+  const all = await storage.get(['discussions', 'snapshot']);
   if (!all.discussions && action !== 'connect') return { sources: [], pending: false };
   const data = all.discussions ?? { sources: [] };
   if (!data.generation) {
+    const previousGeneration = data.generation;
     data.generation = crypto.randomUUID();
-    await chrome.storage.local.set({ discussions: data });
+    if (storage.compareAndSet) await storage.compareAndSet('discussions', previousGeneration, data);
+    else await storage.set({ discussions: data });
   }
   const save = async () => {
-    const current = (await chrome.storage.local.get('discussions')).discussions;
+    if (storage.compareAndSet) return storage.compareAndSet('discussions', data.generation, data);
+    const current = (await storage.get('discussions')).discussions;
     if (current?.generation !== data.generation) throw new Error('Discussion sync was cancelled because its saved data was cleared.');
-    await chrome.storage.local.set({ discussions: data });
+    await storage.set({ discussions: data });
   };
   if (action === 'remove') {
     data.sources = data.sources.filter((s) => s.id !== sourceId);
     await save();
-    if (!data.sources.some(source => source.platform === 'ed')) await clearDiscussionAuth('ed');
+    if (!data.sources.some(source => source.platform === 'ed')) await clearAuth('ed');
     return data;
   }
   if (action === 'link') {

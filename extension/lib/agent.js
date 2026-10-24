@@ -32,7 +32,7 @@ const SPARSE_PAGE_CHARS = 40;
 
 const clip = (text, max) => (text && text.length > max ? `${text.slice(0, max)}…` : text ?? '');
 
-const TOOLS = [
+export const AGENT_TOOLS = [
   {
     name: 'list_gradescope_assignments',
     description: 'List saved Gradescope assignments and their published release, due and late due dates, including courses not linked to Brightspace. No scores, submitted answers or assignment question text are read. Use source_id or course_id to narrow the list; follow next_offset for more.',
@@ -1030,7 +1030,7 @@ export async function ask({
     let message;
     try {
       message = await complete(
-        { ...requestParams, messages, tools: TOOLS, tool_choice: lastTurn ? 'none' : 'auto', temperature: 0.2 },
+        { ...requestParams, messages, tools: AGENT_TOOLS, tool_choice: lastTurn ? 'none' : 'auto', temperature: 0.2 },
         { signal, onDelta: onText ? onDelta : null },
       );
     } catch (err) {

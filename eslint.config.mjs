@@ -6,7 +6,7 @@ import { defineConfig, globalIgnores } from 'eslint/config';
 export default defineConfig([
   globalIgnores(['**/node_modules/**', 'dist/**', '.verify-tmp/**', 'verification/**', 'extension/vendor/**']),
   {
-    files: ['*.mjs', 'extension/**/*.js', 'scripts/**/*.mjs', 'tests/**/*.mjs', 'bench/**/*.mjs', 'experiments/**/*.mjs'],
+    files: ['*.mjs', 'extension/**/*.js', 'scripts/**/*.mjs', 'tests/**/*.mjs', 'bench/**/*.mjs', 'experiments/**/*.mjs', 'mcp/**/*.mjs'],
     extends: [js.configs.recommended],
     rules: {
       'no-unused-vars': ['error', { args: 'after-used', argsIgnorePattern: '^_', caughtErrors: 'none', ignoreRestSiblings: true }],
@@ -24,7 +24,7 @@ export default defineConfig([
   },
   {
     // Browser checks and benchmark runners also contain functions evaluated in the page.
-    files: ['*.mjs', 'scripts/**/*.mjs', 'tests/**/*.mjs', 'bench/**/*.mjs', 'experiments/**/*.mjs'],
+    files: ['*.mjs', 'scripts/**/*.mjs', 'tests/**/*.mjs', 'bench/**/*.mjs', 'experiments/**/*.mjs', 'mcp/**/*.mjs'],
     languageOptions: { globals: { ...globals.node, ...globals.browser, ...globals.webextensions } },
   },
   {

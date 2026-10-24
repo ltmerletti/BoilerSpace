@@ -13,7 +13,7 @@ export async function fetchGradescopePage(path, fetcher = fetch) {
   return html;
 }
 
-export function createGradescopeSync(readPage = fetchGradescopePage, now = () => new Date()) {
+export function createGradescopeSync(readPage = fetchGradescopePage, now = () => new Date(), { storage, hasAccess = origins => chrome.permissions.contains({ origins }) } = {}) {
   let queue = Promise.resolve();
   const pending = new Map();
   return function handleRequest(message) {
@@ -25,13 +25,14 @@ export function createGradescopeSync(readPage = fetchGradescopePage, now = () =>
     return task;
   };
   async function perform({ action, sourceId, courseId, force = false }) {
-    if (action === 'disconnect') { await chrome.storage.local.remove('gradescope'); return null; }
-    if (!(await chrome.permissions.contains({ origins: GRADESCOPE_SITES }))) {
-      const { gradescope } = await chrome.storage.local.get('gradescope');
-      if (gradescope) await chrome.storage.local.set({ gradescope: { ...gradescope, status: 'error', needsReconnect: true, error: 'Allow Gradescope access to reconnect.' } });
+    const local = storage ?? chrome.storage.local;
+    if (action === 'disconnect') { await local.remove('gradescope'); return null; }
+    if (!(await hasAccess(GRADESCOPE_SITES))) {
+      const { gradescope } = await local.get('gradescope');
+      if (gradescope) await local.set({ gradescope: { ...gradescope, status: 'error', needsReconnect: true, error: 'Allow Gradescope access to reconnect.' } });
       throw Object.assign(new Error('Allow Gradescope access to connect.'), { needsReconnect: true });
     }
-    const all = await chrome.storage.local.get(['gradescope', 'snapshot']);
+    const all = await local.get(['gradescope', 'snapshot']);
     const data = all.gradescope;
     if (action === 'link') {
       const course = data?.courses.find(course => course.id === sourceId);
@@ -39,7 +40,7 @@ export function createGradescopeSync(readPage = fetchGradescopePage, now = () =>
       if (courseId !== null && !all.snapshot?.courses.some(course => course.id === courseId && course.current)) throw new Error('Choose a current Brightspace course.');
       course.courseId = courseId;
       course.linkOrigin = 'manual';
-      await chrome.storage.local.set({ gradescope: data });
+      await local.set({ gradescope: data });
       return data;
     }
     if (!['connect', 'sync'].includes(action)) throw new Error('Unknown Gradescope action.');
@@ -47,20 +48,22 @@ export function createGradescopeSync(readPage = fetchGradescopePage, now = () =>
     if (action === 'sync' && !force && Date.now() - Date.parse(data.lastAttemptAt) < GRADESCOPE_REFRESH_MS) {
       const links = JSON.stringify(data.courses.map(course => course.courseId));
       data.courses.forEach(course => linkGradescopeCourse(course, all.snapshot?.courses ?? []));
-      if (links !== JSON.stringify(data.courses.map(course => course.courseId))) await chrome.storage.local.set({ gradescope: data });
+      if (links !== JSON.stringify(data.courses.map(course => course.courseId))) await local.set({ gradescope: data });
       return data;
     }
     const next = data ?? { generation: crypto.randomUUID(), courses: [] };
     const generation = next.generation;
     const save = async () => {
-      const current = (await chrome.storage.local.get('gradescope')).gradescope;
+      if (local.compareAndSet) return local.compareAndSet('gradescope', generation, next);
+      const current = (await local.get('gradescope')).gradescope;
       if (current?.generation !== generation) throw new Error('Gradescope sync was cancelled because its saved data was cleared.');
-      await chrome.storage.local.set({ gradescope: next });
+      await local.set({ gradescope: next });
     };
     next.lastAttemptAt = new Date().toISOString();
     next.status = 'syncing';
     next.error = null;
-    await chrome.storage.local.set({ gradescope: next });
+    if (local.compareAndSet) await local.compareAndSet('gradescope', data?.generation, next);
+    else await local.set({ gradescope: next });
     try {
       const discovered = parseGradescopeCourses(await readPage('/account'));
       const current = discovered.filter(course => currentGradescopeCourse(course, all.snapshot?.courses ?? [], now()));

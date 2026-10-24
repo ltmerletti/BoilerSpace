@@ -1,0 +1,1168 @@
+{
+  "benchmark": "companion-synthetic-v1",
+  "datasetHash": "1b8ab21498c58e42589818ae366ef188c7062c03347951fa7edf485d31c1280e",
+  "documents": 22,
+  "questions": 28,
+  "node": "v22.23.2",
+  "platform": "darwin-arm64",
+  "indexMilliseconds": 131.25008300000002,
+  "methods": {
+    "bm25": {
+      "hit1": 0.8928571428571429,
+      "hit5": 1,
+      "mrr": 0.9464285714285714,
+      "evidenceRecall5": 1,
+      "allEvidence5": 1,
+      "queryMilliseconds": {
+        "p50": 0.2605000000000075,
+        "p95": 1.1020829999999933
+      },
+      "cases": [
+        {
+          "query": "Are solar, visible and shortwave three words for the same thing?",
+          "courseId": 101,
+          "expected": [
+            "wave-labels"
+          ],
+          "retrieved": [
+            "wave-labels",
+            "hours",
+            "review",
+            "albedo",
+            "scope"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 1.134332999999998
+        },
+        {
+          "query": "What exactly do I have to be able to explain about waves, and which labels overlap?",
+          "courseId": 101,
+          "expected": [
+            "wave-labels",
+            "wave-goals"
+          ],
+          "retrieved": [
+            "wave-labels",
+            "wave-goals",
+            "review",
+            "scope",
+            "hours"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.37545800000000895
+        },
+        {
+          "query": "What happens to the peak of the spectrum when an object gets hotter?",
+          "courseId": 101,
+          "expected": [
+            "blackbody"
+          ],
+          "retrieved": [
+            "blackbody",
+            "convection",
+            "review",
+            "wave-goals",
+            "hours"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.30616699999998787
+        },
+        {
+          "query": "Do I plug Celsius or kelvin into the thermal radiation formulas?",
+          "courseId": 101,
+          "expected": [
+            "blackbody"
+          ],
+          "retrieved": [
+            "albedo",
+            "blackbody",
+            "greenhouse",
+            "scope",
+            "wave-labels"
+          ],
+          "hit1": 0,
+          "hit5": 1,
+          "reciprocalRank": 0.5,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.33866700000001515
+        },
+        {
+          "query": "Would reflecting more sunlight warm a planet or cool it?",
+          "courseId": 101,
+          "expected": [
+            "albedo"
+          ],
+          "retrieved": [
+            "albedo",
+            "greenhouse",
+            "convection",
+            "blackbody",
+            "review"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.2395840000000078
+        },
+        {
+          "query": "Why does the surface receive energy back from the atmosphere?",
+          "courseId": 101,
+          "expected": [
+            "greenhouse"
+          ],
+          "retrieved": [
+            "albedo",
+            "greenhouse",
+            "wave-goals",
+            "scope",
+            "hours"
+          ],
+          "hit1": 0,
+          "hit5": 1,
+          "reciprocalRank": 0.5,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.23649999999997817
+        },
+        {
+          "query": "Why does saturated rising air cool more slowly?",
+          "courseId": 101,
+          "expected": [
+            "convection"
+          ],
+          "retrieved": [
+            "convection",
+            "wave-goals"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.16054100000002336
+        },
+        {
+          "query": "Is atmospheric circulation on the first exam?",
+          "courseId": 101,
+          "expected": [
+            "scope"
+          ],
+          "retrieved": [
+            "scope",
+            "submission",
+            "review",
+            "greenhouse",
+            "correction"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.22724999999999795
+        },
+        {
+          "query": "Build an exam review plan with its topic boundaries and the instructor's recommended practice.",
+          "courseId": 101,
+          "expected": [
+            "scope",
+            "review"
+          ],
+          "retrieved": [
+            "review",
+            "scope",
+            "wave-goals",
+            "blackbody",
+            "convection"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.3074579999999969
+        },
+        {
+          "query": "Do I need to memorize every spectral band boundary?",
+          "courseId": 101,
+          "expected": [
+            "wave-goals"
+          ],
+          "retrieved": [
+            "wave-goals",
+            "hours",
+            "correction",
+            "blackbody"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.20562499999999773
+        },
+        {
+          "query": "What should I upload for the homework, and what is the corrected deadline?",
+          "courseId": 101,
+          "expected": [
+            "submission",
+            "correction"
+          ],
+          "retrieved": [
+            "submission",
+            "correction",
+            "wave-goals",
+            "hours",
+            "scope"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.30008300000000077
+        },
+        {
+          "query": "Was the late cutoff moved along with the normal due date?",
+          "courseId": 101,
+          "expected": [
+            "correction"
+          ],
+          "retrieved": [
+            "correction",
+            "submission",
+            "wave-goals",
+            "review",
+            "scope"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.3971659999999986
+        },
+        {
+          "query": "When and where can I get help with a longer derivation?",
+          "courseId": 101,
+          "expected": [
+            "hours"
+          ],
+          "retrieved": [
+            "wave-goals",
+            "hours",
+            "wave-labels",
+            "convection",
+            "review"
+          ],
+          "hit1": 0,
+          "hit5": 1,
+          "reciprocalRank": 0.5,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.28658300000000736
+        },
+        {
+          "query": "Why does rereading a variable often avoid a slower memory access?",
+          "courseId": 202,
+          "expected": [
+            "cache"
+          ],
+          "retrieved": [
+            "cache",
+            "scope",
+            "virtual",
+            "stack",
+            "dirty"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.2525839999999846
+        },
+        {
+          "query": "Does evicting a line always write to the next level of memory?",
+          "courseId": 202,
+          "expected": [
+            "dirty"
+          ],
+          "retrieved": [
+            "dirty",
+            "scope",
+            "cache",
+            "virtual",
+            "stack"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.2896660000000111
+        },
+        {
+          "query": "How do write-through and write-back differ on a store?",
+          "courseId": 202,
+          "expected": [
+            "dirty"
+          ],
+          "retrieved": [
+            "dirty",
+            "scope",
+            "submission",
+            "virtual",
+            "pipeline"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 1.1020829999999933
+        },
+        {
+          "query": "Can increasing associativity help without increasing the cache size?",
+          "courseId": 202,
+          "expected": [
+            "associative"
+          ],
+          "retrieved": [
+            "associative",
+            "hours",
+            "scope",
+            "pipeline",
+            "dirty"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.26241699999999923
+        },
+        {
+          "query": "Why might a load-use pair pause even with forwarding?",
+          "courseId": 202,
+          "expected": [
+            "pipeline"
+          ],
+          "retrieved": [
+            "pipeline",
+            "review",
+            "dirty",
+            "virtual",
+            "calling"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.24762499999999932
+        },
+        {
+          "query": "Who is responsible for preserving registers across a function call?",
+          "courseId": 202,
+          "expected": [
+            "calling"
+          ],
+          "retrieved": [
+            "calling",
+            "stack",
+            "dirty",
+            "submission",
+            "cache"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.2457080000000076
+        },
+        {
+          "query": "Why does recursive code need a separate saved state for each invocation?",
+          "courseId": 202,
+          "expected": [
+            "stack"
+          ],
+          "retrieved": [
+            "stack",
+            "dirty",
+            "calling",
+            "virtual",
+            "pipeline"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.2605000000000075
+        },
+        {
+          "query": "Is branch prediction or pipeline stalling on checkpoint 3?",
+          "courseId": 202,
+          "expected": [
+            "scope"
+          ],
+          "retrieved": [
+            "scope",
+            "pipeline",
+            "review",
+            "submission",
+            "cache"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.2415420000000097
+        },
+        {
+          "query": "What is on checkpoint 3, and what should I practice for it?",
+          "courseId": 202,
+          "expected": [
+            "scope",
+            "review"
+          ],
+          "retrieved": [
+            "scope",
+            "review",
+            "calling",
+            "stack",
+            "submission"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.23750000000001137
+        },
+        {
+          "query": "Which files should go into my lab upload and when is it due?",
+          "courseId": 202,
+          "expected": [
+            "submission"
+          ],
+          "retrieved": [
+            "submission",
+            "calling",
+            "hours",
+            "scope",
+            "review"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.2738329999999962
+        },
+        {
+          "query": "Does a missing address translation always mean a page fault?",
+          "courseId": 202,
+          "expected": [
+            "virtual"
+          ],
+          "retrieved": [
+            "virtual",
+            "calling",
+            "associative",
+            "stack",
+            "dirty"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.21912499999999113
+        },
+        {
+          "query": "What gets cached in a TLB compared with a processor data cache?",
+          "courseId": 202,
+          "expected": [
+            "virtual",
+            "cache"
+          ],
+          "retrieved": [
+            "cache",
+            "virtual",
+            "pipeline",
+            "scope",
+            "associative"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.23345800000001304
+        },
+        {
+          "query": "How does a function that calls another function protect its return address?",
+          "courseId": 202,
+          "expected": [
+            "calling"
+          ],
+          "retrieved": [
+            "calling",
+            "stack",
+            "virtual",
+            "dirty",
+            "associative"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.22912499999998204
+        },
+        {
+          "query": "What will the formula sheet give me, and what do I still need to understand?",
+          "courseId": 101,
+          "expected": [
+            "review"
+          ],
+          "retrieved": [
+            "review",
+            "hours",
+            "correction",
+            "blackbody",
+            "scope"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.27925000000001887
+        },
+        {
+          "query": "What should I know about dirty evictions and conflict misses for checkpoint 3?",
+          "courseId": 202,
+          "expected": [
+            "review",
+            "dirty",
+            "associative"
+          ],
+          "retrieved": [
+            "review",
+            "scope",
+            "associative",
+            "dirty",
+            "stack"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.24295799999998735
+        }
+      ]
+    },
+    "hybrid": {
+      "hit1": 0.9642857142857143,
+      "hit5": 1,
+      "mrr": 0.9821428571428571,
+      "evidenceRecall5": 1,
+      "allEvidence5": 1,
+      "queryMilliseconds": {
+        "p50": 0.9960829999999987,
+        "p95": 1.5422920000000033
+      },
+      "cases": [
+        {
+          "query": "Are solar, visible and shortwave three words for the same thing?",
+          "courseId": 101,
+          "expected": [
+            "wave-labels"
+          ],
+          "retrieved": [
+            "wave-labels",
+            "albedo",
+            "hours",
+            "wave-goals",
+            "scope"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 1.9572089999999776
+        },
+        {
+          "query": "What exactly do I have to be able to explain about waves, and which labels overlap?",
+          "courseId": 101,
+          "expected": [
+            "wave-labels",
+            "wave-goals"
+          ],
+          "retrieved": [
+            "wave-labels",
+            "wave-goals",
+            "review",
+            "scope",
+            "blackbody"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 1.5422920000000033
+        },
+        {
+          "query": "What happens to the peak of the spectrum when an object gets hotter?",
+          "courseId": 101,
+          "expected": [
+            "blackbody"
+          ],
+          "retrieved": [
+            "blackbody",
+            "wave-goals",
+            "convection",
+            "greenhouse",
+            "review"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 1.217917
+        },
+        {
+          "query": "Do I plug Celsius or kelvin into the thermal radiation formulas?",
+          "courseId": 101,
+          "expected": [
+            "blackbody"
+          ],
+          "retrieved": [
+            "blackbody",
+            "albedo",
+            "greenhouse",
+            "scope",
+            "wave-labels"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 1.2886249999999961
+        },
+        {
+          "query": "Would reflecting more sunlight warm a planet or cool it?",
+          "courseId": 101,
+          "expected": [
+            "albedo"
+          ],
+          "retrieved": [
+            "albedo",
+            "greenhouse",
+            "convection",
+            "blackbody",
+            "review"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 1.2887090000000114
+        },
+        {
+          "query": "Why does the surface receive energy back from the atmosphere?",
+          "courseId": 101,
+          "expected": [
+            "greenhouse"
+          ],
+          "retrieved": [
+            "albedo",
+            "greenhouse",
+            "scope",
+            "wave-goals",
+            "hours"
+          ],
+          "hit1": 0,
+          "hit5": 1,
+          "reciprocalRank": 0.5,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 1.3226250000000164
+        },
+        {
+          "query": "Why does saturated rising air cool more slowly?",
+          "courseId": 101,
+          "expected": [
+            "convection"
+          ],
+          "retrieved": [
+            "convection",
+            "wave-goals",
+            "greenhouse",
+            "scope",
+            "submission"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 1.1777919999999824
+        },
+        {
+          "query": "Is atmospheric circulation on the first exam?",
+          "courseId": 101,
+          "expected": [
+            "scope"
+          ],
+          "retrieved": [
+            "scope",
+            "greenhouse",
+            "review",
+            "albedo",
+            "submission"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 1.218166999999994
+        },
+        {
+          "query": "Build an exam review plan with its topic boundaries and the instructor's recommended practice.",
+          "courseId": 101,
+          "expected": [
+            "scope",
+            "review"
+          ],
+          "retrieved": [
+            "review",
+            "scope",
+            "wave-goals",
+            "submission",
+            "blackbody"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 1.5150420000000224
+        },
+        {
+          "query": "Do I need to memorize every spectral band boundary?",
+          "courseId": 101,
+          "expected": [
+            "wave-goals"
+          ],
+          "retrieved": [
+            "wave-goals",
+            "blackbody",
+            "correction",
+            "hours",
+            "greenhouse"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 1.102958000000001
+        },
+        {
+          "query": "What should I upload for the homework, and what is the corrected deadline?",
+          "courseId": 101,
+          "expected": [
+            "submission",
+            "correction"
+          ],
+          "retrieved": [
+            "submission",
+            "correction",
+            "hours",
+            "wave-goals",
+            "scope"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 1.1566249999999911
+        },
+        {
+          "query": "Was the late cutoff moved along with the normal due date?",
+          "courseId": 101,
+          "expected": [
+            "correction"
+          ],
+          "retrieved": [
+            "correction",
+            "submission",
+            "wave-goals",
+            "hours",
+            "scope"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.9891659999999831
+        },
+        {
+          "query": "When and where can I get help with a longer derivation?",
+          "courseId": 101,
+          "expected": [
+            "hours"
+          ],
+          "retrieved": [
+            "hours",
+            "wave-goals",
+            "convection",
+            "wave-labels",
+            "submission"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.9960829999999987
+        },
+        {
+          "query": "Why does rereading a variable often avoid a slower memory access?",
+          "courseId": 202,
+          "expected": [
+            "cache"
+          ],
+          "retrieved": [
+            "cache",
+            "scope",
+            "dirty",
+            "virtual",
+            "associative"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.9313750000000027
+        },
+        {
+          "query": "Does evicting a line always write to the next level of memory?",
+          "courseId": 202,
+          "expected": [
+            "dirty"
+          ],
+          "retrieved": [
+            "dirty",
+            "scope",
+            "cache",
+            "virtual",
+            "review"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 1.1268329999999764
+        },
+        {
+          "query": "How do write-through and write-back differ on a store?",
+          "courseId": 202,
+          "expected": [
+            "dirty"
+          ],
+          "retrieved": [
+            "dirty",
+            "submission",
+            "calling",
+            "scope",
+            "pipeline"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 1.015874999999994
+        },
+        {
+          "query": "Can increasing associativity help without increasing the cache size?",
+          "courseId": 202,
+          "expected": [
+            "associative"
+          ],
+          "retrieved": [
+            "associative",
+            "dirty",
+            "scope",
+            "cache",
+            "submission"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.911625000000015
+        },
+        {
+          "query": "Why might a load-use pair pause even with forwarding?",
+          "courseId": 202,
+          "expected": [
+            "pipeline"
+          ],
+          "retrieved": [
+            "pipeline",
+            "dirty",
+            "virtual",
+            "stack",
+            "cache"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.8465000000000202
+        },
+        {
+          "query": "Who is responsible for preserving registers across a function call?",
+          "courseId": 202,
+          "expected": [
+            "calling"
+          ],
+          "retrieved": [
+            "calling",
+            "stack",
+            "pipeline",
+            "cache",
+            "submission"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.8862919999999974
+        },
+        {
+          "query": "Why does recursive code need a separate saved state for each invocation?",
+          "courseId": 202,
+          "expected": [
+            "stack"
+          ],
+          "retrieved": [
+            "stack",
+            "calling",
+            "dirty",
+            "pipeline",
+            "virtual"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.9690420000000017
+        },
+        {
+          "query": "Is branch prediction or pipeline stalling on checkpoint 3?",
+          "courseId": 202,
+          "expected": [
+            "scope"
+          ],
+          "retrieved": [
+            "scope",
+            "pipeline",
+            "review",
+            "cache",
+            "submission"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.7135000000000105
+        },
+        {
+          "query": "What is on checkpoint 3, and what should I practice for it?",
+          "courseId": 202,
+          "expected": [
+            "scope",
+            "review"
+          ],
+          "retrieved": [
+            "scope",
+            "review",
+            "stack",
+            "calling",
+            "submission"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.6578329999999823
+        },
+        {
+          "query": "Which files should go into my lab upload and when is it due?",
+          "courseId": 202,
+          "expected": [
+            "submission"
+          ],
+          "retrieved": [
+            "submission",
+            "hours",
+            "scope",
+            "calling",
+            "dirty"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.6954580000000021
+        },
+        {
+          "query": "Does a missing address translation always mean a page fault?",
+          "courseId": 202,
+          "expected": [
+            "virtual"
+          ],
+          "retrieved": [
+            "virtual",
+            "associative",
+            "calling",
+            "pipeline",
+            "cache"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.6327909999999974
+        },
+        {
+          "query": "What gets cached in a TLB compared with a processor data cache?",
+          "courseId": 202,
+          "expected": [
+            "virtual",
+            "cache"
+          ],
+          "retrieved": [
+            "cache",
+            "virtual",
+            "scope",
+            "associative",
+            "pipeline"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.8091670000000022
+        },
+        {
+          "query": "How does a function that calls another function protect its return address?",
+          "courseId": 202,
+          "expected": [
+            "calling"
+          ],
+          "retrieved": [
+            "calling",
+            "stack",
+            "virtual",
+            "pipeline",
+            "associative"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.7853750000000161
+        },
+        {
+          "query": "What will the formula sheet give me, and what do I still need to understand?",
+          "courseId": 101,
+          "expected": [
+            "review"
+          ],
+          "retrieved": [
+            "review",
+            "hours",
+            "blackbody",
+            "correction",
+            "scope"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.758499999999998
+        },
+        {
+          "query": "What should I know about dirty evictions and conflict misses for checkpoint 3?",
+          "courseId": 202,
+          "expected": [
+            "review",
+            "dirty",
+            "associative"
+          ],
+          "retrieved": [
+            "review",
+            "scope",
+            "dirty",
+            "associative",
+            "submission"
+          ],
+          "hit1": 1,
+          "hit5": 1,
+          "reciprocalRank": 1,
+          "evidenceRecall5": 1,
+          "allEvidence5": 1,
+          "milliseconds": 0.6493750000000205
+        }
+      ]
+    }
+  },
+  "limits": "Small synthetic retrieval regression set. Does not measure real-course answer correctness, citation entailment, SSO reliability, or statistical significance. Latency is hardware-dependent."
+}

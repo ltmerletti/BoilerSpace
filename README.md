@@ -68,6 +68,10 @@ Keep the extracted folder in place. There is no build step or separate BoilerSpa
 
 [Setup, updates and troubleshooting →](docs/USER_GUIDE.md)
 
+## Agent companion
+
+The [standalone companion](mcp/README.md) gives local MCP clients and CLI agents the same course research tools for Brightspace, Ed, Piazza and Gradescope. It has independent sign-ins, persistent search, syllabus facts, released quiz questions and page images with source citations. The browser extension does not need to be installed or running.
+
 ---
 
 [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [Privacy](PRIVACY.md) · [Security](SECURITY.md) · [Screenshot notes](docs/images/README.md)

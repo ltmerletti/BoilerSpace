@@ -1,0 +1,47 @@
+name: Companion
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: companion-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  companion:
+    name: MCP, storage and reader tests (Node ${{ matrix.node }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    defaults:
+      run:
+        working-directory: mcp
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: mcp/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npm audit --audit-level=high
+      - run: npm test
+      - run: npm run eval -- eval-ci.json
+      - run: npx --no-install playwright install --with-deps chromium
+      - run: npm run test:browser
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: companion-eval-node-${{ matrix.node }}
+          path: mcp/eval-ci.json
+          retention-days: 14

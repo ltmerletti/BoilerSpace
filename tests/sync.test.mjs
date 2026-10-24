@@ -6,6 +6,16 @@ import { LOCK_STALE_MS, lockIsFresh, runSync } from '../extension/lib/sync-store
 
 const ORIGIN = 'https://purdue.brightspace.com';
 
+test('read-only companions can sync course material without issuing any grade requests', async () => {
+  const { fetchImpl, calls } = fakeBrightspace();
+  const result = await syncCurrentCourses(createClient({ origin: ORIGIN, fetchImpl, xsrfToken: 'xsrf-123' }), {
+    origin: ORIGIN, includeGrades: false, now: new Date('2026-10-12T16:00:00Z'),
+  });
+  assert.ok(result.data.length > 0);
+  assert.ok(result.data.every(course => course.grades.length === 0));
+  assert.equal(calls.some(call => /\/grades\//.test(call.path)), false);
+});
+
 test('a sync reports progress per course, saves the snapshot and frees the lock', async () => {
   const data = installChrome();
   const progress = [];

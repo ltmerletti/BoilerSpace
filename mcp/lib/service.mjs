@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { syncCurrentCourses } from '../../extension/lib/brightspace.js';
 import { ORIGIN, allowedPath } from './config.mjs';
 import { digest } from './database.mjs';
-import { CompanionError, publicError } from './errors.mjs';
+import { CompanionError, publicError, AGENT_LOGIN_GUIDANCE } from './errors.mjs';
 import { workerRequest } from './worker.mjs';
 import { Retrieval } from './retrieval.mjs';
 import { Integrations } from './integrations.mjs';
@@ -42,7 +42,7 @@ export class CourseService {
     return { origin: ORIGIN, sync: this.database.get('sync'), courses: this.database.courses().length,
       documents: sources.filter(source => source.kind === 'file').length,
       indexedDocuments: sources.filter(source => source.kind === 'file' && !source.stale).length,
-      jobs: this.database.jobs(), retrieval: this.database.get('retrieval'), integrations: this.integrations.status(), instructions: 'Run login to establish or renew the separate Purdue session. Use login --site ed, piazza or gradescope for other accounts. Cached searches do not need an active session.' };
+      jobs: this.database.jobs(), retrieval: this.database.get('retrieval'), integrations: this.integrations.status(), instructions: 'This status describes saved data and does not verify the live sign-in. ' + AGENT_LOGIN_GUIDANCE };
   }
   course(id) {
     const course = this.database.courses().find(course => course.id === id);

@@ -154,3 +154,26 @@ test('optional HTML error pages retain HTTP status and expired bearer credential
     assert.equal(attempts, 2);
   } finally { await f.close(); }
 });
+
+test('expired bearer renewal returns user login guidance instead of a JSON parsing error', async () => {
+  for (const [status, contentType] of [[200, 'text/html'], [200, 'text/plain'], [401, 'text/html'], [403, 'text/html']]) {
+    let requests = 0;
+    const f = await fixture({ fetchImpl: async (url, options) => {
+      requests++;
+      if (options.method !== 'POST') return new Response('', { status: 403 });
+      assert.equal(url, `${ORIGIN}/d2l/lp/auth/oauth2/token`);
+      return new Response('<!DOCTYPE html><html><title>Sign in</title></html>', { status, headers: { 'content-type': contentType } });
+    } });
+    try {
+      await assert.rejects((await f.session.client()).getFile('/d2l/api/le/1.96/101/content/topics/7/file'), error => {
+        const result = publicError(error);
+        assert.equal(result.code, 'sign-in-required');
+        assert.equal(result.needsUserLogin, true);
+        assert.match(result.nextAction, /Ask the user to complete sign-in/);
+        assert.equal(JSON.stringify(result).includes('fixture-secret'), false);
+        return true;
+      });
+      assert.equal(requests, 2, 'stop after the initial read and failed token renewal');
+    } finally { await f.close(); }
+  }
+});

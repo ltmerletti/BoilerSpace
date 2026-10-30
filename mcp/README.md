@@ -6,6 +6,10 @@ MCP and the CLI use the same tools. The companion does not need a GenAI Studio k
 
 ## Set up
 
+Paste this into ChatGPT, Claude or another assistant with local computer or terminal access:
+
+> Install the BoilerSpace MCP companion from https://github.com/ltmerletti/BoilerSpace by following mcp/README.md, configure it for my MCP client, let me complete the Purdue sign-in, and verify the connection by listing my courses.
+
 Use Node.js 22.13 or later. Clone the **full BoilerSpace repository** and keep it in place. This package shares document readers and bundled search assets with the extension's source code.
 
 From the repository root:
@@ -78,7 +82,8 @@ The `exam-review` MCP prompt provides that workflow. The tools let an agent chec
 | Read assignments and dates | `list_items`, `get_item`, `list_upcoming`, `list_gradescope_assignments` |
 | Read course news | `list_announcements` |
 | Read discussions and replies | `list_discussions`, `read_discussion` |
-| Open files and page images | `list_course_files`, `read_course_file` |
+| Read file text and page images | `list_course_files`, `read_course_file` |
+| Download original files | `list_course_sources`, `download_course_file` |
 | Read released quiz questions | `read_quiz` |
 | Read syllabus policies and dates | `discover_syllabus`, `get_syllabus_facts`, `save_syllabus_facts` |
 | Manage outside integrations | `connect_integration`, `link_integration_course`, `disconnect_integration` |
@@ -86,6 +91,18 @@ The `exam-review` MCP prompt provides that workflow. The tools let an agent chec
 Search and `read_document` results include the source URL, page or slide label, text hash, document hash and indexing time. `read_document` accepts the document hash from a search result and rejects a read if that document changed. Long pages have continuation offsets instead of silently losing their trailing text.
 
 `research_context` returns a bounded packet of evidence across matching pages. It does not write an answer. The client model still needs to interpret the evidence, check whether it supports a claim, and cite it.
+
+### Download original files
+
+An agent can fetch the original file from Brightspace through MCP. It does not need to index the file, use the text parser or have the browser extension running.
+
+1. Call `list_course_sources` with `courseId` and `kind: "file"`.
+2. Pass a returned file source ID to `download_course_file`, for example `{"sourceId":"file:123:456"}`.
+3. Open the returned absolute `localPath` with local file tools, or read `resourceUri` through MCP `resources/read` for the original bytes. The tool also returns an MCP resource link, filename, MIME type, byte length, SHA-256, source URL and download time. The byte hash describes the original file; indexed document hashes describe extracted text.
+
+Each call fetches a fresh copy using the companion's saved Purdue sign-in. This works with scans, binary attachments and formats the text reader cannot parse. The normal 100 MB download limit applies, or 200 MB for ZIP containers such as modern Office files. For large files, local agents should open `localPath` to avoid transferring the entire file as base64 through MCP. Inline overview text and external links have no downloadable Brightspace file.
+
+Files are saved under `downloads/<download-id>/` in the companion data directory with private Unix permissions. Names from the site are sanitized. Saved copies and their MCP resources remain available after a restart or logout, without a network request. They are snapshots from the reported download time, and do not update with the index. Delete the `downloads/` directory to remove the saved originals. A resource read checks the byte hash and reports a missing or modified copy rather than returning different bytes.
 
 ### Use the CLI directly
 
@@ -98,6 +115,7 @@ node cli.mjs call index_course --args '{"courseId":123}' --wait
 node cli.mjs call search_course_material --args '{"courseId":123,"query":"first exam scope"}'
 node cli.mjs call read_document --args '{"sourceId":"file:123:456"}'
 node cli.mjs call read_document --args '{"sourceId":"file:123:456","page":1}'
+node cli.mjs call download_course_file --args '{"sourceId":"file:123:456"}'
 ```
 
 For a few documents, pass `sourceIds` to `index_course`. Omit it to index all stale files in the course. `force: true` downloads unchanged files again, which is useful when the instructor replaced a file without updating its metadata.
@@ -139,7 +157,9 @@ Each site connection is bound to one verified account using a local identifier h
 
 Refreshes are explicit. Cached material does not update just because an agent searches it. Search results and coverage include the last sync time so the agent can decide when to refresh.
 
-`logout` removes the Brightspace session and its separate browser profile. Use `logout --site ed`, `piazza` or `gradescope` for a particular provider, or `logout --site all` to remove every saved sign-in. Logout **keeps indexed course material**. `disconnect_integration` removes both that platform's cached material and its credentials. To remove all Brightspace material as well, stop companion processes and delete the chosen data directory. Extension storage is separate.
+A quick cached lookup is fine when it directly answers the question and the agent reports its freshness. If the answer is missing, uncertain or needs current verification, the agent should use a live read or refresh. When a tool or job reports `sign-in-required`, the agent should stop and ask you to sign in, rather than keep searching old caches, local database files or unrelated public pages. From `mcp/`, run `node cli.mjs login`, or add `--site ed`, `piazza` or `gradescope` for that provider. Use the same `--data-dir` as your MCP connection. Complete sign-in in the dedicated browser, then have the agent retry the read or resume the failed job. Further cache searches after a login failure should be your explicit choice to work offline.
+
+`logout` removes the Brightspace session and its separate browser profile. Use `logout --site ed`, `piazza` or `gradescope` for a particular provider, or `logout --site all` to remove every saved sign-in. Logout **keeps indexed course material and downloaded originals**. `disconnect_integration` removes both that platform's cached material and its credentials. To remove all Brightspace material as well, stop companion processes and delete the chosen data directory. Extension storage is separate.
 
 Cookies, the Brightspace XSRF token, the Ed authentication token and the dedicated sign-in profiles are local credentials. The data directory uses owner-only Unix permissions; it is not an encrypted vault. Session files and course caches must stay out of Git and shared folders. Windows users should use a directory protected by their account's access controls. The companion does not collect passwords or expose credentials through MCP tools.
 
@@ -151,6 +171,8 @@ Tool responses go to the MCP client you connect. That client can send course exc
 flowchart LR
   Login[Independent site sign-ins] --> Session[Private site sessions]
   Session --> Reader[Restricted provider transports]
+  Reader --> Downloads[Original file downloads]
+  Downloads --> Tools[Shared research tools]
   Reader --> Jobs[Resumable sync and indexing jobs]
   Jobs --> Index[SQLite pages, FTS5 and vectors]
   Index --> Tools[Shared research tools]
@@ -177,7 +199,7 @@ npm run eval -- eval-local.json
 npm audit --audit-level=high
 ```
 
-Run `npm run lint` from the repository root. CI checks the companion on Node 22 and 24, including the actual MCP stdio handshake, document parsers, session isolation, durable jobs and intercepted browser sign-ins for all four services. Those browser fixtures do not contact real accounts. Tests assert that every extension agent tool is exposed, and exercise full history, reply continuations, source scoping, course linking, quiz score exclusion, syllabus quote validation and actual MCP image blocks.
+Run `npm run lint` from the repository root. CI checks the companion on Node 22 and 24, including the actual MCP stdio handshake, document parsers, session isolation, durable jobs and intercepted browser sign-ins for all four services. Those browser fixtures do not contact real accounts. Tests assert that every extension agent tool is exposed, and exercise full history, reply continuations, source scoping, course linking, quiz score exclusion, syllabus quote validation and actual MCP image blocks, original-file resource links and byte-for-byte downloads.
 
 [The retrieval evaluation](eval/README.md) compares keyword and hybrid search on a checked-in synthetic corpus, including multi-document questions and course scoping. Its [recorded baseline](eval/baseline.json) includes per-question rankings and timings. It is a regression check, not a claim about real-course answer accuracy.
 

@@ -7,13 +7,21 @@ import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { CourseDatabase } from '../lib/database.mjs';
-import { seed } from './fixtures.mjs';
+import { CourseService, sourcesFromSnapshot } from '../lib/service.mjs';
+import { toolRegistry, callTool } from '../lib/tools.mjs';
+import { seed, noSemantics } from './fixtures.mjs';
 
 test('a real MCP client uses the CLI subprocess, strict schemas, evidence, resources and research prompt', { timeout: 15000 }, async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'boilerspace-protocol-'));
   const database = new CourseDatabase(path.join(directory, 'courses.sqlite'));
-  seed(database);
+  const snapshot = seed(database);
+  snapshot.data[1].content[0].id = 8;
+  snapshot.data[1].content[0].fileUrl = '/d2l/api/le/1.96/202/content/topics/8/file';
+  database.publish(snapshot, sourcesFromSnapshot(snapshot));
   database.savePages('file:101:7', database.source('file:101:7').revision, [{ label: 'slide 14', text: 'The wavelength is the distance between successive wave peaks.' }]);
+  const service = new CourseService(database, { directory, client: async () => ({ getFile: async () => ({ bytes: Buffer.from([0, 255, 42]), contentType: 'application/octet-stream', fileName: 'original.bin' }) }), save: async () => {} }, { retrieval: noSemantics });
+  const download = await callTool(toolRegistry(service), 'download_course_file', { sourceId: 'file:101:7' });
+  await service.close();
   database.close();
   const client = new Client({ name: 'fixture-agent', version: '1.0' });
   const transport = new StdioClientTransport({ command: process.execPath, args: [fileURLToPath(new URL('../cli.mjs', import.meta.url)), 'serve', '--data-dir', directory], stderr: 'pipe' });
@@ -21,8 +29,9 @@ test('a real MCP client uses the CLI subprocess, strict schemas, evidence, resou
   transport.stderr?.on('data', chunk => { stderr += chunk; });
   try {
     await client.connect(transport);
+    assert.match(client.getInstructions(), /ask the user to sign in instead of digging through other caches/i);
     const tools = await client.listTools();
-    assert.equal(tools.tools.length, 28);
+    assert.equal(tools.tools.length, 29);
     assert.equal(tools.tools.find(tool => tool.name === 'disconnect_integration').annotations.destructiveHint, true);
     assert.equal(tools.tools.find(tool => tool.name === 'read_quiz').annotations.openWorldHint, true);
     assert.equal(tools.tools.find(tool => tool.name === 'read_document').annotations.readOnlyHint, true);
@@ -38,6 +47,19 @@ test('a real MCP client uses the CLI subprocess, strict schemas, evidence, resou
     assert.equal(invalid.isError, true);
     const resource = await client.readResource({ uri: 'boilerspace://status' });
     assert.equal(JSON.parse(resource.contents[0].text).indexedDocuments, 1);
+    const original = await client.readResource({ uri: download.resourceUri });
+    assert.deepEqual([...Buffer.from(original.contents[0].blob, 'base64')], [0, 255, 42], 'saved downloads survive a process restart and need no active session');
+    const expired = await client.callTool({ name: 'read_course_file', arguments: { file_key: 'content:8' } });
+    assert.equal(expired.isError, true);
+    const recovery = JSON.parse(expired.content[0].text);
+    assert.equal(recovery.code, 'sign-in-required', 'file reads preserve the indexing job login error');
+    assert.equal(recovery.needsUserLogin, true);
+    assert.match(recovery.nextAction, /Ask the user to complete sign-in/);
+    assert.match(recovery.nextAction, /same --data-dir/);
+    assert.match(recovery.nextAction, /unless the user chooses offline results/);
+    const status = await client.callTool({ name: 'connection_status', arguments: {} });
+    assert.match(status.structuredContent.instructions, /does not verify the live sign-in/);
+    assert.equal(status.structuredContent.jobs.find(job => job.state === 'failed').error.needsUserLogin, true, 'background jobs also carry login recovery instructions');
     const prompt = await client.getPrompt({ name: 'exam-review' });
     assert.match(prompt.messages[0].content.text, /course_coverage/);
     assert.ok(!JSON.stringify([courses, page, resource]).includes('session.json'));

@@ -178,7 +178,9 @@ export class BrightspaceSession {
       }
       for (const header of response.headers.getSetCookie()) await this.jar.setCookie(header, url.href);
       const fileRequest = /\/file$|\/overview\/attachment$|^\/content\//.test(url.pathname);
-      if (response.ok && url.pathname.startsWith('/d2l/api/') && !fileRequest && /text\/html/i.test(response.headers.get('content-type') ?? '')) { await response.body?.cancel(); throw new CompanionError('sign-in-required', 'Brightspace returned a web page instead of API data. Check the connection with login if other requests fail too.'); }
+      const tokenRequest = url.pathname === '/d2l/lp/auth/oauth2/token';
+      if (tokenRequest && [401, 403].includes(response.status)) { await response.body?.cancel(); throw new CompanionError('sign-in-required', 'Brightspace could not renew the session token. Ask the user to sign in again.'); }
+      if (response.ok && (tokenRequest || url.pathname.startsWith('/d2l/api/') && !fileRequest) && /text\/html/i.test(response.headers.get('content-type') ?? '')) { await response.body?.cancel(); throw new CompanionError('sign-in-required', 'Brightspace returned a web page instead of authenticated data. Ask the user to sign in again.'); }
       let limit = Math.min(this.responseByteLimit, fileRequest ? MAX_FILE_BYTES : 8_000_000);
       if (Number(response.headers.get('content-length')) > limit) { await response.body?.cancel(); throw new CompanionError('file-too-large', `The response exceeds the ${limit / 1_000_000} MB limit.`); }
       const reader = response.body?.getReader();
@@ -198,7 +200,9 @@ export class BrightspaceSession {
           chunks.push(chunk);
         }
       } finally { await reader?.cancel().catch(() => {}); reader?.releaseLock(); }
-      return new Response(Buffer.concat(chunks), { status: response.status, headers: response.headers });
+      const bytes = Buffer.concat(chunks);
+      if (tokenRequest && response.ok && /^\s*(?:<!doctype\s+html|<html\b)/i.test(bytes.subarray(0, 512).toString('utf8'))) throw new CompanionError('sign-in-required', 'Brightspace returned a login page instead of a session token. Ask the user to sign in again.');
+      return new Response(bytes, { status: response.status, headers: response.headers });
     } });
     for (const method of ['getJson', 'getAll', 'getText', 'getFile']) {
       const request = client[method];

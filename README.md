@@ -70,7 +70,11 @@ Keep the extracted folder in place. There is no build step or separate BoilerSpa
 
 ## Agent companion
 
-The [standalone companion](mcp/README.md) gives local MCP clients and CLI agents the same course research tools for Brightspace, Ed, Piazza and Gradescope. It has independent sign-ins, persistent search, syllabus facts, released quiz questions and page images with source citations. The browser extension does not need to be installed or running.
+The [standalone companion](mcp/README.md) gives local MCP clients and CLI agents the same course research tools for Brightspace, Ed, Piazza and Gradescope. It has independent sign-ins, persistent search, syllabus facts, released quiz questions and page images with source citations. Agents can also download original Brightspace files through MCP and open the saved local files without indexing them. The browser extension does not need to be installed or running.
+
+Paste this into ChatGPT, Claude or another assistant with local computer or terminal access:
+
+> Install the BoilerSpace MCP companion from https://github.com/ltmerletti/BoilerSpace by following mcp/README.md, configure it for my MCP client, let me complete the Purdue sign-in, and verify the connection by listing my courses.
 
 ---
 

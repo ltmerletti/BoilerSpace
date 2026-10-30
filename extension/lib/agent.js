@@ -609,6 +609,7 @@ export function createTools({ snapshot, syllabi = {}, reviews = {}, discussions 
       try {
         loaded = await readFile(topic, { syllabi });
       } catch (err) {
+        if (err.code === 'sign-in-required') throw err;
         return {
           error: `Could not open "${topic.title}" (${file_key}): ${err.message}`,
           note: `The file "${topic.title}" could not be opened (${err.message}). If the student asked specifically about the contents of this file, tell them it could not be opened and why, and do not substitute another file to answer questions about specific slides or pages in "${topic.title}".`,
@@ -686,7 +687,7 @@ export function createTools({ snapshot, syllabi = {}, reviews = {}, discussions 
     try {
       return await handler(args ?? {});
     } catch (err) {
-      if (err.code === 'discussion-data-changed') throw err;
+      if (err.code === 'discussion-data-changed' || err.code === 'sign-in-required') throw err;
       return { error: err.message };
     }
   }

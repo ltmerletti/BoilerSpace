@@ -34,7 +34,10 @@ export class AgentTools {
       do { await new Promise(resolve => setTimeout(resolve, 100)); state = database.job(job.id); }
       while (['queued', 'running'].includes(state.state) && !this.service.stopping && Date.now() < deadline);
       if (['queued', 'running'].includes(state.state)) throw new CompanionError('indexing-in-progress', `The file is still being indexed. Poll job_status for ${job.id}, then read it again.`, { jobId: job.id });
-      if (state.state !== 'completed' || state.failures.length) throw new CompanionError('file-unavailable', state.failures[0]?.message ?? state.error?.message ?? 'The document could not be indexed.');
+      if (state.state !== 'completed' || state.failures.length) {
+        const failure = state.error ?? state.failures[0];
+        throw new CompanionError(failure?.code ?? 'file-unavailable', failure?.message ?? 'The document could not be indexed.');
+      }
       source = database.source(source.id);
     }
     return { kind: /\.pptx?$/i.test(source.title) || database.pages(source.id)[0]?.label.startsWith('slide ') ? 'pptx' : 'pdf',
